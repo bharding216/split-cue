@@ -392,7 +392,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           {blocks.length > 1 && (
             <View style={styles.reorderHint}>
               <Ionicons name="reorder-three" size={16} color={Colors.textMuted} />
-              <Text style={styles.reorderHintText}>Drag to reorder</Text>
+              <Text style={styles.reorderHintText}>Hold & drag to reorder</Text>
             </View>
           )}
         </View>

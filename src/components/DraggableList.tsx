@@ -3,7 +3,7 @@
  * Items may have different (and changing) heights.
  */
 
-import React, { useCallback, useLayoutEffect, useMemo } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -18,6 +18,9 @@ import { Colors } from '../constants/theme';
 import { hapticCountdown, hapticTap } from '../audio/haptics';
 
 type ItemLayout = { y: number; h: number };
+
+/** Hold time before a drag starts, so scrolls that begin on a handle still scroll. */
+const LONG_PRESS_MS = 250;
 
 interface DragState {
   order: SharedValue<string[]>;
@@ -79,10 +82,14 @@ export function DraggableList<T>({
     onReorder(from, to);
   }, [onReorder]);
 
+  // Shared value writes from JS land asynchronously, so several onLayout calls in one
+  // tick can't read-modify-write `layouts.value`; accumulate here and publish a copy.
+  const layoutsRef = useRef<Record<string, ItemLayout>>({});
   const setLayout = useCallback((key: string, y: number, h: number) => {
-    const prev = layouts.value[key];
+    const prev = layoutsRef.current[key];
     if (prev && prev.y === y && prev.h === h) return;
-    layouts.value = { ...layouts.value, [key]: { y, h } };
+    layoutsRef.current[key] = { y, h };
+    layouts.value = { ...layoutsRef.current };
   }, []);
 
   return (
@@ -139,8 +146,8 @@ function DraggableItem({
 
   const pan = useMemo(() => {
     let g = Gesture.Pan()
-      .minDistance(2)
-      .onBegin(() => {
+      .activateAfterLongPress(LONG_PRESS_MS)
+      .onStart(() => {
         if (activeIndex.value !== -1) return;
         activeIndex.value = index;
         targetIndex.value = index;
@@ -221,7 +228,7 @@ function DraggableItem({
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={label ? `Reorder ${label}` : 'Reorder'}
-        accessibilityHint="Drag up or down to move"
+        accessibilityHint="Press and hold, then drag up or down to move"
         accessibilityActions={[
           ...(index > 0 ? [{ name: 'moveUp', label: 'Move up' }] : []),
           ...(index < count - 1 ? [{ name: 'moveDown', label: 'Move down' }] : []),
