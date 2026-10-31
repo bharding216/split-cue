@@ -1,6 +1,10 @@
 import { Stack } from 'expo-router';
 import { Colors } from '../../../src/constants/theme';
 
+export const unstable_settings = {
+  anchor: 'index',
+};
+
 export default function TrainingLayout() {
   return (
     <Stack

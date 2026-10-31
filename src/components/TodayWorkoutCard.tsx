@@ -13,8 +13,7 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 
 interface TodayWorkoutCardProps {
   planWorkout: PlanWorkout;
-  onStart: (workoutData: WorkoutDefinition, planWorkoutId: string) => void;
-  onAdjust: () => void;
+  onView: () => void;
 }
 
 function estimateDuration(pw: PlanWorkout): string | null {
@@ -37,7 +36,7 @@ function getIntensityTag(label: string | null): { text: string; color: string } 
   return null;
 }
 
-export function TodayWorkoutCard({ planWorkout, onStart, onAdjust }: TodayWorkoutCardProps) {
+export function TodayWorkoutCard({ planWorkout, onView }: TodayWorkoutCardProps) {
   const isRest = planWorkout.day_label?.toLowerCase().includes('rest');
   const isCompleted = planWorkout.status === 'completed';
   const workoutData = planWorkout.workout_data as WorkoutDefinition | null;
@@ -100,26 +99,7 @@ export function TodayWorkoutCard({ planWorkout, onStart, onAdjust }: TodayWorkou
         <Text style={styles.description} numberOfLines={2}>{planWorkout.description}</Text>
       )}
 
-      {workoutData ? (
-        <>
-          <TouchableOpacity
-            style={styles.startBtn}
-            onPress={() => onStart(workoutData, planWorkout.id)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="play" size={18} color={Colors.black} />
-            <Text style={styles.startBtnText}>Start Workout</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.adjustBtn}
-            onPress={onAdjust}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={16} color={Colors.textSecondary} />
-            <Text style={styles.adjustBtnText}>Adjust Workout</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
+      {!workoutData && (
         <View style={styles.pendingRow}>
           <Ionicons name="sparkles-outline" size={14} color={Colors.accent} />
           <Text style={styles.pendingText}>
@@ -127,6 +107,15 @@ export function TodayWorkoutCard({ planWorkout, onStart, onAdjust }: TodayWorkou
           </Text>
         </View>
       )}
+
+      <TouchableOpacity
+        style={styles.viewBtn}
+        onPress={onView}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.viewBtnText}>View Workout</Text>
+        <Ionicons name="chevron-forward" size={18} color={Colors.black} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -184,7 +173,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: Spacing.md,
   },
-  startBtn: {
+  viewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -192,32 +181,18 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm + 4,
     gap: Spacing.xs,
-    marginBottom: Spacing.sm,
   },
-  startBtnText: {
+  viewBtnText: {
     color: Colors.black,
     fontSize: FontSize.md,
     fontWeight: '800',
-  },
-  adjustBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm + 2,
-    gap: Spacing.xs,
-  },
-  adjustBtnText: {
-    color: Colors.textSecondary,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
   },
   pendingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   pendingText: {
     flex: 1,

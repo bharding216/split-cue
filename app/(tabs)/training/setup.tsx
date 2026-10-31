@@ -26,6 +26,7 @@ import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { generatePlanOutline, savePlanOutline, generateWorkoutDetailsWithProfile } from '../../../src/ai/planService';
+import { track } from '../../../src/analytics/track';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { buildHistorySummary, serializeHistorySummary } from '../../../src/ai/historySummary';
 import type { RaceType, GoalType, RunningProfile, RunningPreference } from '../../../src/types/database';
@@ -430,6 +431,14 @@ export default function PlanSetupScreen() {
       setGenPhase('saving');
       const { plan: savedPlan, workouts: savedWorkouts } = await savePlanOutline(user.id, input, outline);
 
+      track('plan_generated', {
+        plan_id: savedPlan.id,
+        race_type: effectiveRaceType,
+        goal_type: goalType,
+        weeks: outline.weeks.length,
+        days_per_week: input.daysPerWeek,
+      });
+
       if (!mountedRef.current) return;
 
       setGenPhase('done');
@@ -452,6 +461,11 @@ export default function PlanSetupScreen() {
           .catch((err) => console.warn('Background detail generation failed:', err));
       }
     } catch (err: any) {
+      track('plan_generation_failed', {
+        race_type: effectiveRaceType,
+        goal_type: goalType,
+        error: String(err?.message ?? err).slice(0, 200),
+      });
       if (mountedRef.current) {
         setGenPhase('idle');
         Alert.alert('Error', err.message || 'Failed to generate plan. Please try again.');

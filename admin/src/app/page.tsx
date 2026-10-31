@@ -5,6 +5,7 @@ import {
   getWorkoutCompletionStats,
   getOnboardingFunnel,
   getAIAdoptionRate,
+  getTrainingPlanStats,
   getDAUOverTime,
   getWorkoutsOverTime,
   getSignupsOverTime,
@@ -39,6 +40,7 @@ export default async function DashboardPage() {
     workoutStats,
     funnel,
     aiAdoption,
+    planStats,
     retentionCurve,
     dau,
     workouts,
@@ -53,6 +55,7 @@ export default async function DashboardPage() {
     getWorkoutCompletionStats(),
     getOnboardingFunnel(30),
     getAIAdoptionRate(30),
+    getTrainingPlanStats(30),
     getWorkoutRetentionCurve(6),
     getDAUOverTime(30),
     getWorkoutsOverTime(30),
@@ -97,9 +100,42 @@ export default async function DashboardPage() {
           detail="Active + trialing"
         />
         <StatCard
-          label="AI Generations"
+          label="AI Workouts Saved"
           value={stats.aiGenerationsLast7d}
-          detail="Last 7 days"
+          detail="AI builder workouts saved, last 7 days"
+        />
+      </section>
+
+      {/* ── Training Plans ────────────────────────────────── */}
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        AI Training Plans
+      </h2>
+      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard
+          label="Plans Generated"
+          value={planStats.generated}
+          detail={`${planStats.uniqueUsers} user${planStats.uniqueUsers !== 1 ? 's' : ''}, last 30 days`}
+        />
+        <StatCard
+          label="Plans Accepted"
+          value={planStats.accepted}
+          detail="Completed ≥ 1 plan workout"
+        />
+        <StatCard
+          label="Acceptance Rate"
+          value={planStats.acceptanceRate}
+          format="percent"
+          detail="Accepted ÷ generated, last 30 days"
+        />
+        <StatCard
+          label="Still Active"
+          value={planStats.stillActive}
+          detail={`${planStats.archived} archived`}
+        />
+        <StatCard
+          label="Failed Generations"
+          value={planStats.failed}
+          detail="Errors before a plan was saved"
         />
       </section>
 

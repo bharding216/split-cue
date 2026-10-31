@@ -8,12 +8,12 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Alert,
   Animated,
   LayoutAnimation,
 } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   WorkoutDefinition,
@@ -53,6 +53,7 @@ import {
 } from '../constants/theme';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { hapticTap } from '../audio/haptics';
+import { DraggableList } from './DraggableList';
 
 interface Props {
   initial: WorkoutDefinition;
@@ -83,6 +84,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
   const initialSnapshot = useRef(initial);
+  const scrollRef = useRef<ScrollView>(null);
 
   const effectiveAutoSave = autoSave && !isPlanWorkout;
 
@@ -217,16 +219,15 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
     setBlocks((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const moveBlock = (from: number, to: number) => {
-    if (to < 0 || to >= blocks.length) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  const moveBlock = useCallback((from: number, to: number) => {
     setBlocks((prev) => {
+      if (to < 0 || to >= prev.length) return prev;
       const next = [...prev];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
       return next;
     });
-  };
+  }, []);
 
   const toggleExpanded = (id: string) => {
     hapticTap();
@@ -374,7 +375,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
         </Animated.View>
       )}
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Name */}
         <Text style={styles.label}>Workout Name</Text>
         <TextInput
@@ -386,81 +387,92 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
         />
 
         {/* Blocks */}
-        <Text style={styles.sectionTitle}>Workout Blocks</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Workout Blocks</Text>
+          {blocks.length > 1 && (
+            <View style={styles.reorderHint}>
+              <Ionicons name="reorder-three" size={16} color={Colors.textMuted} />
+              <Text style={styles.reorderHintText}>Drag to reorder</Text>
+            </View>
+          )}
+        </View>
 
-        {blocks.map((block, bi) => {
-          const isOpen = expandedId === block.id;
-          return (
-            <View key={block.id} style={[styles.blockCard, isOpen && styles.blockCardOpen]}>
-              {block.blockType === 'segment' ? (
-                <SegmentSummaryRow
-                  segment={block}
-                  paceUnit={paceUnit}
-                  expanded={isOpen}
-                  onPress={() => toggleExpanded(block.id)}
-                />
-              ) : (
-                <RepeatSummaryRow
-                  group={block}
-                  paceUnit={paceUnit}
-                  expanded={isOpen}
-                  onPress={() => toggleExpanded(block.id)}
-                />
-              )}
+        <DraggableList
+          items={blocks}
+          keyExtractor={(b) => b.id}
+          onReorder={moveBlock}
+          gap={Spacing.sm}
+          scrollRef={scrollRef}
+          itemLabel={(b) => (b.blockType === 'segment' ? b.label || defaultSegmentLabel(b.segmentType) : `Repeat ${b.repetitions}×`)}
+          renderItem={(block, bi, handle) => {
+            const isOpen = expandedId === block.id;
+            return (
+              <View style={[styles.blockCard, isOpen && styles.blockCardOpen]}>
+                {block.blockType === 'segment' ? (
+                  <SegmentSummaryRow
+                    segment={block}
+                    paceUnit={paceUnit}
+                    expanded={isOpen}
+                    onPress={() => toggleExpanded(block.id)}
+                    handle={blocks.length > 1 ? handle : undefined}
+                  />
+                ) : (
+                  <RepeatSummaryRow
+                    group={block}
+                    paceUnit={paceUnit}
+                    expanded={isOpen}
+                    onPress={() => toggleExpanded(block.id)}
+                    handle={blocks.length > 1 ? handle : undefined}
+                  />
+                )}
 
-              {isOpen && (
-                <View style={styles.blockBody}>
-                  {block.blockType === 'segment' ? (
-                    <SegmentEditor
-                      segment={block}
-                      onChange={(updated) => updateBlock(bi, () => updated)}
-                      paceUnit={paceUnit}
-                    />
-                  ) : (
-                    <RepeatGroupEditor
-                      group={block}
-                      onChangeReps={(reps) => updateBlock(bi, (b) => b.blockType === 'repeat' ? { ...b, repetitions: Math.max(1, reps) } : b)}
-                      onUpdateInner={(ii, updater) => updateNestedBlock(bi, ii, updater)}
-                      onRemoveInner={(ii) => removeNestedBlock(bi, ii)}
-                      onAddInner={(seg) => addNestedSegment(bi, seg)}
-                      onMoveInner={(from, to) => moveNestedBlock(bi, from, to)}
-                      paceUnit={paceUnit}
-                    />
-                  )}
+                {isOpen && (
+                  <View style={styles.blockBody}>
+                    {block.blockType === 'segment' ? (
+                      <SegmentEditor
+                        segment={block}
+                        onChange={(updated) => updateBlock(bi, () => updated)}
+                        paceUnit={paceUnit}
+                      />
+                    ) : (
+                      <RepeatGroupEditor
+                        group={block}
+                        onChangeReps={(reps) => updateBlock(bi, (b) => b.blockType === 'repeat' ? { ...b, repetitions: Math.max(1, reps) } : b)}
+                        onUpdateInner={(ii, updater) => updateNestedBlock(bi, ii, updater)}
+                        onRemoveInner={(ii) => removeNestedBlock(bi, ii)}
+                        onAddInner={(seg) => addNestedSegment(bi, seg)}
+                        onMoveInner={(from, to) => moveNestedBlock(bi, from, to)}
+                        paceUnit={paceUnit}
+                        scrollRef={scrollRef}
+                      />
+                    )}
 
-                  {/* Block toolbar — reorder, convert, remove */}
-                  <View style={styles.blockToolbar}>
-                    <View style={styles.reorderRow}>
-                      <TouchableOpacity onPress={() => { hapticTap(); moveBlock(bi, bi - 1); }} disabled={bi === 0} hitSlop={8}>
-                        <Ionicons name="chevron-up" size={20} color={bi === 0 ? Colors.surfaceLight : Colors.textMuted} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { hapticTap(); moveBlock(bi, bi + 1); }} disabled={bi === blocks.length - 1} hitSlop={8}>
-                        <Ionicons name="chevron-down" size={20} color={bi === blocks.length - 1 ? Colors.surfaceLight : Colors.textMuted} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.blockToolbarRight}>
-                      {block.blockType === 'segment' ? (
-                        <TouchableOpacity onPress={() => convertToRepeatGroup(bi)} hitSlop={8} style={styles.toolbarBtn}>
-                          <Ionicons name="repeat-outline" size={16} color={Colors.textMuted} />
-                          <Text style={styles.toolbarBtnText}>Repeat</Text>
+                    {/* Block toolbar — convert, remove */}
+                    <View style={styles.blockToolbar}>
+                      <View style={styles.blockToolbarRight}>
+                        {block.blockType === 'segment' ? (
+                          <TouchableOpacity onPress={() => convertToRepeatGroup(bi)} hitSlop={8} style={styles.toolbarBtn}>
+                            <Ionicons name="repeat-outline" size={16} color={Colors.textMuted} />
+                            <Text style={styles.toolbarBtnText}>Repeat</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity onPress={() => ungroupRepeat(bi)} hitSlop={8} style={styles.toolbarBtn}>
+                            <Ionicons name="git-merge-outline" size={16} color={Colors.textMuted} />
+                            <Text style={styles.toolbarBtnText}>Ungroup</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => removeBlock(bi)} hitSlop={8} style={styles.toolbarBtn}>
+                          <Ionicons name="trash-outline" size={16} color={Colors.textMuted} />
+                          <Text style={styles.toolbarBtnText}>Delete</Text>
                         </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity onPress={() => ungroupRepeat(bi)} hitSlop={8} style={styles.toolbarBtn}>
-                          <Ionicons name="git-merge-outline" size={16} color={Colors.textMuted} />
-                          <Text style={styles.toolbarBtnText}>Ungroup</Text>
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity onPress={() => removeBlock(bi)} hitSlop={8} style={styles.toolbarBtn}>
-                        <Ionicons name="trash-outline" size={16} color={Colors.textMuted} />
-                        <Text style={styles.toolbarBtnText}>Delete</Text>
-                      </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
-                </View>
-              )}
-            </View>
-          );
-        })}
+                )}
+              </View>
+            );
+          }}
+        />
 
         {/* Add buttons */}
         {addPickerOpen ? (
@@ -627,23 +639,28 @@ function SegmentSummaryRow({
   paceUnit,
   expanded,
   onPress,
+  handle,
 }: {
   segment: Segment;
   paceUnit: PaceUnit;
   expanded: boolean;
   onPress: () => void;
+  handle?: React.ReactNode;
 }) {
   return (
-    <TouchableOpacity style={sumStyles.row} onPress={onPress} activeOpacity={0.7}>
-      <View style={[sumStyles.dot, { backgroundColor: segmentColor(segment) }]} />
-      <View style={sumStyles.textCol}>
-        <Text style={sumStyles.title} numberOfLines={1}>
-          {segment.label || defaultSegmentLabel(segment.segmentType)}
-        </Text>
-        <Text style={sumStyles.detail} numberOfLines={1}>{summarizeSegment(segment, paceUnit)}</Text>
-      </View>
-      <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={18} color={Colors.textMuted} />
-    </TouchableOpacity>
+    <View style={sumStyles.row}>
+      {handle}
+      <TouchableOpacity style={sumStyles.pressArea} onPress={onPress} activeOpacity={0.7}>
+        <View style={[sumStyles.dot, { backgroundColor: segmentColor(segment) }]} />
+        <View style={sumStyles.textCol}>
+          <Text style={sumStyles.title} numberOfLines={1}>
+            {segment.label || defaultSegmentLabel(segment.segmentType)}
+          </Text>
+          <Text style={sumStyles.detail} numberOfLines={1}>{summarizeSegment(segment, paceUnit)}</Text>
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={18} color={Colors.textMuted} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -652,35 +669,40 @@ function RepeatSummaryRow({
   paceUnit,
   expanded,
   onPress,
+  handle,
 }: {
   group: RepeatGroup;
   paceUnit: PaceUnit;
   expanded: boolean;
   onPress: () => void;
+  handle?: React.ReactNode;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-      <View style={sumStyles.row}>
-        <Ionicons name="repeat-outline" size={16} color={Colors.primary} />
-        <View style={sumStyles.textCol}>
-          <Text style={[sumStyles.title, { color: Colors.primary }]} numberOfLines={1}>
-            Repeat {group.repetitions}×{group.name ? ` · ${group.name}` : ''}
-          </Text>
-        </View>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={18} color={Colors.textMuted} />
-      </View>
-      {!expanded && group.blocks.map((inner) =>
-        inner.blockType === 'segment' ? (
-          <View key={inner.id} style={sumStyles.innerLine}>
-            <View style={[sumStyles.smallDot, { backgroundColor: segmentColor(inner) }]} />
-            <Text style={sumStyles.innerText} numberOfLines={1}>
-              {inner.label || defaultSegmentLabel(inner.segmentType)}
-              <Text style={sumStyles.detail}>  {summarizeSegment(inner, paceUnit)}</Text>
+    <View style={sumStyles.row}>
+      {handle}
+      <TouchableOpacity style={sumStyles.pressColumn} onPress={onPress} activeOpacity={0.7}>
+        <View style={sumStyles.pressArea}>
+          <Ionicons name="repeat-outline" size={16} color={Colors.primary} />
+          <View style={sumStyles.textCol}>
+            <Text style={[sumStyles.title, { color: Colors.primary }]} numberOfLines={1}>
+              Repeat {group.repetitions}×{group.name ? ` · ${group.name}` : ''}
             </Text>
           </View>
-        ) : null,
-      )}
-    </TouchableOpacity>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={18} color={Colors.textMuted} />
+        </View>
+        {!expanded && group.blocks.map((inner) =>
+          inner.blockType === 'segment' ? (
+            <View key={inner.id} style={sumStyles.innerLine}>
+              <View style={[sumStyles.smallDot, { backgroundColor: segmentColor(inner) }]} />
+              <Text style={sumStyles.innerText} numberOfLines={1}>
+                {inner.label || defaultSegmentLabel(inner.segmentType)}
+                <Text style={sumStyles.detail}>  {summarizeSegment(inner, paceUnit)}</Text>
+              </Text>
+            </View>
+          ) : null,
+        )}
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -997,6 +1019,7 @@ function RepeatGroupEditor({
   onAddInner,
   onMoveInner,
   paceUnit,
+  scrollRef,
 }: {
   group: RepeatGroup;
   onChangeReps: (n: number) => void;
@@ -1005,6 +1028,7 @@ function RepeatGroupEditor({
   onAddInner: (seg: Segment) => void;
   onMoveInner: (from: number, to: number) => void;
   paceUnit: PaceUnit;
+  scrollRef: React.RefObject<any>;
 }) {
   const [expandedInnerId, setExpandedInnerId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1039,54 +1063,55 @@ function RepeatGroupEditor({
       </View>
 
       {/* Nested blocks */}
-      {group.blocks.map((inner, ii) => {
-        if (inner.blockType !== 'segment') {
+      <DraggableList
+        items={group.blocks}
+        keyExtractor={(b) => b.id}
+        onReorder={onMoveInner}
+        gap={Spacing.sm}
+        scrollRef={scrollRef}
+        itemLabel={(b) => (b.blockType === 'segment' ? b.label || defaultSegmentLabel(b.segmentType) : 'Nested repeat')}
+        renderItem={(inner, ii, handle) => {
+          if (inner.blockType !== 'segment') {
+            return (
+              <View style={rgStyles.innerBlock}>
+                <Text style={rgStyles.nestedRepeat}>Nested repeat groups not supported in editor</Text>
+              </View>
+            );
+          }
+          const isOpen = expandedInnerId === inner.id;
           return (
-            <View key={inner.id} style={rgStyles.innerBlock}>
-              <Text style={rgStyles.nestedRepeat}>Nested repeat groups not supported in editor</Text>
-            </View>
-          );
-        }
-        const isOpen = expandedInnerId === inner.id;
-        return (
-          <View key={inner.id} style={rgStyles.innerBlock}>
-            <SegmentSummaryRow
-              segment={inner}
-              paceUnit={paceUnit}
-              expanded={isOpen}
-              onPress={() => toggleInner(inner.id)}
-            />
-            {isOpen && (
-              <View style={rgStyles.innerBody}>
-                <SegmentEditor
-                  segment={inner}
-                  onChange={(updated) => onUpdateInner(ii, () => updated)}
-                  paceUnit={paceUnit}
-                />
-                <View style={styles.blockToolbar}>
-                  <View style={styles.reorderRow}>
-                    <TouchableOpacity onPress={() => { hapticTap(); onMoveInner(ii, ii - 1); }} disabled={ii === 0} hitSlop={8}>
-                      <Ionicons name="chevron-up" size={18} color={ii === 0 ? Colors.surfaceLight : Colors.textMuted} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { hapticTap(); onMoveInner(ii, ii + 1); }} disabled={ii === group.blocks.length - 1} hitSlop={8}>
-                      <Ionicons name="chevron-down" size={18} color={ii === group.blocks.length - 1 ? Colors.surfaceLight : Colors.textMuted} />
+            <View style={rgStyles.innerBlock}>
+              <SegmentSummaryRow
+                segment={inner}
+                paceUnit={paceUnit}
+                expanded={isOpen}
+                onPress={() => toggleInner(inner.id)}
+                handle={group.blocks.length > 1 ? handle : undefined}
+              />
+              {isOpen && (
+                <View style={rgStyles.innerBody}>
+                  <SegmentEditor
+                    segment={inner}
+                    onChange={(updated) => onUpdateInner(ii, () => updated)}
+                    paceUnit={paceUnit}
+                  />
+                  <View style={styles.blockToolbar}>
+                    <TouchableOpacity
+                      onPress={() => onRemoveInner(ii)}
+                      disabled={group.blocks.length <= 1}
+                      hitSlop={8}
+                      style={styles.toolbarBtn}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={group.blocks.length <= 1 ? Colors.surfaceLight : Colors.textMuted} />
+                      <Text style={[styles.toolbarBtnText, group.blocks.length <= 1 && { color: Colors.surfaceLight }]}>Delete</Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => onRemoveInner(ii)}
-                    disabled={group.blocks.length <= 1}
-                    hitSlop={8}
-                    style={styles.toolbarBtn}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={group.blocks.length <= 1 ? Colors.surfaceLight : Colors.textMuted} />
-                    <Text style={[styles.toolbarBtnText, group.blocks.length <= 1 && { color: Colors.surfaceLight }]}>Delete</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
-            )}
-          </View>
-        );
-      })}
+              )}
+            </View>
+          );
+        }}
+      />
 
       {pickerOpen ? (
         <SegmentTypePicker onPick={addInner} onCancel={() => setPickerOpen(false)} />
@@ -1469,7 +1494,9 @@ const segStyles = StyleSheet.create({
 });
 
 const sumStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 2 },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.xs },
+  pressArea: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 2, minHeight: 40 },
+  pressColumn: { flex: 1 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   smallDot: { width: 6, height: 6, borderRadius: 3 },
   textCol: { flex: 1 },
@@ -1506,7 +1533,7 @@ const optStyles = StyleSheet.create({
 const rgStyles = StyleSheet.create({
   container: {},
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  innerBlock: { marginLeft: Spacing.sm, borderLeftWidth: 2, borderLeftColor: Colors.primary + '30', paddingLeft: Spacing.sm, paddingVertical: Spacing.xs, marginBottom: Spacing.sm },
+  innerBlock: { marginLeft: Spacing.sm, borderLeftWidth: 2, borderLeftColor: Colors.primary + '30', paddingLeft: Spacing.sm, paddingVertical: Spacing.xs, backgroundColor: Colors.surface },
   innerBody: { marginTop: Spacing.sm },
   nestedRepeat: { fontSize: FontSize.xs, color: Colors.textMuted, fontStyle: 'italic' },
 });
@@ -1581,15 +1608,17 @@ const styles = StyleSheet.create({
   editHintText: { fontSize: FontSize.xs, color: Colors.textSecondary, flex: 1 },
   label: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: '600', marginBottom: Spacing.xs, textTransform: 'uppercase', letterSpacing: 1 },
   input: { backgroundColor: Colors.surface, color: Colors.textPrimary, fontSize: FontSize.lg, padding: Spacing.md, borderRadius: BorderRadius.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.surfaceLight },
-  sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.md, marginBottom: Spacing.sm },
-  blockCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: 'transparent' },
-  blockCardOpen: { borderColor: Colors.surfaceLight, marginBottom: Spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md, marginBottom: Spacing.sm },
+  sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  reorderHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  reorderHintText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600' },
+  blockCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, padding: Spacing.md, borderWidth: 1, borderColor: 'transparent' },
+  blockCardOpen: { borderColor: Colors.surfaceLight },
   blockBody: { marginTop: Spacing.md, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.surfaceLight },
-  blockToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md, paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.surfaceLight },
+  blockToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: Spacing.md, paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.surfaceLight },
   blockToolbarRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
   toolbarBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   toolbarBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textMuted },
-  reorderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   addRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, padding: Spacing.sm },
   addBtnText: { color: Colors.accent, fontSize: FontSize.sm, fontWeight: '600' },

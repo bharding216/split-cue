@@ -37,6 +37,7 @@ drop function if exists onboarding_funnel(int);
 drop function if exists workout_completion_stats(int);
 drop function if exists ai_adoption_rate(int);
 drop function if exists users_by_country(int);
+drop function if exists training_plan_stats(int);
 
 -- Total registered users
 create or replace function total_users()
@@ -357,6 +358,48 @@ returns table(
         (select count(*) from ai_users)::numeric * 100, 1
       )
     end as adoption_rate;
+$$ language sql security definer;
+
+-- AI training plans (last N days). Plans are saved as soon as the AI
+-- returns them, so "accepted" means the runner completed >= 1 plan workout.
+-- Excludes the 'custom' calendar plans created for manually scheduled workouts.
+create or replace function training_plan_stats(num_days int default 30)
+returns table(
+  generated int,
+  still_active int,
+  archived int,
+  accepted int,
+  failed int,
+  unique_users int,
+  acceptance_rate numeric
+) as $$
+  with plans as (
+    select
+      tp.id,
+      tp.user_id,
+      tp.status,
+      exists (
+        select 1 from plan_workouts pw
+        where pw.plan_id = tp.id and pw.status = 'completed'
+      ) as is_accepted
+    from training_plans tp
+    where tp.race_type <> 'custom'
+      and tp.created_at > now() - (num_days || ' days')::interval
+  )
+  select
+    count(*)::int as generated,
+    count(*) filter (where status = 'active')::int as still_active,
+    count(*) filter (where status = 'archived')::int as archived,
+    count(*) filter (where is_accepted)::int as accepted,
+    (select count(*) from events
+      where event_name = 'plan_generation_failed'
+        and created_at > now() - (num_days || ' days')::interval)::int as failed,
+    count(distinct user_id)::int as unique_users,
+    case
+      when count(*) = 0 then 0
+      else round(count(*) filter (where is_accepted)::numeric / count(*)::numeric * 100, 1)
+    end as acceptance_rate
+  from plans;
 $$ language sql security definer;
 
 -- DAU per day for the last N days (unique devices that opened the app)

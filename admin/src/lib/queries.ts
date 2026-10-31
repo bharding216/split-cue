@@ -34,6 +34,16 @@ export type AIAdoptionStats = {
   adoptionRate: number;
 };
 
+export type TrainingPlanStats = {
+  generated: number;
+  stillActive: number;
+  archived: number;
+  accepted: number;
+  failed: number;
+  uniqueUsers: number;
+  acceptanceRate: number;
+};
+
 export type DailyCount = {
   date: string;
   count: number;
@@ -159,6 +169,25 @@ export async function getAIAdoptionRate(days = 30): Promise<AIAdoptionStats> {
     aiUsers: row?.ai_users ?? 0,
     aiUsersCompleted: row?.ai_users_completed ?? 0,
     adoptionRate: row?.adoption_rate ?? 0,
+  };
+}
+
+/**
+ * AI training plans generated vs accepted (last N days).
+ */
+export async function getTrainingPlanStats(days = 30): Promise<TrainingPlanStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_plan_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    generated: row?.generated ?? 0,
+    stillActive: row?.still_active ?? 0,
+    archived: row?.archived ?? 0,
+    accepted: row?.accepted ?? 0,
+    failed: row?.failed ?? 0,
+    uniqueUsers: row?.unique_users ?? 0,
+    acceptanceRate: row?.acceptance_rate ?? 0,
   };
 }
 
