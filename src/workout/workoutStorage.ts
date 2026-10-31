@@ -301,6 +301,7 @@ export async function clearAllUserData(): Promise<void> {
     '@pacecue/last_sync',
     '@pacecue/deleted_workout_ids',
     '@pacecue/deleted_history_ids',
+    '@pacecue/plan_cache',
   ]);
 }
 

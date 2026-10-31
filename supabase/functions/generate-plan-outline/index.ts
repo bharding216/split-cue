@@ -48,10 +48,17 @@ interface RequestBody {
   goal_time_minutes?: number | null;
   goal_type?: 'race' | 'pace_target';
   goal_pace?: number | null;
+  /** Client-side estimate of current pace, e.g. "About 11:40/mi for 5K (from your recent runs)". */
+  pace_baseline?: string | null;
   start_date: string;
   days_per_week: number;
   days_per_week_min?: number | null;
   history_summary?: string | null;
+}
+
+function formatPaceMi(pace: number): string {
+  const total = Math.round(pace * 60);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}/mi`;
 }
 
 // ── Plan dimensions ──────────────────────────────────────────
@@ -85,16 +92,17 @@ function buildSystemPrompt(body: RequestBody, dims: PlanDimensions): string {
     : body.race_type.replace('_', ' ');
 
   if (isPaceTarget) {
-    const paceStr = body.goal_pace
-      ? `${Math.floor(body.goal_pace)}:${String(Math.round((body.goal_pace - Math.floor(body.goal_pace)) * 60)).padStart(2, '0')}/mi`
-      : 'a comfortable target pace';
+    const paceStr = body.goal_pace ? formatPaceMi(body.goal_pace) : 'a realistic target pace that YOU choose';
     const distanceContext = body.race_type !== 'custom'
       ? ` for ${body.race_type.replace('_', ' ')} distance`
+      : '';
+    const coachPicks = !body.goal_pace
+      ? `\n\nThe runner did not choose a target pace — you must pick one. Base it on their profile, history, and current pace estimate; if there is little data, be conservative for their experience level. The FIRST training day of week 1 must be ["Baseline Run", "Comfortable continuous run to measure your starting pace"].`
       : '';
 
     sections.push(`You are SplitCue's AI running coach creating a ${dims.totalWeeks}-week pace development plan OUTLINE.
 
-The runner wants to comfortably hold ${paceStr}${distanceContext} by ${body.race_date}.
+The runner wants to comfortably hold ${paceStr}${distanceContext} by ${body.race_date}.${coachPicks}
 
 This is NOT a race plan. There is no race at the end. Focus on:
 - Progressive pace development through tempo, threshold, and interval work
@@ -156,10 +164,11 @@ OUTLINE only — no detailed workout structures. Just day labels and short coach
   // Race / goal details
   const goalParts: string[] = [];
   if (isPaceTarget) {
-    const paceStr = body.goal_pace
-      ? `${Math.floor(body.goal_pace)}:${String(Math.round((body.goal_pace - Math.floor(body.goal_pace)) * 60)).padStart(2, '0')}/mi`
-      : 'comfortable pace';
+    const paceStr = body.goal_pace ? formatPaceMi(body.goal_pace) : 'coach to choose';
     goalParts.push(`Target pace: ${paceStr} by ${body.race_date}`);
+    if (body.pace_baseline) {
+      goalParts.push(`Current pace estimate: ${body.pace_baseline}`);
+    }
     if (body.race_type !== 'custom') {
       goalParts.push(`Distance context: ${body.race_type.replace('_', ' ')}`);
     }
@@ -191,11 +200,13 @@ OUTLINE only — no detailed workout structures. Just day labels and short coach
   }
 
   // Compact output schema — dates are assigned server-side, not by the model
+  const coachPicksPace = isPaceTarget && !body.goal_pace;
+
   sections.push(`## Output — COMPACT FORMAT (dates assigned automatically)
 
 JSON only, no markdown fences:
 
-{
+{${coachPicksPace ? `\n  "goal_pace": number (the target pace you chose, decimal min/mile, e.g. 10.5 = 10:30/mi),` : ''}
   "weeks": [
     {
       "theme": "phase name, e.g. Base Building 1",
@@ -318,15 +329,22 @@ Deno.serve(async (req) => {
     // Expand compact tuples into dated day objects (same shape the client expects)
     const weeks = expandCompactOutline(compact.weeks, body.start_date);
 
-    // Build title
     const isPaceGoal = body.goal_type === 'pace_target';
+
+    let suggestedGoalPace: number | null = null;
+    if (isPaceGoal && !body.goal_pace) {
+      const raw = Number(compact.goal_pace);
+      if (isFinite(raw) && raw >= 4 && raw <= 20) {
+        suggestedGoalPace = Math.round(raw * 12) / 12; // nearest 5 seconds
+      }
+    }
+
+    // Build title
     const targetMonth = new Date(body.race_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     let title: string;
     if (isPaceGoal) {
-      const paceStr = body.goal_pace
-        ? `${Math.floor(body.goal_pace)}:${String(Math.round((body.goal_pace - Math.floor(body.goal_pace)) * 60)).padStart(2, '0')}/mi`
-        : 'Pace';
-      title = `${paceStr} Goal - ${targetMonth}`;
+      const pace = body.goal_pace ?? suggestedGoalPace;
+      title = `${pace ? formatPaceMi(pace) : 'Pace'} Goal - ${targetMonth}`;
     } else {
       const raceLabel = body.race_type === 'custom'
         ? 'Custom Race'
@@ -335,7 +353,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ title, weeks }),
+      JSON.stringify({ title, weeks, suggested_goal_pace: suggestedGoalPace }),
       { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   } catch (err: unknown) {

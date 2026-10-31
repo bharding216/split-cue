@@ -98,6 +98,7 @@ export function SubscriptionProvider({
         setRcInitialized(true);
       } catch (err) {
         console.warn('RevenueCat init failed:', err);
+        setOfferingsLoading(false);
       }
     };
 
@@ -121,12 +122,12 @@ export function SubscriptionProvider({
   // ─── Load offerings ───────────────────────────────────────
 
   useEffect(() => {
-    if (!rcInitialized) return;
-
-    if (__DEV__) {
+    // RevenueCat is never initialized in dev or without a key, so there's nothing to wait for
+    if (__DEV__ || !REVENUE_CAT_KEY) {
       setOfferingsLoading(false);
       return;
     }
+    if (!rcInitialized) return;
 
     const loadOfferings = async () => {
       try {

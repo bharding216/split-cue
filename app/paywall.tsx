@@ -235,23 +235,23 @@ export default function PaywallScreen() {
       {/* Usage context */}
       {tier === 'free' && (
         <View style={styles.usageCard}>
-          <Text style={styles.usageText}>
-            AI training plans created: {planCount} / 1
-          </Text>
-          <View style={styles.usageBar}>
-            <View
-              style={[
-                styles.usageBarFill,
-                { width: `${Math.min(planCount * 100, 100)}%` },
-                planCount >= 1 && styles.usageBarFull,
-              ]}
-            />
-          </View>
-          {planCount >= 1 && (
-            <Text style={styles.usageLimitText}>
-              Free plan used — upgrade for unlimited AI training plans.
+          <Ionicons
+            name={planCount >= 1 ? 'checkmark-circle' : 'gift-outline'}
+            size={22}
+            color={Colors.primary}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.usageTitle}>
+              {planCount >= 1
+                ? "You've used your free AI training plan"
+                : 'Your first AI training plan is on us'}
             </Text>
-          )}
+            <Text style={styles.usageText}>
+              {planCount >= 1
+                ? 'Go Pro to build a plan for every goal ahead, each one shaped around your schedule and adapting as you train.'
+                : 'Build it free. Go Pro whenever you want plans for every goal ahead.'}
+            </Text>
+          </View>
         </View>
       )}
 
@@ -457,34 +457,24 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   usageCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
   },
+  usageTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
   usageText: {
     fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-  },
-  usageBar: {
-    height: 6,
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  usageBarFill: {
-    height: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: 3,
-  },
-  usageBarFull: {
-    backgroundColor: Colors.danger,
-  },
-  usageLimitText: {
-    fontSize: FontSize.xs,
-    color: Colors.danger,
-    marginTop: Spacing.xs,
+    color: Colors.textSecondary,
+    lineHeight: 20,
   },
   comparisonContainer: {
     flexDirection: 'row',

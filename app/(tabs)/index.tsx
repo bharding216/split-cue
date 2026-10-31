@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
@@ -445,6 +446,33 @@ function DragRow({
   );
 }
 
+/** Grows from zero height and fades in when `animate` is true at mount; otherwise renders children as-is. */
+function RevealOnMount({ animate, children }: { animate: boolean; children: React.ReactNode }) {
+  const [shouldAnimate] = useState(animate);
+  const height = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const animatedStyle = useAnimatedStyle(() => ({ height: height.value, opacity: opacity.value }));
+
+  if (!shouldAnimate) return <>{children}</>;
+
+  return (
+    <Animated.View style={[styles.reveal, animatedStyle]}>
+      <View
+        style={styles.revealContent}
+        onLayout={(event) => {
+          height.value = withTiming(event.nativeEvent.layout.height, {
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+          });
+          opacity.value = withTiming(1, { duration: 300 });
+        }}
+      >
+        {children}
+      </View>
+    </Animated.View>
+  );
+}
+
 const CATEGORIES: CategoryConfig[] = [
   {
     key: 'easy',
@@ -536,6 +564,12 @@ export default function HomeScreen() {
   const [workouts, setWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
   const [loading, setLoading] = useState(true);
+  // Cards that mount after the screen's first paint animate in instead of popping.
+  const [revealTodayCard, setRevealTodayCard] = useState(false);
+
+  useEffect(() => {
+    if (!loading) setRevealTodayCard(true);
+  }, [loading]);
 
   const todayEntry = dayEntries[todayDateKey()];
   const todayPlanWorkoutRaw = todayEntry?.planWorkouts?.[0] ?? null;
@@ -654,18 +688,20 @@ export default function HomeScreen() {
 
         {/* Today's Planned Workout */}
         {todayPlanWorkout && (
-          <TodayWorkoutCard
-            planWorkout={todayPlanWorkout}
-            onView={() => {
-              router.push(
-                {
-                  pathname: '/(tabs)/training/workout-detail' as any,
-                  params: { workoutId: todayPlanWorkout.id },
-                },
-                { withAnchor: true },
-              );
-            }}
-          />
+          <RevealOnMount animate={revealTodayCard}>
+            <TodayWorkoutCard
+              planWorkout={todayPlanWorkout}
+              onView={() => {
+                router.push(
+                  {
+                    pathname: '/(tabs)/training/workout-detail' as any,
+                    params: { workoutId: todayPlanWorkout.id },
+                  },
+                  { withAnchor: true },
+                );
+              }}
+            />
+          </RevealOnMount>
         )}
 
         {/* Quick Start */}
@@ -838,6 +874,15 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
     marginTop: 1,
+  },
+  reveal: {
+    overflow: 'hidden',
+  },
+  revealContent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   // ── Quick Start ──
   quickStartSection: {

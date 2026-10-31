@@ -12,6 +12,7 @@ import React, {
   useEffect,
   useRef,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import type { TrainingPlan, PlanWorkout } from '../types/database';
 import type { CompletedWorkout, WorkoutDefinition } from '../workout/workoutTypes';
@@ -77,6 +78,26 @@ const TrainingPlanContext = createContext<TrainingPlanContextType | null>(null);
 
 // ── Helpers ──────────────────────────────────────────────────
 
+const PLAN_CACHE_KEY = '@pacecue/plan_cache';
+
+interface PlanCache {
+  userId: string;
+  plans: TrainingPlan[];
+  archivedPlans: TrainingPlan[];
+  planWorkouts: PlanWorkout[];
+}
+
+async function readPlanCache(userId: string): Promise<PlanCache | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PLAN_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as PlanCache;
+    return cache.userId === userId ? cache : null;
+  } catch {
+    return null;
+  }
+}
+
 function toDateKey(epoch: number): string {
   const d = new Date(epoch);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -130,6 +151,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const isGeneratingDetails = useRef(false);
   /** Incremented on each refresh so stale background tasks can detect they're outdated. */
   const refreshEpoch = useRef(0);
+  /** User whose plan data is currently in state; only that user's data may be written to the cache. */
+  const stateOwnerId = useRef<string | null>(null);
 
   // Primary plan: first real training plan (non-custom, or custom with outline)
   const plan = plans.find((p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0)) ?? plans[0] ?? null;
@@ -138,29 +161,54 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     const epoch = ++refreshEpoch.current;
     if (!hasLoadedOnce.current) setLoading(true);
     try {
-      const historyData = await loadHistory();
-      setHistory(historyData);
-
       if (!user) {
+        stateOwnerId.current = null;
+        setHistory(await loadHistory());
         setPlans([]);
+        setArchivedPlans([]);
         setPlanWorkouts([]);
         setLoading(false);
         return;
       }
 
-      // Load all active plans + archived plans
-      const [activePlans, archived] = await Promise.all([
+      const remote = Promise.all([
         loadActivePlans(user.id),
         loadArchivedPlans(user.id),
+        loadUserPlanWorkouts(user.id),
       ]);
+      // Superseded refreshes return before awaiting `remote`.
+      remote.catch(() => {});
+
+      // Show the last-known plan immediately while the network request is in flight.
+      if (stateOwnerId.current !== user.id) {
+        const [historyData, cached] = await Promise.all([loadHistory(), readPlanCache(user.id)]);
+        if (refreshEpoch.current !== epoch) return;
+        setHistory(historyData);
+        if (cached) {
+          setPlans(cached.plans);
+          setArchivedPlans(cached.archivedPlans);
+          setPlanWorkouts(cached.planWorkouts);
+          stateOwnerId.current = user.id;
+          setLoading(false);
+        } else {
+          setPlans([]);
+          setArchivedPlans([]);
+          setPlanWorkouts([]);
+        }
+      } else {
+        setHistory(await loadHistory());
+      }
+
+      const [activePlans, archived, allWorkouts] = await remote;
+      if (refreshEpoch.current !== epoch) return;
       setPlans(activePlans);
       setArchivedPlans(archived);
 
-      // Load plan workouts only for active plans
+      // Keep plan workouts only for active plans
       const activePlanIds = new Set(activePlans.map((p) => p.id));
-      const allWorkouts = await loadUserPlanWorkouts(user.id);
       const activeWorkouts = allWorkouts.filter((w) => activePlanIds.has(w.plan_id));
       setPlanWorkouts(activeWorkouts);
+      stateOwnerId.current = user.id;
 
       // Auto-fill upcoming workout details for each real training plan
       // (non-custom, or custom with outline). Only start if no other generation is in flight.
@@ -197,14 +245,22 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     } catch (err) {
       console.warn('Failed to load training data:', err);
     } finally {
-      setLoading(false);
-      hasLoadedOnce.current = true;
+      if (refreshEpoch.current === epoch) {
+        setLoading(false);
+        hasLoadedOnce.current = true;
+      }
     }
   }, [user?.id]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!user || stateOwnerId.current !== user.id) return;
+    const cache: PlanCache = { userId: user.id, plans, archivedPlans, planWorkouts };
+    AsyncStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
+  }, [user?.id, plans, archivedPlans, planWorkouts]);
 
   const dayEntries = buildDayEntries(planWorkouts, history, plan?.id ?? null);
 

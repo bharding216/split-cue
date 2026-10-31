@@ -27,8 +27,24 @@ import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { generatePlanOutline, savePlanOutline, generateWorkoutDetailsWithProfile } from '../../../src/ai/planService';
 import { track } from '../../../src/analytics/track';
-import { loadHistory } from '../../../src/workout/workoutStorage';
+import { loadHistory, loadSettings } from '../../../src/workout/workoutStorage';
 import { buildHistorySummary, serializeHistorySummary } from '../../../src/ai/historySummary';
+import {
+  MILE_ESTIMATE_OPTIONS,
+  assessGoalPace,
+  estimateCurrentPace,
+  formatPace,
+  paceFromUnit,
+  paceToUnit,
+  paceUnitSuffix,
+  roundPace,
+  splitPace,
+  suggestGoalTiers,
+  weeksBetween,
+  type MileEstimate,
+} from '../../../src/workout/goalPaceSuggestions';
+import type { CompletedWorkout } from '../../../src/workout/workoutTypes';
+import type { PaceUnit } from '../../../src/pace/paceTypes';
 import type { RaceType, GoalType, RunningProfile, RunningPreference } from '../../../src/types/database';
 import { normalizeDayPreferences } from '../../../src/types/database';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
@@ -82,7 +98,7 @@ export default function PlanSetupScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { plans, refresh, archivePlan } = useTrainingPlan();
-  const { tier, canGeneratePlan, planCount } = useSubscription();
+  const { canGeneratePlan, refreshSubscription } = useSubscription();
   const mountedRef = useRef(true);
   const draftLoaded = useRef(false);
 
@@ -96,6 +112,10 @@ export default function PlanSetupScreen() {
   const [goalPaceMin, setGoalPaceMin] = useState('');
   const [goalPaceSec, setGoalPaceSec] = useState('');
   const [paceDistanceContext, setPaceDistanceContext] = useState<RaceType | 'any'>('any');
+  const [coachPicksPace, setCoachPicksPace] = useState(false);
+  const [mileEstimate, setMileEstimate] = useState<MileEstimate | null>(null);
+  const [paceUnit, setPaceUnit] = useState<PaceUnit>('minPerMile');
+  const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [raceDate, setRaceDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() + 4);
@@ -150,15 +170,33 @@ export default function PlanSetupScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(DRAFT_KEY);
+        const [raw, settings] = await Promise.all([
+          AsyncStorage.getItem(DRAFT_KEY),
+          loadSettings().catch(() => null),
+        ]);
+        const unit: PaceUnit = settings?.paceUnit ?? 'minPerMile';
+        setPaceUnit(unit);
         if (!raw) { draftLoaded.current = true; return; }
         const draft = JSON.parse(raw);
         if (draft.goalType) setGoalType(draft.goalType);
         if (draft.raceType) setRaceType(draft.raceType);
         if (draft.customDistance != null) setCustomDistance(draft.customDistance);
         if (draft.customDistanceUnit) setCustomDistanceUnit(draft.customDistanceUnit);
-        if (draft.goalPaceMin != null) setGoalPaceMin(draft.goalPaceMin);
-        if (draft.goalPaceSec != null) setGoalPaceSec(draft.goalPaceSec);
+        if (draft.goalPaceMin != null || draft.goalPaceSec != null) {
+          const draftUnit: PaceUnit = draft.goalPaceUnit ?? 'minPerMile';
+          const min = parseInt(draft.goalPaceMin || '0', 10);
+          const sec = parseInt(draft.goalPaceSec || '0', 10);
+          if (draftUnit !== unit && min > 0) {
+            const converted = splitPace(paceToUnit(paceFromUnit(min + sec / 60, draftUnit), unit));
+            setGoalPaceMin(String(converted.min));
+            setGoalPaceSec(String(converted.sec).padStart(2, '0'));
+          } else {
+            setGoalPaceMin(draft.goalPaceMin ?? '');
+            setGoalPaceSec(draft.goalPaceSec ?? '');
+          }
+        }
+        if (draft.coachPicksPace != null) setCoachPicksPace(draft.coachPicksPace);
+        if (draft.mileEstimate) setMileEstimate(draft.mileEstimate);
         if (draft.paceDistanceContext) setPaceDistanceContext(draft.paceDistanceContext);
         if (draft.raceDate) setRaceDate(new Date(draft.raceDate));
         if (draft.goalTimeHours != null) setGoalTimeHours(draft.goalTimeHours);
@@ -228,6 +266,9 @@ export default function PlanSetupScreen() {
         customDistanceUnit,
         goalPaceMin,
         goalPaceSec,
+        goalPaceUnit: paceUnit,
+        coachPicksPace,
+        mileEstimate,
         paceDistanceContext,
         raceDate: raceDate.toISOString(),
         goalTimeHours,
@@ -237,7 +278,7 @@ export default function PlanSetupScreen() {
       })).catch(() => {});
     }, 300);
     return () => clearTimeout(timer);
-  }, [goalType, raceType, customDistance, customDistanceUnit, goalPaceMin, goalPaceSec, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate]);
+  }, [goalType, raceType, customDistance, customDistanceUnit, goalPaceMin, goalPaceSec, paceUnit, coachPicksPace, mileEstimate, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate]);
 
   // Load running profile
   const fetchProfile = useCallback(async () => {
@@ -280,6 +321,67 @@ export default function PlanSetupScreen() {
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
+  useEffect(() => {
+    loadHistory().then((h) => { if (mountedRef.current) setHistory(h); }).catch(() => {});
+  }, []);
+
+  // ── Pace goal suggestions ──────────────────────────────────
+  const paceSuffix = paceUnitSuffix(paceUnit);
+  const toDisplayPace = useCallback((p: number) => roundPace(paceToUnit(p, paceUnit)), [paceUnit]);
+  const planWeeks = weeksBetween(startDate, raceDate);
+
+  /** Typed target pace in min/mi, or null if blank. */
+  const typedPace = useMemo(() => {
+    const m = parseInt(goalPaceMin || '0', 10);
+    const s = parseInt(goalPaceSec || '0', 10);
+    return m > 0 ? paceFromUnit(m + s / 60, paceUnit) : null;
+  }, [goalPaceMin, goalPaceSec, paceUnit]);
+
+  const paceBaseline = useMemo(
+    () => estimateCurrentPace(profile, history, paceDistanceContext, mileEstimate),
+    [profile, history, paceDistanceContext, mileEstimate],
+  );
+  const hasDataBaseline = !!paceBaseline && paceBaseline.source !== 'mile_estimate';
+
+  const goalTiers = useMemo(
+    () => (paceBaseline ? suggestGoalTiers(paceBaseline, planWeeks, profile?.experience_level) : []),
+    [paceBaseline, planWeeks, profile?.experience_level],
+  );
+  const realisticTier = goalTiers.find((t) => t.id === 'realistic');
+
+  const typedPaceLabel = typedPace != null ? formatPace(roundPace(paceToUnit(typedPace, paceUnit), 1)) : null;
+  const selectedTierId = goalTiers.find((t) => formatPace(toDisplayPace(t.pace)) === typedPaceLabel)?.id ?? null;
+
+  const paceAssessment =
+    goalType === 'pace_target' && !coachPicksPace && typedPace != null && paceBaseline
+      ? assessGoalPace(typedPace, paceBaseline, planWeeks, profile?.experience_level)
+      : 'ok';
+
+  const paceDistanceLabel = paceDistanceContext === 'any'
+    ? '5K'
+    : RACE_OPTIONS.find((o) => o.value === paceDistanceContext)?.label ?? '5K';
+
+  const applyGoalPace = useCallback((paceMinPerMile: number) => {
+    const { min, sec } = splitPace(toDisplayPace(paceMinPerMile));
+    setGoalPaceMin(String(min));
+    setGoalPaceSec(String(sec).padStart(2, '0'));
+    setCoachPicksPace(false);
+  }, [toDisplayPace]);
+
+  const validatePaceGoal = useCallback((): boolean => {
+    if (goalType !== 'pace_target' || coachPicksPace) return true;
+    const sec = parseInt(goalPaceSec || '0', 10);
+    if (typedPace == null) {
+      Alert.alert('Missing Pace', 'Enter a target pace, pick a suggestion, or let your coach choose one for you.');
+      return false;
+    }
+    if (sec >= 60) {
+      Alert.alert('Invalid Pace', 'Seconds must be between 00 and 59.');
+      return false;
+    }
+    return true;
+  }, [goalType, coachPicksPace, goalPaceSec, typedPace]);
+
   const handleGenerate = useCallback(async () => {
     if (!user) {
       router.push('/login' as any);
@@ -299,21 +401,19 @@ export default function PlanSetupScreen() {
       }
     }
 
-    if (goalType === 'pace_target') {
-      const pMin = parseInt(goalPaceMin || '0', 10);
-      if (pMin <= 0) {
-        Alert.alert('Missing Pace', 'Please enter a target pace.');
-        return;
-      }
-    }
+    if (!validatePaceGoal()) return;
 
     const goalTimeTotal =
       (parseInt(goalTimeHours || '0', 10) * 60) + parseInt(goalTimeMinutes || '0', 10);
 
-    // Compute goal pace as decimal min/mile (e.g. 8:30 → 8.5)
-    const goalPaceDecimal = goalType === 'pace_target'
-      ? parseInt(goalPaceMin || '0', 10) + parseInt(goalPaceSec || '0', 10) / 60
-      : undefined;
+    // Goal pace as decimal min/mile (e.g. 8:30 → 8.5); null lets the coach choose
+    const goalPaceDecimal = goalType === 'pace_target' && !coachPicksPace ? typedPace : null;
+    const paceSelection = goalType !== 'pace_target'
+      ? undefined
+      : coachPicksPace ? 'coach' : selectedTierId ? `suggested_${selectedTierId}` : 'typed';
+    const paceBaselineNote = goalType === 'pace_target' && paceBaseline
+      ? `About ${formatPace(paceBaseline.pace)}/mi for ${paceDistanceLabel} (estimated from ${paceBaseline.detail})`
+      : null;
 
     // For pace goals, use the distance context (or 'custom' for "any distance")
     const effectiveRaceType: RaceType = goalType === 'pace_target'
@@ -415,7 +515,8 @@ export default function PlanSetupScreen() {
         raceDate: raceDateStr,
         goalTimeMinutes: goalType === 'race' && goalTimeTotal > 0 ? goalTimeTotal : null,
         goalType,
-        goalPace: goalPaceDecimal ?? null,
+        goalPace: goalPaceDecimal,
+        paceBaseline: paceBaselineNote,
         startDate: startDateStr,
         daysPerWeek: Math.max(...selectedDays),
         daysPerWeekMin: selectedDays.size > 1 ? Math.min(...selectedDays) : undefined,
@@ -437,12 +538,13 @@ export default function PlanSetupScreen() {
         goal_type: goalType,
         weeks: outline.weeks.length,
         days_per_week: input.daysPerWeek,
+        ...(paceSelection ? { pace_selection: paceSelection, pace_baseline_source: paceBaseline?.source ?? 'none' } : {}),
       });
 
       if (!mountedRef.current) return;
 
       setGenPhase('done');
-      await refresh();
+      await Promise.all([refresh(), refreshSubscription()]);
       AsyncStorage.removeItem(DRAFT_KEY).catch(() => {});
 
       // Navigate back to training page so the setup screen auto-closes
@@ -471,7 +573,7 @@ export default function PlanSetupScreen() {
         Alert.alert('Error', err.message || 'Failed to generate plan. Please try again.');
       }
     }
-  }, [user, canGeneratePlan, plans, archivePlan, goalType, raceType, customDistance, customDistanceUnit, goalPaceMin, goalPaceSec, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate, profile, goals, preferences, limitations, refresh, router]);
+  }, [user, canGeneratePlan, plans, archivePlan, goalType, raceType, customDistance, customDistanceUnit, validatePaceGoal, coachPicksPace, typedPace, selectedTierId, paceBaseline, paceDistanceLabel, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate, profile, goals, preferences, limitations, refresh, refreshSubscription, router]);
 
   if (!user) {
     return (
@@ -600,7 +702,7 @@ export default function PlanSetupScreen() {
               onPress={() => setGoalType('race')}
               activeOpacity={0.7}
             >
-              <Ionicons name="flag" size={22} color={goalType === 'race' ? Colors.black : Colors.textSecondary} />
+              <Ionicons name="flag" size={22} color={goalType === 'race' ? Colors.primary : Colors.textSecondary} />
               <Text style={[styles.goalTypeLabel, goalType === 'race' && styles.goalTypeLabelActive]}>Race</Text>
               <Text style={[styles.goalTypeDesc, goalType === 'race' && styles.goalTypeDescActive]}>Train for an event</Text>
             </TouchableOpacity>
@@ -609,7 +711,7 @@ export default function PlanSetupScreen() {
               onPress={() => setGoalType('pace_target')}
               activeOpacity={0.7}
             >
-              <Ionicons name="speedometer" size={22} color={goalType === 'pace_target' ? Colors.black : Colors.textSecondary} />
+              <Ionicons name="speedometer" size={22} color={goalType === 'pace_target' ? Colors.primary : Colors.textSecondary} />
               <Text style={[styles.goalTypeLabel, goalType === 'pace_target' && styles.goalTypeLabelActive]}>Pace Goal</Text>
               <Text style={[styles.goalTypeDesc, goalType === 'pace_target' && styles.goalTypeDescActive]}>Hit a target pace</Text>
             </TouchableOpacity>
@@ -675,35 +777,6 @@ export default function PlanSetupScreen() {
           {/* Pace goal inputs (shown for pace_target goal type) */}
           {goalType === 'pace_target' && (
             <>
-              <Text style={[styles.sectionTitle, { marginTop: Spacing.lg }]}>Target pace</Text>
-              <View style={styles.goalTimeRow}>
-                <View style={styles.goalTimeInput}>
-                  <TextInput
-                    style={styles.goalTimeField}
-                    value={goalPaceMin}
-                    onChangeText={setGoalPaceMin}
-                    placeholder="8"
-                    placeholderTextColor={Colors.textMuted}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                  />
-                  <Text style={styles.goalTimeLabel}>min</Text>
-                </View>
-                <Text style={{ color: Colors.textSecondary, fontSize: FontSize.lg, marginHorizontal: 2 }}>:</Text>
-                <View style={styles.goalTimeInput}>
-                  <TextInput
-                    style={styles.goalTimeField}
-                    value={goalPaceSec}
-                    onChangeText={setGoalPaceSec}
-                    placeholder="00"
-                    placeholderTextColor={Colors.textMuted}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                  />
-                  <Text style={styles.goalTimeLabel}>/mi</Text>
-                </View>
-              </View>
-
               <Text style={[styles.sectionTitle, { marginTop: Spacing.lg }]}>For what distance?</Text>
               <View style={styles.chipRow}>
                 {[
@@ -725,12 +798,168 @@ export default function PlanSetupScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={[styles.sectionTitle, { marginTop: Spacing.lg, marginBottom: 2 }]}>Target pace</Text>
+              <Text style={styles.helperText}>
+                The pace you'd like to hold comfortably for {paceDistanceContext === 'any' ? 'your runs' : `a ${paceDistanceLabel}`} — not your sprint speed.
+              </Text>
+
+              {profileLoading ? (
+                <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: Spacing.md }} />
+              ) : (
+                <>
+                  {/* No data: ask a simple question to estimate current pace */}
+                  {!hasDataBaseline && (
+                    <>
+                      <Text style={styles.questionText}>About how long does it take you to run 1 mile?</Text>
+                      <View style={styles.chipRow}>
+                        {MILE_ESTIMATE_OPTIONS.map((opt) => (
+                          <TouchableOpacity
+                            key={opt.value}
+                            style={[styles.smallChip, mileEstimate === opt.value && styles.raceChipActive]}
+                            onPress={() => setMileEstimate(opt.value)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.smallChipLabel, mileEstimate === opt.value && styles.raceChipLabelActive]}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </>
+                  )}
+
+                  {mileEstimate === 'cant_yet' && !hasDataBaseline && (
+                    <View style={[styles.effortHint, { alignItems: 'flex-start', marginTop: Spacing.md }]}>
+                      <Ionicons name="walk-outline" size={18} color={Colors.accent} />
+                      <View style={{ flex: 1, gap: Spacing.sm }}>
+                        <Text style={styles.effortHintText}>
+                          No problem! A pace goal works best once you can run a mile. A beginner 5K plan builds you up with run/walk intervals, or your coach can pick a gentle starting target.
+                        </Text>
+                        <View style={styles.inlineBtnRow}>
+                          <TouchableOpacity
+                            style={styles.inlineBtn}
+                            onPress={() => { setGoalType('race'); setRaceType('5k'); }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.inlineBtnText}>Train for a 5K instead</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.inlineBtn}
+                            onPress={() => setCoachPicksPace(true)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.inlineBtnText}>Let my coach pick</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Suggested goals */}
+                  {paceBaseline && goalTiers.length > 0 && (
+                    <>
+                      <Text style={styles.suggestionText}>
+                        Based on {paceBaseline.detail}, you're at about{' '}
+                        <Text style={styles.suggestionPace}>{formatPace(toDisplayPace(paceBaseline.pace))}{paceSuffix}</Text>
+                        {' '}for {paceDistanceContext === 'any' ? 'a 5K' : `a ${paceDistanceLabel}`} now. Goals for ~{planWeeks} weeks of training:
+                      </Text>
+                      <View style={styles.tierRow}>
+                        {goalTiers.map((tier) => {
+                          const active = !coachPicksPace && selectedTierId === tier.id;
+                          return (
+                            <TouchableOpacity
+                              key={tier.id}
+                              style={[styles.tierChip, active && styles.raceChipActive]}
+                              onPress={() => applyGoalPace(tier.pace)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.tierLabel, active && styles.raceChipLabelActive]}>{tier.label}</Text>
+                              <Text style={[styles.tierPace, active && styles.raceChipLabelActive]}>
+                                {formatPace(toDisplayPace(tier.pace))}
+                              </Text>
+                              <Text style={styles.tierPct}>
+                                {Math.max(1, Math.round(tier.improvementPct * 100))}% faster
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Manual entry */}
+              {!coachPicksPace && (
+                <>
+                  {goalTiers.length > 0 && <Text style={styles.questionText}>Or enter your own</Text>}
+                  <View style={[styles.goalTimeRow, goalTiers.length === 0 && { marginTop: Spacing.md }]}>
+                    <View style={styles.goalTimeInput}>
+                      <TextInput
+                        style={styles.goalTimeField}
+                        value={goalPaceMin}
+                        onChangeText={setGoalPaceMin}
+                        placeholder={realisticTier ? String(splitPace(toDisplayPace(realisticTier.pace)).min) : '--'}
+                        placeholderTextColor={Colors.textMuted}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                      <Text style={styles.goalTimeLabel}>min</Text>
+                    </View>
+                    <Text style={{ color: Colors.textSecondary, fontSize: FontSize.lg, marginHorizontal: 2 }}>:</Text>
+                    <View style={styles.goalTimeInput}>
+                      <TextInput
+                        style={styles.goalTimeField}
+                        value={goalPaceSec}
+                        onChangeText={setGoalPaceSec}
+                        placeholder={realisticTier ? String(splitPace(toDisplayPace(realisticTier.pace)).sec).padStart(2, '0') : '00'}
+                        placeholderTextColor={Colors.textMuted}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                      <Text style={styles.goalTimeLabel}>{paceSuffix}</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {paceAssessment !== 'ok' && paceBaseline && (
+                <PaceGoalWarning
+                  assessment={paceAssessment}
+                  currentPace={`${formatPace(toDisplayPace(paceBaseline.pace))}${paceSuffix}`}
+                  weeks={planWeeks}
+                  realisticPace={realisticTier ? `${formatPace(toDisplayPace(realisticTier.pace))}${paceSuffix}` : null}
+                  onUseRealistic={realisticTier ? () => applyGoalPace(realisticTier.pace) : undefined}
+                />
+              )}
+
+              {/* Let the coach decide */}
+              <TouchableOpacity
+                style={[styles.coachToggle, coachPicksPace && styles.coachToggleActive]}
+                onPress={() => setCoachPicksPace((v) => !v)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={coachPicksPace ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={coachPicksPace ? Colors.primary : Colors.textSecondary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.coachToggleTitle, coachPicksPace && { color: Colors.primary }]}>
+                    Not sure? Let my coach pick
+                  </Text>
+                  <Text style={styles.coachToggleDesc}>
+                    Week 1 starts with an easy baseline run, and your coach sets a realistic target for you.
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </>
           )}
 
           <TouchableOpacity
             style={[styles.continueBtn, { marginTop: Spacing.lg }]}
-            onPress={() => setStep(2)}
+            onPress={() => { if (validatePaceGoal()) setStep(2); }}
             activeOpacity={0.8}
           >
             <Text style={styles.continueBtnText}>Continue</Text>
@@ -939,7 +1168,7 @@ export default function PlanSetupScreen() {
                 <View style={styles.reviewRow}>
                   <Text style={styles.reviewLabel}>Target Pace</Text>
                   <Text style={styles.reviewValue}>
-                    {goalPaceMin || '0'}:{(goalPaceSec || '0').padStart(2, '0')}/mi
+                    {coachPicksPace ? 'Coach will choose' : `${typedPaceLabel ?? '--:--'}${paceSuffix}`}
                   </Text>
                 </View>
                 {paceDistanceContext !== 'any' && (
@@ -984,6 +1213,25 @@ export default function PlanSetupScreen() {
               </View>
             )}
           </View>
+
+          {goalType === 'pace_target' && coachPicksPace && (
+            <View style={styles.effortHint}>
+              <Ionicons name="analytics-outline" size={18} color={Colors.accent} />
+              <Text style={styles.effortHintText}>
+                Your plan starts with a baseline run so your coach can set a realistic target pace.
+              </Text>
+            </View>
+          )}
+
+          {paceAssessment !== 'ok' && paceBaseline && (
+            <PaceGoalWarning
+              assessment={paceAssessment}
+              currentPace={`${formatPace(toDisplayPace(paceBaseline.pace))}${paceSuffix}`}
+              weeks={planWeeks}
+              realisticPace={realisticTier ? `${formatPace(toDisplayPace(realisticTier.pace))}${paceSuffix}` : null}
+              onUseRealistic={realisticTier ? () => applyGoalPace(realisticTier.pace) : undefined}
+            />
+          )}
 
           {/* Profile summary — opens sheet on tap */}
           <TouchableOpacity
@@ -1075,6 +1323,38 @@ export default function PlanSetupScreen() {
         />
       )}
     </ScrollView>
+  );
+}
+
+function PaceGoalWarning({
+  assessment,
+  currentPace,
+  weeks,
+  realisticPace,
+  onUseRealistic,
+}: {
+  assessment: 'aggressive' | 'already_there';
+  currentPace: string;
+  weeks: number;
+  realisticPace: string | null;
+  onUseRealistic?: () => void;
+}) {
+  const message = assessment === 'aggressive'
+    ? `That's a big jump from your current ~${currentPace} in ${weeks} weeks, which raises injury and burnout risk.`
+    : `You may already be at this pace (~${currentPace}). A slightly faster goal will give your training more direction.`;
+
+  return (
+    <View style={[styles.overlapWarning, { alignItems: 'flex-start', marginTop: Spacing.md, marginBottom: 0 }]}>
+      <Ionicons name="alert-circle" size={18} color={Colors.warning} />
+      <View style={{ flex: 1, gap: Spacing.sm }}>
+        <Text style={styles.overlapWarningText}>{message}</Text>
+        {realisticPace && onUseRealistic && (
+          <TouchableOpacity style={styles.inlineBtn} onPress={onUseRealistic} activeOpacity={0.7}>
+            <Text style={styles.inlineBtnText}>Use realistic goal ({realisticPace})</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -1221,6 +1501,118 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 1,
+  },
+
+  // Pace goal
+  helperText: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+  },
+  questionText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  smallChip: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm + 4,
+    borderWidth: 2,
+    borderColor: Colors.surfaceLight,
+  },
+  smallChipLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  suggestionText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  suggestionPace: {
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  tierRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  tierChip: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    borderWidth: 2,
+    borderColor: Colors.surfaceLight,
+    alignItems: 'center',
+    gap: 2,
+  },
+  tierLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tierPace: {
+    fontSize: FontSize.lg,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  tierPct: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+  },
+  coachToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.lg,
+    borderWidth: 2,
+    borderColor: Colors.surfaceLight,
+  },
+  coachToggleActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
+  },
+  coachToggleTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  coachToggleDesc: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  inlineBtnRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  inlineBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm + 2,
+  },
+  inlineBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
 
   // Custom distance

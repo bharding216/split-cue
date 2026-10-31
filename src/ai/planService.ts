@@ -44,6 +44,8 @@ export interface PlanGenerationInput {
   goalType?: GoalType;
   /** Target pace in min/mile decimal (e.g. 8.5 = 8:30/mi). Only for pace_target plans. */
   goalPace?: number | null;
+  /** Human-readable current pace estimate passed to the coach, e.g. "About 11:40/mi for 5K (from your recent runs)". */
+  paceBaseline?: string | null;
   startDate: string;
   daysPerWeek: number;
   /** If set, the user prefers a flexible range from daysPerWeekMin to daysPerWeek days. */
@@ -57,6 +59,8 @@ export interface PlanGenerationInput {
 export interface PlanOutlineResult {
   title: string;
   weeks: PlanOutlineWeek[];
+  /** Pace chosen by the coach (min/mi) when a pace_target plan was requested without one. */
+  suggested_goal_pace?: number | null;
 }
 
 /** Detail result — full workout objects for specific dates. */
@@ -175,6 +179,7 @@ export async function generatePlanOutline(input: PlanGenerationInput): Promise<P
       goal_time_minutes: input.goalTimeMinutes,
       goal_type: input.goalType ?? 'race',
       goal_pace: input.goalPace ?? null,
+      pace_baseline: input.paceBaseline ?? null,
       start_date: input.startDate,
       days_per_week: input.daysPerWeek,
       days_per_week_min: input.daysPerWeekMin ?? null,
@@ -620,7 +625,7 @@ export async function savePlanOutline(
       race_date: input.raceDate,
       goal_time_minutes: input.goalTimeMinutes ?? null,
       goal_type: input.goalType ?? 'race',
-      goal_pace: input.goalPace ?? null,
+      goal_pace: input.goalPace ?? result.suggested_goal_pace ?? null,
       start_date: input.startDate,
       days_per_week: input.daysPerWeek,
       outline: result.weeks,
@@ -677,10 +682,7 @@ export async function loadActivePlans(userId: string): Promise<TrainingPlan[]> {
     .eq('status', 'active')
     .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('Failed to load active plans:', error);
-    return [];
-  }
+  if (error) throw new Error(`Failed to load active plans: ${error.message}`);
 
   return (data ?? []) as TrainingPlan[];
 }
@@ -719,10 +721,7 @@ export async function loadUserPlanWorkouts(userId: string): Promise<PlanWorkout[
     .eq('user_id', userId)
     .order('date');
 
-  if (error) {
-    console.warn('Failed to load user plan workouts:', error);
-    return [];
-  }
+  if (error) throw new Error(`Failed to load user plan workouts: ${error.message}`);
 
   return migratePlanWorkoutData((data ?? []) as PlanWorkout[]);
 }
@@ -1048,10 +1047,7 @@ export async function loadArchivedPlans(userId: string): Promise<TrainingPlan[]>
     .eq('status', 'archived')
     .order('updated_at', { ascending: false });
 
-  if (error) {
-    console.warn('Failed to load archived plans:', error);
-    return [];
-  }
+  if (error) throw new Error(`Failed to load archived plans: ${error.message}`);
 
   return (data ?? []) as TrainingPlan[];
 }

@@ -24,6 +24,7 @@ import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { TrainingPhases } from '../../../src/components/TrainingPhases';
 import { ContextualProPrompt } from '../../../src/components/ContextualProPrompt';
 import { VoicePlanAdjustSheet } from '../../../src/components/VoicePlanAdjustSheet';
+import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 
 function formatRaceLabel(raceType: string): string {
@@ -45,6 +46,7 @@ function daysUntil(dateStr: string): number {
 
 export default function PlanOverviewScreen() {
   const router = useRouter();
+  const startPlanCreation = useStartPlanCreation();
   const { plans, archivedPlans, planWorkouts, archivePlan, restorePlan, updatePlan, refresh } = useTrainingPlan();
   const [archiving, setArchiving] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -172,7 +174,7 @@ export default function PlanOverviewScreen() {
           <Text style={styles.emptyText}>Create a training plan to get started.</Text>
           <TouchableOpacity
             style={styles.createBtn}
-            onPress={() => router.push('/(tabs)/training/setup' as any)}
+            onPress={startPlanCreation}
             activeOpacity={0.8}
           >
             <Text style={styles.createBtnText}>Create Plan</Text>

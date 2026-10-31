@@ -37,6 +37,7 @@ import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
 import { VoiceEditSheet } from '../../../src/components/VoiceEditSheet';
 import { addWorkoutToCalendar, applyPlanModifications, type PlanModification } from '../../../src/ai/planService';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
+import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { buildHistorySummary } from '../../../src/ai/historySummary';
 import type { AIContext } from '../../../src/ai/aiWorkoutService';
@@ -87,6 +88,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
 export default function TrainingScreen() {
   const router = useRouter();
+  const startPlanCreation = useStartPlanCreation();
   const { user } = useAuth();
   const { canUseAI } = useSubscription();
   const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
@@ -410,7 +412,7 @@ export default function TrainingScreen() {
                 </Text>
                 <TouchableOpacity
                   style={styles.createPlanBtn}
-                  onPress={() => router.push('/(tabs)/training/setup' as any)}
+                  onPress={startPlanCreation}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="sparkles" size={18} color={Colors.black} />
@@ -501,7 +503,7 @@ export default function TrainingScreen() {
             {hasPlan && user && (
               <TouchableOpacity
                 style={styles.addPlanBanner}
-                onPress={() => router.push('/(tabs)/training/setup' as any)}
+                onPress={startPlanCreation}
                 activeOpacity={0.8}
               >
                 <Ionicons name="add-circle-outline" size={18} color={Colors.accent} />
