@@ -74,6 +74,11 @@ export type CountryCount = {
   user_count: number;
 };
 
+export type AppVersionCount = {
+  app_version: string;
+  user_count: number;
+};
+
 export type AIUserBreakdown = {
   user_id: string;
   display_name: string;
@@ -240,6 +245,22 @@ export async function getUsersByCountry(days = 30): Promise<CountryCount[]> {
 
   const { data } = await supabase.rpc('users_by_country', { num_days: days });
   return (data as CountryCount[]) ?? [];
+}
+
+/**
+ * Unique devices by app version for the last N days, newest version first.
+ * Each device is counted once, using the version from its latest app open.
+ */
+export async function getUsersByAppVersion(days = 30): Promise<AppVersionCount[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('users_by_app_version', { num_days: days });
+  const rows = (data as AppVersionCount[]) ?? [];
+  return rows.sort((a, b) => {
+    if (a.app_version === 'unknown') return 1;
+    if (b.app_version === 'unknown') return -1;
+    return b.app_version.localeCompare(a.app_version, undefined, { numeric: true });
+  });
 }
 
 /**

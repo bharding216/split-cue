@@ -14,6 +14,7 @@ import {
   getAIGenerationsByUser,
   getWorkoutRetentionCurve,
   getUsersByCountry,
+  getUsersByAppVersion,
 } from '@/lib/queries';
 import StatCard from '@/components/StatCard';
 import DAUChart from '@/components/DAUChart';
@@ -24,6 +25,7 @@ import OnboardingFunnel from '@/components/OnboardingFunnel';
 import RetentionCurveChart from '@/components/RetentionCurveChart';
 import TodaysActivity from '@/components/TodaysActivity';
 import CountriesSection from '@/components/CountriesSection';
+import AppVersionsSection from '@/components/AppVersionsSection';
 import AIUsageBreakdown from '@/components/AIUsageBreakdown';
 import SignOutButton from '@/components/SignOutButton';
 import Link from 'next/link';
@@ -49,6 +51,7 @@ export default async function DashboardPage() {
     todaysUsers,
     aiUsers,
     countries,
+    appVersions,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -64,6 +67,7 @@ export default async function DashboardPage() {
     getTodaysEventsByUser(),
     getAIGenerationsByUser(7),
     getUsersByCountry(30),
+    getUsersByAppVersion(30),
   ]);
 
   return (
@@ -97,7 +101,7 @@ export default async function DashboardPage() {
         <StatCard
           label="Pro Subscribers"
           value={stats.proSubscribers}
-          detail="Active + trialing"
+          detail={`${engagement.freeToPaidRate}% of accounts, active + trialing`}
         />
         <StatCard
           label="AI Workouts Saved"
@@ -174,7 +178,7 @@ export default async function DashboardPage() {
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
         Growth &amp; Engagement
       </h2>
-      <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard
           label="Activation Rate"
           value={engagement.activationRate}
@@ -188,12 +192,6 @@ export default async function DashboardPage() {
           detail="WAU who started/completed a workout"
         />
         <StatCard
-          label="Free → Paid"
-          value={engagement.freeToPaidRate}
-          format="percent"
-          detail="Registered users with pro subscription"
-        />
-        <StatCard
           label="AI Adoption"
           value={aiAdoption.adoptionRate}
           format="percent"
@@ -203,6 +201,9 @@ export default async function DashboardPage() {
 
       {/* ── Countries ─────────────────────────────────────── */}
       <CountriesSection data={countries} />
+
+      {/* ── App Versions ──────────────────────────────────── */}
+      <AppVersionsSection data={appVersions} />
 
       {/* ── Onboarding Funnel ─────────────────────────────── */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
