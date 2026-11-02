@@ -9,7 +9,7 @@ export default function AIUsageBreakdown({ data }: Props) {
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
       <div className="mb-4 flex items-baseline justify-between">
         <h2 className="text-sm font-medium text-gray-400">
-          AI Generations by User
+          AI Builder Workouts by User
         </h2>
         <p className="text-xs text-gray-500">
           {totalGenerations.toLocaleString()} generation{totalGenerations !== 1 ? 's' : ''} from{' '}

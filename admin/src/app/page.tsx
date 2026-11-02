@@ -12,6 +12,7 @@ import {
   getEventsOverTime,
   getTodaysEventsByUser,
   getAIGenerationsByUser,
+  getTrainingPlansByUser,
   getWorkoutRetentionCurve,
   getUsersByCountry,
   getUsersByAppVersion,
@@ -27,6 +28,7 @@ import TodaysActivity from '@/components/TodaysActivity';
 import CountriesSection from '@/components/CountriesSection';
 import AppVersionsSection from '@/components/AppVersionsSection';
 import AIUsageBreakdown from '@/components/AIUsageBreakdown';
+import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
 import SignOutButton from '@/components/SignOutButton';
 import Link from 'next/link';
 
@@ -50,6 +52,7 @@ export default async function DashboardPage() {
     events,
     todaysUsers,
     aiUsers,
+    planUsers,
     countries,
     appVersions,
   ] = await Promise.all([
@@ -66,6 +69,7 @@ export default async function DashboardPage() {
     getEventsOverTime(30),
     getTodaysEventsByUser(),
     getAIGenerationsByUser(7),
+    getTrainingPlansByUser(30),
     getUsersByCountry(30),
     getUsersByAppVersion(30),
   ]);
@@ -243,6 +247,7 @@ export default async function DashboardPage() {
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TodaysActivity data={todaysUsers} />
         <AIUsageBreakdown data={aiUsers} />
+        <TrainingPlansBreakdown data={planUsers} />
       </section>
     </div>
   );

@@ -86,6 +86,14 @@ export type AIUserBreakdown = {
   latest_at: string;
 };
 
+export type TrainingPlanUserBreakdown = {
+  user_id: string;
+  display_name: string;
+  plan_count: number;
+  accepted_count: number;
+  latest_at: string;
+};
+
 /**
  * Fetch all overview metrics in parallel.
  */
@@ -281,6 +289,16 @@ export async function getAIGenerationsByUser(days = 7): Promise<AIUserBreakdown[
 
   const { data } = await supabase.rpc('ai_generations_by_user', { num_days: days });
   return (data as AIUserBreakdown[]) ?? [];
+}
+
+/**
+ * AI training plans broken down by user (last N days).
+ */
+export async function getTrainingPlansByUser(days = 30): Promise<TrainingPlanUserBreakdown[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_plans_by_user', { num_days: days });
+  return (data as TrainingPlanUserBreakdown[]) ?? [];
 }
 
 /**
