@@ -8,22 +8,47 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
-import type { PlanOutlineWeek } from '../types/database';
+import type { PlanOutlineWeek, PlanPhase } from '../types/database';
 
 interface Phase {
   number: number;
   name: string;
   weekRange: string;
   status: 'completed' | 'current' | 'upcoming';
+  focus?: string;
 }
 
 interface TrainingPhasesProps {
   outline: PlanOutlineWeek[] | null;
+  /** Coach-written phases; when present they replace the theme-derived ones. */
+  phases?: PlanPhase[] | null;
+  /** Coach's plan description, shown above the phases. */
+  approach?: string | null;
   currentWeekNumber: number;
   /** Max items to show when collapsed. Omit or 0 = show all (no collapse). */
   maxVisible?: number;
   expanded?: boolean;
   onToggleExpanded?: () => void;
+}
+
+function phaseStatus(firstWeek: number, lastWeek: number, currentWeek: number): Phase['status'] {
+  if (currentWeek > lastWeek) return 'completed';
+  if (currentWeek >= firstWeek) return 'current';
+  return 'upcoming';
+}
+
+function weekRangeLabel(firstWeek: number, lastWeek: number): string {
+  return firstWeek === lastWeek ? `Week ${firstWeek}` : `Weeks ${firstWeek}\u2013${lastWeek}`;
+}
+
+function coachPhases(phases: PlanPhase[], currentWeek: number): Phase[] {
+  return phases.map((p, i) => ({
+    number: i + 1,
+    name: p.name,
+    weekRange: weekRangeLabel(p.start_week, p.end_week),
+    status: phaseStatus(p.start_week, p.end_week, currentWeek),
+    focus: p.focus || undefined,
+  }));
 }
 
 export function derivePhases(outline: PlanOutlineWeek[] | null, currentWeek: number): Phase[] {
@@ -42,25 +67,26 @@ export function derivePhases(outline: PlanOutlineWeek[] | null, currentWeek: num
   return themeGroups.map((group, i) => {
     const firstWeek = Math.min(...group.weeks);
     const lastWeek = Math.max(...group.weeks);
-    const weekRange = firstWeek === lastWeek
-      ? `Week ${firstWeek}`
-      : `Weeks ${firstWeek}\u2013${lastWeek}`;
-
-    let status: Phase['status'] = 'upcoming';
-    if (currentWeek > lastWeek) status = 'completed';
-    else if (currentWeek >= firstWeek && currentWeek <= lastWeek) status = 'current';
-
     return {
       number: i + 1,
       name: group.theme,
-      weekRange,
-      status,
+      weekRange: weekRangeLabel(firstWeek, lastWeek),
+      status: phaseStatus(firstWeek, lastWeek, currentWeek),
     };
   });
 }
 
-export function TrainingPhases({ outline, currentWeekNumber, maxVisible, expanded, onToggleExpanded }: TrainingPhasesProps) {
-  const phases = derivePhases(outline, currentWeekNumber);
+/** Coach-written phases when the plan has them, otherwise phases derived from week themes. */
+export function resolvePhases(
+  outline: PlanOutlineWeek[] | null,
+  phases: PlanPhase[] | null | undefined,
+  currentWeek: number,
+): Phase[] {
+  return phases?.length ? coachPhases(phases, currentWeek) : derivePhases(outline, currentWeek);
+}
+
+export function TrainingPhases({ outline, phases: coachWritten, approach, currentWeekNumber, maxVisible, expanded, onToggleExpanded }: TrainingPhasesProps) {
+  const phases = resolvePhases(outline, coachWritten, currentWeekNumber);
 
   if (phases.length === 0) return null;
 
@@ -71,11 +97,12 @@ export function TrainingPhases({ outline, currentWeekNumber, maxVisible, expande
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Training phases</Text>
+      {approach ? <Text style={styles.approach}>{approach}</Text> : null}
       {visiblePhases.map((phase, i) => {
         const isLastVisible = i === visiblePhases.length - 1;
         const isLastOverall = phase.number === phases.length;
         return (
-          <View key={phase.number} style={styles.phaseRow}>
+          <View key={phase.number} style={[styles.phaseRow, !!phase.focus && styles.phaseRowWithFocus]}>
             <View style={[
               styles.phaseCircle,
               phase.status === 'current' && styles.phaseCircleCurrent,
@@ -93,6 +120,7 @@ export function TrainingPhases({ outline, currentWeekNumber, maxVisible, expande
             {!isLastOverall && !(isLastVisible && !expanded && canCollapse) && (
               <View style={[
                 styles.phaseLine,
+                !!phase.focus && styles.phaseLineStretch,
                 phase.status === 'completed' && styles.phaseLineCompleted,
               ]} />
             )}
@@ -105,6 +133,7 @@ export function TrainingPhases({ outline, currentWeekNumber, maxVisible, expande
                 {phase.name}
               </Text>
               <Text style={styles.phaseWeeks}>{phase.weekRange}</Text>
+              {phase.focus ? <Text style={styles.phaseFocus}>{phase.focus}</Text> : null}
             </View>
 
             <Text style={[
@@ -155,6 +184,9 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     gap: Spacing.md,
   },
+  phaseRowWithFocus: {
+    alignItems: 'flex-start',
+  },
   phaseCircle: {
     width: 32,
     height: 32,
@@ -188,6 +220,10 @@ const styles = StyleSheet.create({
     height: 24,
     backgroundColor: Colors.surfaceLight,
   },
+  phaseLineStretch: {
+    height: undefined,
+    bottom: -Spacing.md,
+  },
   phaseLineCompleted: {
     backgroundColor: Colors.primary + '40',
   },
@@ -206,6 +242,18 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 1,
+  },
+  phaseFocus: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  approach: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: Spacing.md,
   },
   phaseBadge: {
     fontSize: FontSize.xs,

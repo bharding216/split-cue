@@ -25,6 +25,7 @@ import { TrainingPhases } from '../../../src/components/TrainingPhases';
 import { ContextualProPrompt } from '../../../src/components/ContextualProPrompt';
 import { VoicePlanAdjustSheet } from '../../../src/components/VoicePlanAdjustSheet';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
+import { DELETED_PLAN_RETENTION_DAYS } from '../../../src/ai/planService';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 
 function formatRaceLabel(raceType: string): string {
@@ -44,12 +45,31 @@ function daysUntil(dateStr: string): number {
   return Math.round((target.getTime() - now.getTime()) / 86400000);
 }
 
+function daysUntilPurge(deletedAt: string | null): number {
+  if (!deletedAt) return DELETED_PLAN_RETENTION_DAYS;
+  const purgeAt = new Date(deletedAt).getTime() + DELETED_PLAN_RETENTION_DAYS * 86400000;
+  return Math.max(0, Math.ceil((purgeAt - Date.now()) / 86400000));
+}
+
 export default function PlanOverviewScreen() {
   const router = useRouter();
   const startPlanCreation = useStartPlanCreation();
-  const { plans, archivedPlans, planWorkouts, archivePlan, restorePlan, updatePlan, refresh } = useTrainingPlan();
+  const {
+    plans,
+    archivedPlans,
+    deletedPlans,
+    planWorkouts,
+    archivePlan,
+    restorePlan,
+    deletePlan,
+    restoreDeletedPlan,
+    updatePlan,
+    refresh,
+  } = useTrainingPlan();
   const [archiving, setArchiving] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState<string | null>(null);
   const [showDaysPicker, setShowDaysPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [phasesExpanded, setPhasesExpanded] = useState(false);
@@ -107,6 +127,43 @@ export default function PlanOverviewScreen() {
     }
   }, [restorePlan]);
 
+  const handleDeletePlan = useCallback((planId: string, planTitle: string) => {
+    Alert.alert(
+      'Delete Plan',
+      `Delete "${planTitle}"? It will move to Recently Deleted and be permanently removed after ${DELETED_PLAN_RETENTION_DAYS} days. Your completed runs stay in your history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(planId);
+            try {
+              await deletePlan(planId);
+            } catch (err) {
+              console.warn('Failed to delete plan:', err);
+              Alert.alert('Error', 'Failed to delete plan. Please try again.');
+            } finally {
+              setDeleting(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [deletePlan]);
+
+  const handleRecoverPlan = useCallback(async (planId: string) => {
+    setRecovering(planId);
+    try {
+      await restoreDeletedPlan(planId);
+    } catch (err) {
+      console.warn('Failed to recover plan:', err);
+      Alert.alert('Error', 'Failed to recover plan. Please try again.');
+    } finally {
+      setRecovering(null);
+    }
+  }, [restoreDeletedPlan]);
+
   const handleEditTitle = useCallback(() => {
     if (!primaryPlan) return;
     setEditingTitle(primaryPlan.title || formatRaceLabel(primaryPlan.race_type));
@@ -161,6 +218,67 @@ export default function PlanOverviewScreen() {
     [archivedPlans],
   );
 
+  const deletedRacePlans = useMemo(
+    () => deletedPlans.filter((p) => p.race_type !== 'custom' || (p.outline && p.outline.length > 0)),
+    [deletedPlans],
+  );
+
+  const archivedRows = archivedRacePlans.map((p) => (
+    <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
+      <View style={styles.planRowInfo}>
+        <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
+          {p.title || formatRaceLabel(p.race_type)}
+        </Text>
+        <Text style={styles.planRowMeta}>
+          {formatRaceLabel(p.race_type)} · Archived
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={styles.restoreBtn}
+        onPress={() => handleRestorePlan(p.id)}
+        disabled={restoring === p.id || deleting === p.id}
+        activeOpacity={0.7}
+        accessibilityLabel="Restore plan"
+      >
+        <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.deleteBtn}
+        onPress={() => handleDeletePlan(p.id, p.title || formatRaceLabel(p.race_type))}
+        disabled={restoring === p.id || deleting === p.id}
+        activeOpacity={0.7}
+        accessibilityLabel="Delete plan"
+      >
+        <Ionicons name="trash-outline" size={16} color={Colors.danger} />
+      </TouchableOpacity>
+    </View>
+  ));
+
+  const deletedRows = deletedRacePlans.map((p) => {
+    const daysLeft = daysUntilPurge(p.deleted_at);
+    return (
+      <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
+        <View style={styles.planRowInfo}>
+          <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
+            {p.title || formatRaceLabel(p.race_type)}
+          </Text>
+          <Text style={styles.planRowMeta}>
+            {daysLeft > 1 ? `Permanently deleted in ${daysLeft} days` : 'Permanently deleted within a day'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.restoreBtn}
+          onPress={() => handleRecoverPlan(p.id)}
+          disabled={recovering === p.id}
+          activeOpacity={0.7}
+          accessibilityLabel="Recover plan"
+        >
+          <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
+        </TouchableOpacity>
+      </View>
+    );
+  });
+
   if (!primaryPlan) {
     return (
       <ScrollView
@@ -185,26 +303,13 @@ export default function PlanOverviewScreen() {
         {archivedRacePlans.length > 0 && (
           <View style={styles.managePlansSection}>
             <Text style={styles.managePlansTitle}>Archived Plans</Text>
-            {archivedRacePlans.map((p) => (
-              <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
-                <View style={styles.planRowInfo}>
-                  <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
-                    {p.title || formatRaceLabel(p.race_type)}
-                  </Text>
-                  <Text style={styles.planRowMeta}>
-                    {formatRaceLabel(p.race_type)} · Archived
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.restoreBtn}
-                  onPress={() => handleRestorePlan(p.id)}
-                  disabled={restoring === p.id}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
-                </TouchableOpacity>
-              </View>
-            ))}
+            {archivedRows}
+          </View>
+        )}
+        {deletedRacePlans.length > 0 && (
+          <View style={styles.managePlansSection}>
+            <Text style={styles.managePlansTitle}>Recently Deleted</Text>
+            {deletedRows}
           </View>
         )}
       </ScrollView>
@@ -392,6 +497,8 @@ export default function PlanOverviewScreen() {
       {/* Training phases */}
       <TrainingPhases
         outline={primaryPlan.outline}
+        phases={primaryPlan.phases}
+        approach={primaryPlan.approach}
         currentWeekNumber={currentWeekNumber}
         maxVisible={2}
         expanded={phasesExpanded}
@@ -427,7 +534,7 @@ export default function PlanOverviewScreen() {
       />
 
       {/* Manage Plans section */}
-      {(allRacePlans.length > 0 || archivedRacePlans.length > 0) && (
+      {(allRacePlans.length > 0 || archivedRacePlans.length > 0 || deletedRacePlans.length > 0) && (
         <View style={styles.managePlansSection}>
           <Text style={styles.managePlansTitle}>Manage Plans</Text>
           {allRacePlans.map((p) => {
@@ -465,26 +572,14 @@ export default function PlanOverviewScreen() {
           {archivedRacePlans.length > 0 && (
             <>
               <Text style={styles.archivedLabel}>Archived</Text>
-              {archivedRacePlans.map((p) => (
-                <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
-                  <View style={styles.planRowInfo}>
-                    <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
-                      {p.title || formatRaceLabel(p.race_type)}
-                    </Text>
-                    <Text style={styles.planRowMeta}>
-                      {formatRaceLabel(p.race_type)} · Archived
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.restoreBtn}
-                    onPress={() => handleRestorePlan(p.id)}
-                    disabled={restoring === p.id}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {archivedRows}
+            </>
+          )}
+
+          {deletedRacePlans.length > 0 && (
+            <>
+              <Text style={styles.archivedLabel}>Recently Deleted</Text>
+              {deletedRows}
             </>
           )}
         </View>
@@ -776,6 +871,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.accent + '15',
+    marginLeft: Spacing.sm,
+  },
+  deleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.danger + '15',
     marginLeft: Spacing.sm,
   },
 });

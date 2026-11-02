@@ -19,6 +19,7 @@ import type { CompletedWorkout, WorkoutDefinition } from '../workout/workoutType
 import {
   loadActivePlans,
   loadArchivedPlans,
+  loadDeletedPlans,
   loadPlanWorkouts,
   loadUserPlanWorkouts,
   ensureCustomPlan,
@@ -28,6 +29,8 @@ import {
   updatePlanWorkoutData as updatePlanWorkoutDataApi,
   archivePlan as archivePlanApi,
   restorePlan as restorePlanApi,
+  deletePlan as deletePlanApi,
+  restoreDeletedPlan as restoreDeletedPlanApi,
   updateTrainingPlan as updateTrainingPlanApi,
   ensureUpcomingWorkoutsDetailed,
   loadCoachContext,
@@ -63,6 +66,8 @@ interface TrainingPlanContextType {
   plans: TrainingPlan[];
   /** Archived plans */
   archivedPlans: TrainingPlan[];
+  /** Deleted plans still inside the recovery window */
+  deletedPlans: TrainingPlan[];
   /** Primary active plan (first non-custom, for backward compat) */
   plan: TrainingPlan | null;
   planWorkouts: PlanWorkout[];
@@ -94,6 +99,10 @@ interface TrainingPlanContextType {
   archivePlan: (planId?: string) => Promise<void>;
   /** Restore an archived plan back to active */
   restorePlan: (planId: string) => Promise<void>;
+  /** Move an archived plan to Recently Deleted */
+  deletePlan: (planId: string) => Promise<void>;
+  /** Recover a deleted plan back to the archived list */
+  restoreDeletedPlan: (planId: string) => Promise<void>;
   /** Update mutable plan fields (race_date, days_per_week, etc.) */
   updatePlan: (planId: string, fields: Partial<Pick<import('../types/database').TrainingPlan, 'race_date' | 'days_per_week' | 'title' | 'goal_time_minutes' | 'goal_pace'>>) => Promise<void>;
 }
@@ -108,6 +117,8 @@ interface PlanCache {
   userId: string;
   plans: TrainingPlan[];
   archivedPlans: TrainingPlan[];
+  /** Absent in caches written before plan deletion existed. */
+  deletedPlans?: TrainingPlan[];
   planWorkouts: PlanWorkout[];
 }
 
@@ -168,6 +179,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const { user } = useAuth();
   const [plans, setPlans] = useState<TrainingPlan[]>([]);
   const [archivedPlans, setArchivedPlans] = useState<TrainingPlan[]>([]);
+  const [deletedPlans, setDeletedPlans] = useState<TrainingPlan[]>([]);
   const [planWorkouts, setPlanWorkouts] = useState<PlanWorkout[]>([]);
   const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,6 +204,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         setHistory(await loadHistory());
         setPlans([]);
         setArchivedPlans([]);
+        setDeletedPlans([]);
         setPlanWorkouts([]);
         setLoading(false);
         return;
@@ -201,6 +214,11 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         loadActivePlans(user.id),
         loadArchivedPlans(user.id),
         loadUserPlanWorkouts(user.id),
+        // Recently Deleted is secondary; don't let it block the calendar.
+        loadDeletedPlans(user.id).catch((err) => {
+          console.warn('Failed to load deleted plans:', err);
+          return [] as TrainingPlan[];
+        }),
       ]);
       // Superseded refreshes return before awaiting `remote`.
       remote.catch(() => {});
@@ -215,12 +233,14 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         if (cached) {
           setPlans(cached.plans);
           setArchivedPlans(cached.archivedPlans);
+          setDeletedPlans(cached.deletedPlans ?? []);
           setPlanWorkouts(cached.planWorkouts);
           stateOwnerId.current = user.id;
           setLoading(false);
         } else {
           setPlans([]);
           setArchivedPlans([]);
+          setDeletedPlans([]);
           setPlanWorkouts([]);
         }
       } else {
@@ -228,10 +248,11 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         setHistory(historyData);
       }
 
-      const [activePlans, archived, allWorkouts] = await remote;
+      const [activePlans, archived, allWorkouts, deleted] = await remote;
       if (refreshEpoch.current !== epoch) return;
       setPlans(activePlans);
       setArchivedPlans(archived);
+      setDeletedPlans(deleted);
 
       // Keep plan workouts only for active plans
       const activePlanIds = new Set(activePlans.map((p) => p.id));
@@ -289,9 +310,9 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!user || stateOwnerId.current !== user.id) return;
-    const cache: PlanCache = { userId: user.id, plans, archivedPlans, planWorkouts };
+    const cache: PlanCache = { userId: user.id, plans, archivedPlans, deletedPlans, planWorkouts };
     AsyncStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
-  }, [user?.id, plans, archivedPlans, planWorkouts]);
+  }, [user?.id, plans, archivedPlans, deletedPlans, planWorkouts]);
 
   const dayEntries = buildDayEntries(planWorkouts, history, plan?.id ?? null);
 
@@ -432,6 +453,24 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     }
   }, [archivedPlans, user]);
 
+  const deletePlanFn = useCallback(async (planId: string) => {
+    const deletedAt = await deletePlanApi(planId);
+    const deletedPlan = archivedPlans.find((p) => p.id === planId);
+    setArchivedPlans((prev) => prev.filter((p) => p.id !== planId));
+    if (deletedPlan) {
+      setDeletedPlans((prev) => [{ ...deletedPlan, status: 'deleted', deleted_at: deletedAt }, ...prev]);
+    }
+  }, [archivedPlans]);
+
+  const restoreDeletedPlanFn = useCallback(async (planId: string) => {
+    await restoreDeletedPlanApi(planId);
+    const recoveredPlan = deletedPlans.find((p) => p.id === planId);
+    setDeletedPlans((prev) => prev.filter((p) => p.id !== planId));
+    if (recoveredPlan) {
+      setArchivedPlans((prev) => [{ ...recoveredPlan, status: 'archived', deleted_at: null }, ...prev]);
+    }
+  }, [deletedPlans]);
+
   const ensurePlanFn = useCallback(async (): Promise<TrainingPlan> => {
     // Return existing custom plan, or create one for manual workout additions
     const customPlan = plans.find((p) => p.race_type === 'custom');
@@ -457,6 +496,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
       value={{
         plans,
         archivedPlans,
+        deletedPlans,
         plan,
         planWorkouts,
         history,
@@ -473,6 +513,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         updateWorkoutData,
         archivePlan: archivePlanFn,
         restorePlan: restorePlanFn,
+        deletePlan: deletePlanFn,
+        restoreDeletedPlan: restoreDeletedPlanFn,
         updatePlan: updatePlanFn,
       }}
     >

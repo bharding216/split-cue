@@ -29,7 +29,7 @@ import { TrainingCalendar, CalendarViewMode } from '../../../src/components/Trai
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
 import { DayDetail } from '../../../src/components/DayDetail';
 import { RunReviewCard } from '../../../src/components/RunReviewCard';
-import { derivePhases } from '../../../src/components/TrainingPhases';
+import { resolvePhases } from '../../../src/components/TrainingPhases';
 import { WorkoutDefinition, generateId } from '../../../src/workout/workoutTypes';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
@@ -37,7 +37,6 @@ import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
 import { VoiceEditSheet } from '../../../src/components/VoiceEditSheet';
 import { addWorkoutToCalendar, applyPlanModifications, type PlanModification } from '../../../src/ai/planService';
-import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { buildHistorySummary } from '../../../src/ai/historySummary';
@@ -91,7 +90,6 @@ export default function TrainingScreen() {
   const router = useRouter();
   const startPlanCreation = useStartPlanCreation();
   const { user } = useAuth();
-  const { canUseAI } = useSubscription();
   const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
 
   // Include all "real" training plans: non-custom race plans, plus custom-distance
@@ -183,7 +181,7 @@ export default function TrainingScreen() {
 
   const currentPhase = useMemo(() => {
     if (!primaryPlan) return null;
-    const phases = derivePhases(primaryPlan.outline, currentWeekNumber);
+    const phases = resolvePhases(primaryPlan.outline, primaryPlan.phases, currentWeekNumber);
     return phases.find((p) => p.status === 'current') ?? null;
   }, [primaryPlan, currentWeekNumber]);
 
@@ -558,7 +556,7 @@ export default function TrainingScreen() {
               onRemoveWorkout={handleRemoveWorkout}
               onMoveWorkout={handleMoveWorkoutFromDay}
               onEditWorkout={handleEditWorkout}
-              onVoiceEdit={user && canUseAI ? handleVoiceEdit : undefined}
+              onVoiceEdit={user ? handleVoiceEdit : undefined}
               onViewRun={handleViewRun}
               onRunAgain={handleRunAgain}
               onAddWorkout={handleAddWorkout}
@@ -574,7 +572,7 @@ export default function TrainingScreen() {
         date={pickerDate ?? selectedDate}
         onSelect={handleWorkoutPicked}
         onCreateNew={handleCreateNewForPlan}
-        onVoiceBuilder={user && canUseAI ? handleOpenVoiceBuilder : undefined}
+        onVoiceBuilder={user ? handleOpenVoiceBuilder : undefined}
         onDateChange={setPickerDate}
         onClose={() => setPickerDate(null)}
       />

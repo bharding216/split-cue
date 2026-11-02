@@ -222,7 +222,8 @@ $$ language sql security definer;
 
 -- AI training plans broken down by user (last N days).
 -- Excludes the 'custom' calendar plans created for manually scheduled workouts.
--- "Accepted" matches training_plan_stats: >= 1 plan workout completed.
+-- accepted_count matches training_plan_stats: >= 1 plan workout completed.
+-- The dashboard labels this "started"; there is no accept step in the app.
 create or replace function training_plans_by_user(num_days int default 30)
 returns table(
   user_id uuid,
@@ -392,7 +393,8 @@ returns table(
 $$ language sql security definer;
 
 -- AI training plans (last N days). Plans are saved as soon as the AI
--- returns them, so "accepted" means the runner completed >= 1 plan workout.
+-- returns them, so "accepted" (shown as "started") means the runner
+-- completed >= 1 plan workout.
 -- Excludes the 'custom' calendar plans created for manually scheduled workouts.
 create or replace function training_plan_stats(num_days int default 30)
 returns table(
@@ -420,7 +422,7 @@ returns table(
   select
     count(*)::int as generated,
     count(*) filter (where status = 'active')::int as still_active,
-    count(*) filter (where status = 'archived')::int as archived,
+    count(*) filter (where status in ('archived', 'deleted'))::int as archived,
     count(*) filter (where is_accepted)::int as accepted,
     (select count(*) from events
       where event_name = 'plan_generation_failed'

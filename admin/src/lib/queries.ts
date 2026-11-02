@@ -5,7 +5,6 @@ export type OverviewStats = {
   dauToday: number;
   wau: number;
   proSubscribers: number;
-  aiGenerationsLast7d: number;
 };
 
 export type EngagementStats = {
@@ -38,10 +37,10 @@ export type TrainingPlanStats = {
   generated: number;
   stillActive: number;
   archived: number;
-  accepted: number;
+  started: number;
   failed: number;
   uniqueUsers: number;
-  acceptanceRate: number;
+  startRate: number;
 };
 
 export type DailyCount = {
@@ -79,13 +78,6 @@ export type AppVersionCount = {
   user_count: number;
 };
 
-export type AIUserBreakdown = {
-  user_id: string;
-  display_name: string;
-  generation_count: number;
-  latest_at: string;
-};
-
 export type TrainingPlanUserBreakdown = {
   user_id: string;
   display_name: string;
@@ -105,13 +97,11 @@ export async function getOverviewStats(): Promise<OverviewStats> {
     dauRes,
     wauRes,
     proSubsRes,
-    aiGensRes,
   ] = await Promise.all([
     supabase.rpc('total_users'),
     supabase.rpc('dau_today'),
     supabase.rpc('wau'),
     supabase.rpc('pro_subscribers'),
-    supabase.rpc('ai_generations_count', { num_days: 7 }),
   ]);
 
   return {
@@ -119,7 +109,6 @@ export async function getOverviewStats(): Promise<OverviewStats> {
     dauToday: (dauRes.data as number) ?? 0,
     wau: (wauRes.data as number) ?? 0,
     proSubscribers: (proSubsRes.data as number) ?? 0,
-    aiGenerationsLast7d: (aiGensRes.data as number) ?? 0,
   };
 }
 
@@ -186,7 +175,7 @@ export async function getAIAdoptionRate(days = 30): Promise<AIAdoptionStats> {
 }
 
 /**
- * AI training plans generated vs accepted (last N days).
+ * AI training plans generated vs started (last N days).
  */
 export async function getTrainingPlanStats(days = 30): Promise<TrainingPlanStats> {
   const supabase = createServiceClient();
@@ -197,10 +186,10 @@ export async function getTrainingPlanStats(days = 30): Promise<TrainingPlanStats
     generated: row?.generated ?? 0,
     stillActive: row?.still_active ?? 0,
     archived: row?.archived ?? 0,
-    accepted: row?.accepted ?? 0,
+    started: row?.accepted ?? 0,
     failed: row?.failed ?? 0,
     uniqueUsers: row?.unique_users ?? 0,
-    acceptanceRate: row?.acceptance_rate ?? 0,
+    startRate: row?.acceptance_rate ?? 0,
   };
 }
 
@@ -279,16 +268,6 @@ export async function getTodaysEventsByUser(): Promise<UserEventBreakdown[]> {
 
   const { data } = await supabase.rpc('todays_events_by_user');
   return (data as UserEventBreakdown[]) ?? [];
-}
-
-/**
- * AI generations broken down by user (last N days).
- */
-export async function getAIGenerationsByUser(days = 7): Promise<AIUserBreakdown[]> {
-  const supabase = createServiceClient();
-
-  const { data } = await supabase.rpc('ai_generations_by_user', { num_days: days });
-  return (data as AIUserBreakdown[]) ?? [];
 }
 
 /**

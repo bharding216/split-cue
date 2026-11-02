@@ -1,8 +1,8 @@
 /**
- * Subscription & AI usage context for SplitCue Pro.
+ * Subscription context for SplitCue Pro.
  *
  * Uses RevenueCat for IAP management and Supabase for server-side
- * subscription state + AI usage tracking.
+ * subscription state + training plan counts.
  *
  * ┌─────────────────────────────────────────────────────────┐
  * │  EXTERNAL SETUP REQUIRED — see SETUP.md                │
@@ -32,7 +32,6 @@ import { supabase } from '../analytics/supabaseClient';
 import {
   Subscription,
   SubscriptionTier,
-  FREE_TIER_AI_WORKOUTS,
 } from '../types/database';
 
 // ┌─────────────────────────────────────────────────────────┐
@@ -46,11 +45,8 @@ const ENTITLEMENT_ID = 'pacecue_pro';
 type SubscriptionContextType = {
   subscription: Subscription | null;
   tier: SubscriptionTier;
-  aiWorkoutsUsed: number;
-  aiWorkoutsLimit: number | null;
-  canUseAI: boolean;
   canGeneratePlan: boolean;
-  /** Number of AI-generated training plans the user has created (excludes custom plans). */
+  /** Number of AI-generated training plans the user has ever created, including deleted ones. */
   planCount: number;
   loading: boolean;
   offerings: PurchasesOfferings | null;
@@ -59,7 +55,6 @@ type SubscriptionContextType = {
   restorePurchases: () => Promise<{ error: Error | null }>;
   refreshSubscription: () => Promise<void>;
   manageSubscription: () => void;
-  incrementAIUsage: (workoutId: string, workoutName: string) => Promise<void>;
   /** DEV ONLY: override the effective tier without a real subscription. */
   devOverrideTier: SubscriptionTier | null;
   setDevOverrideTier: (tier: SubscriptionTier | null) => void;
@@ -76,7 +71,6 @@ export function SubscriptionProvider({
 }) {
   const { user } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [aiWorkoutsUsed, setAiWorkoutsUsed] = useState(0);
   const [planCount, setPlanCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [rcInitialized, setRcInitialized] = useState(false);
@@ -151,56 +145,31 @@ export function SubscriptionProvider({
 
     if (!user) {
       setSubscription(null);
-      setAiWorkoutsUsed(0);
       setPlanCount(0);
       setLoading(false);
       return;
     }
 
     try {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      // Use .maybeSingle() for tables where the row may not exist yet
-      // (.single() throws when zero rows are found, which crashes the
-      // entire Promise.all and silently leaves aiWorkoutsUsed at 0).
-      const [subResult, profileResult, genResult, planCountResult] = await Promise.all([
+      // .maybeSingle() because the subscription row may not exist yet
+      // (.single() throws on zero rows, which would fail the Promise.all).
+      const [subResult, planCountResult] = await Promise.all([
         supabase
           .from('subscriptions')
           .select('*')
           .eq('user_id', user.id)
           .maybeSingle(),
+        // Counted from the generation ledger, not training_plans, so deleting a plan can't reset the quota.
         supabase
-          .from('profiles')
-          .select('ai_workouts_this_month')
-          .eq('id', user.id)
-          .maybeSingle(),
-        supabase
-          .from('ai_generations')
+          .from('plan_generations')
           .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .gte('created_at', startOfMonth.toISOString()),
-        supabase
-          .from('training_plans')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .neq('race_type', 'custom'),
+          .eq('user_id', user.id),
       ]);
 
       console.log('[SubscriptionContext] subResult:', JSON.stringify({ data: subResult.data, error: subResult.error }));
-      console.log('[SubscriptionContext] profileResult:', JSON.stringify({ data: profileResult.data, error: profileResult.error }));
-      console.log('[SubscriptionContext] genResult:', JSON.stringify({ count: genResult.count, error: genResult.error }));
       console.log('[SubscriptionContext] planCountResult:', JSON.stringify({ count: planCountResult.count, error: planCountResult.error }));
 
-      const counterValue = profileResult.data?.ai_workouts_this_month ?? 0;
-      const generationsValue = genResult.count ?? 0;
-      const finalUsage = Math.max(counterValue, generationsValue);
-
-      console.log('[SubscriptionContext] counterValue:', counterValue, 'generationsValue:', generationsValue, 'finalUsage:', finalUsage);
-
       setSubscription(subResult.data);
-      setAiWorkoutsUsed(finalUsage);
       setPlanCount(planCountResult.count ?? 0);
     } catch (err) {
       console.warn('[SubscriptionContext] refreshSubscription CRASHED:', err);
@@ -219,12 +188,6 @@ export function SubscriptionProvider({
     __DEV__ && devOverrideTier != null
       ? devOverrideTier
       : getEffectiveTier(subscription);
-
-  const aiWorkoutsLimit =
-    tier === 'free' ? FREE_TIER_AI_WORKOUTS : null;
-
-  const canUseAI =
-    tier === 'pro' || aiWorkoutsUsed < FREE_TIER_AI_WORKOUTS;
 
   // First AI plan is free for all users; additional plans require Pro
   const canGeneratePlan = tier === 'pro' || planCount === 0;
@@ -285,38 +248,11 @@ export function SubscriptionProvider({
     }
   };
 
-  // ─── Increment AI usage ───────────────────────────────────
-
-  const incrementAIUsage = useCallback(
-    async (workoutId: string, workoutName: string) => {
-      if (!user) return;
-
-      // Insert a durable record into ai_generations — this is the
-      // source of truth that survives sign-out / sign-in cycles.
-      await supabase.from('ai_generations').insert({
-        user_id: user.id,
-        prompt: workoutName,
-        result: { workout_id: workoutId },
-      });
-
-      // Best-effort update of the counter on profiles (backward compat)
-      supabase
-        .rpc('increment_ai_workouts', { p_user_id: user.id })
-        .then(null, () => {});
-
-      setAiWorkoutsUsed((prev) => prev + 1);
-    },
-    [user],
-  );
-
   return (
     <SubscriptionContext.Provider
       value={{
         subscription,
         tier,
-        aiWorkoutsUsed,
-        aiWorkoutsLimit,
-        canUseAI,
         canGeneratePlan,
         planCount,
         loading,
@@ -326,7 +262,6 @@ export function SubscriptionProvider({
         restorePurchases,
         refreshSubscription,
         manageSubscription,
-        incrementAIUsage,
         devOverrideTier,
         setDevOverrideTier,
       }}

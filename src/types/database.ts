@@ -120,7 +120,7 @@ export type AIGeneration = {
 
 export type RaceType = '5k' | '10k' | 'half_marathon' | 'marathon' | 'custom';
 export type GoalType = 'race' | 'pace_target';
-export type PlanStatus = 'active' | 'completed' | 'archived';
+export type PlanStatus = 'active' | 'completed' | 'archived' | 'deleted';
 export type PlanWorkoutStatus = 'planned' | 'completed' | 'skipped';
 
 /** Week-level outline stored on the plan for context when generating workout details. */
@@ -133,6 +133,13 @@ export type PlanOutlineWeek = {
     day_label: string;
     description: string | null;
   }[];
+};
+
+export type PlanPhase = {
+  start_week: number;
+  end_week: number;
+  name: string;
+  focus: string;
 };
 
 export type TrainingPlan = {
@@ -148,7 +155,12 @@ export type TrainingPlan = {
   start_date: string; // ISO date string YYYY-MM-DD
   days_per_week: number;
   outline: PlanOutlineWeek[] | null;
+  /** Coach's high-level description of the plan strategy. Null for older and custom plans. */
+  approach: string | null;
+  phases: PlanPhase[] | null;
   status: PlanStatus;
+  /** Set when status is 'deleted'; the plan is purged permanently 30 days later. */
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -206,7 +218,3 @@ export type PushSend = {
   created_at: string;
   receipts_checked_at: string | null;
 };
-
-// ── Constants ────────────────────────────────────────────────
-
-export const FREE_TIER_AI_WORKOUTS = 5;

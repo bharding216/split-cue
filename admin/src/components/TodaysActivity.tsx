@@ -19,35 +19,40 @@ export default function TodaysActivity({ data }: Props) {
       {data.length === 0 ? (
         <p className="text-sm text-gray-600">No events today.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="-mr-2 max-h-[400px] space-y-1 overflow-y-auto pr-2">
           {data.map((user, i) => {
             const pct = totalEvents > 0
               ? Math.round((user.event_count / totalEvents) * 100)
               : 0;
 
             return (
-              <div key={user.anonymous_user_id}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-xs text-gray-300" title={user.anonymous_user_id}>
-                    {i + 1}.{' '}
-                    {user.display_name === user.anonymous_user_id ? (
-                      <span className="font-mono">{user.anonymous_user_id.slice(0, 8)}…</span>
-                    ) : (
-                      user.display_name
-                    )}
-                  </span>
-                  <span className="tabular-nums text-gray-400">
-                    {user.event_count} event{user.event_count !== 1 ? 's' : ''}{' '}
-                    <span className="text-gray-600">({pct}%)</span>
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 w-full rounded-full bg-gray-800">
-                  <div
-                    className="h-1.5 rounded-full bg-emerald-500"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <div className="mt-1 flex flex-wrap gap-1">
+              <details key={user.anonymous_user_id} className="group rounded-md">
+                <summary className="cursor-pointer list-none rounded-md px-1 py-1 hover:bg-gray-800/50 [&::-webkit-details-marker]:hidden">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5 text-xs text-gray-300" title={user.anonymous_user_id}>
+                      <span className="text-[10px] text-gray-600 transition-transform group-open:rotate-90">
+                        ▶
+                      </span>
+                      {i + 1}.{' '}
+                      {user.display_name === user.anonymous_user_id ? (
+                        <span className="font-mono">{user.anonymous_user_id.slice(0, 8)}…</span>
+                      ) : (
+                        user.display_name
+                      )}
+                    </span>
+                    <span className="tabular-nums text-gray-400">
+                      {user.event_count} event{user.event_count !== 1 ? 's' : ''}{' '}
+                      <span className="text-gray-600">({pct}%)</span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-gray-800">
+                    <div
+                      className="h-1.5 rounded-full bg-emerald-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </summary>
+                <div className="mt-1 flex flex-wrap gap-1 px-1 pb-1">
                   {user.events.map((evt) => (
                     <span
                       key={evt}
@@ -57,7 +62,7 @@ export default function TodaysActivity({ data }: Props) {
                     </span>
                   ))}
                 </div>
-              </div>
+              </details>
             );
           })}
         </div>

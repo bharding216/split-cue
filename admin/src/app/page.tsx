@@ -11,7 +11,6 @@ import {
   getSignupsOverTime,
   getEventsOverTime,
   getTodaysEventsByUser,
-  getAIGenerationsByUser,
   getTrainingPlansByUser,
   getWorkoutRetentionCurve,
   getUsersByCountry,
@@ -27,7 +26,6 @@ import RetentionCurveChart from '@/components/RetentionCurveChart';
 import TodaysActivity from '@/components/TodaysActivity';
 import CountriesSection from '@/components/CountriesSection';
 import AppVersionsSection from '@/components/AppVersionsSection';
-import AIUsageBreakdown from '@/components/AIUsageBreakdown';
 import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
 import SignOutButton from '@/components/SignOutButton';
 import Link from 'next/link';
@@ -51,7 +49,6 @@ export default async function DashboardPage() {
     signups,
     events,
     todaysUsers,
-    aiUsers,
     planUsers,
     countries,
     appVersions,
@@ -68,7 +65,6 @@ export default async function DashboardPage() {
     getSignupsOverTime(30),
     getEventsOverTime(30),
     getTodaysEventsByUser(),
-    getAIGenerationsByUser(7),
     getTrainingPlansByUser(30),
     getUsersByCountry(30),
     getUsersByAppVersion(30),
@@ -98,7 +94,7 @@ export default async function DashboardPage() {
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
         Usage
       </h2>
-      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Accounts" value={stats.totalUsers} detail="Registered users" />
         <StatCard label="DAU" value={stats.dauToday} detail="Unique devices today (UTC)" />
         <StatCard label="WAU" value={stats.wau} detail="Unique devices, rolling 7 days" />
@@ -106,11 +102,6 @@ export default async function DashboardPage() {
           label="Pro Subscribers"
           value={stats.proSubscribers}
           detail={`${engagement.freeToPaidRate}% of accounts, active + trialing`}
-        />
-        <StatCard
-          label="AI Workouts Saved"
-          value={stats.aiGenerationsLast7d}
-          detail="AI builder workouts saved, last 7 days"
         />
       </section>
 
@@ -125,20 +116,20 @@ export default async function DashboardPage() {
           detail={`${planStats.uniqueUsers} user${planStats.uniqueUsers !== 1 ? 's' : ''}, last 30 days`}
         />
         <StatCard
-          label="Plans Accepted"
-          value={planStats.accepted}
-          detail="Completed ≥ 1 plan workout"
+          label="Plans Started"
+          value={planStats.started}
+          detail="Runner completed ≥ 1 plan workout"
         />
         <StatCard
-          label="Acceptance Rate"
-          value={planStats.acceptanceRate}
+          label="Start Rate"
+          value={planStats.startRate}
           format="percent"
-          detail="Accepted ÷ generated, last 30 days"
+          detail="Started ÷ generated, last 30 days"
         />
         <StatCard
           label="Still Active"
           value={planStats.stillActive}
-          detail={`${planStats.archived} archived`}
+          detail={`${planStats.archived} archived or replaced`}
         />
         <StatCard
           label="Failed Generations"
@@ -244,9 +235,8 @@ export default async function DashboardPage() {
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
         Drilldowns
       </h2>
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <TodaysActivity data={todaysUsers} />
-        <AIUsageBreakdown data={aiUsers} />
         <TrainingPlansBreakdown data={planUsers} />
       </section>
     </div>

@@ -25,7 +25,14 @@ import { useAuth } from '../../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { supabase } from '../../../src/analytics/supabaseClient';
-import { generatePlanOutline, savePlanOutline, generateWorkoutDetails } from '../../../src/ai/planService';
+import {
+  generatePlanOutline,
+  savePlanOutline,
+  generateWorkoutDetails,
+  type PlanGenerationInput,
+  type PlanOutlineResult,
+} from '../../../src/ai/planService';
+import { PlanProposalReview, type PlanRevisionExchange } from '../../../src/components/PlanProposalReview';
 import { track } from '../../../src/analytics/track';
 import { loadHistory, loadSettings } from '../../../src/workout/workoutStorage';
 import { buildHistorySummary, serializeHistorySummary } from '../../../src/ai/historySummary';
@@ -86,13 +93,23 @@ function paceToMMSS(decimal: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-type GenPhase = 'idle' | 'analyzing' | 'generating' | 'saving' | 'done';
+type GenPhase = 'idle' | 'analyzing' | 'generating';
 
 const GEN_STEPS: { phase: GenPhase; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { phase: 'analyzing', label: 'Analyzing your profile', icon: 'person-outline' },
-  { phase: 'generating', label: 'Building training plan', icon: 'sparkles-outline' },
-  { phase: 'saving', label: 'Saving your plan', icon: 'cloud-upload-outline' },
+  { phase: 'generating', label: 'Drafting your training plan', icon: 'sparkles-outline' },
 ];
+
+/** Keeps the free plan from turning into unlimited AI calls; finer tweaks happen in Adjust Plan. */
+const MAX_PLAN_REVISIONS = 5;
+
+interface PlanProposal {
+  input: PlanGenerationInput;
+  outline: PlanOutlineResult;
+  /** Overlapping plans the runner chose to archive — archived only once they approve. */
+  archivePlanIds: string[];
+  paceSelection?: string;
+}
 
 export default function PlanSetupScreen() {
   const router = useRouter();
@@ -158,7 +175,12 @@ export default function PlanSetupScreen() {
   const [genPhase, setGenPhase] = useState<GenPhase>('idle');
   const [genElapsed, setGenElapsed] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const generating = genPhase !== 'idle' && genPhase !== 'done';
+  const generating = genPhase !== 'idle';
+
+  const [proposal, setProposal] = useState<PlanProposal | null>(null);
+  const [exchanges, setExchanges] = useState<PlanRevisionExchange[]>([]);
+  const [revising, setRevising] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   // Track mounted state for safe async updates
   useEffect(() => {
@@ -233,23 +255,6 @@ export default function PlanSetupScreen() {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start();
-    } else if (genPhase === 'saving') {
-      progressAnim.stopAnimation(() => {
-        Animated.timing(progressAnim, {
-          toValue: 0.95,
-          duration: 250,
-          useNativeDriver: false,
-        }).start();
-      });
-    } else if (genPhase === 'done') {
-      progressAnim.stopAnimation(() => {
-        Animated.timing(progressAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: false,
-        }).start();
-      });
     } else {
       progressAnim.setValue(0);
     }
@@ -433,6 +438,7 @@ export default function PlanSetupScreen() {
     }
 
     // Check for overlapping active training plans
+    let archivePlanIds: string[] = [];
     const existingRacePlans = plans.filter(
       (p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0),
     );
@@ -452,7 +458,7 @@ export default function PlanSetupScreen() {
         const choice = await new Promise<'archive' | 'keep' | 'cancel'>((resolve) => {
           Alert.alert(
             'Overlapping Plan' + (overlapping.length > 1 ? 's' : ''),
-            `Your new plan overlaps with ${names}. You'll see stacked workouts on days that overlap.\n\nWould you like to archive the existing plan${overlapping.length > 1 ? 's' : ''} first?`,
+            `Your new plan overlaps with ${names}. You'll see stacked workouts on days that overlap.\n\nWould you like to archive the existing plan${overlapping.length > 1 ? 's' : ''} once you approve the new one?`,
             [
               { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
               { text: 'Keep Both', onPress: () => resolve('keep') },
@@ -467,11 +473,7 @@ export default function PlanSetupScreen() {
         });
 
         if (choice === 'cancel') return;
-        if (choice === 'archive') {
-          for (const p of overlapping) {
-            await archivePlan(p.id);
-          }
-        }
+        if (choice === 'archive') archivePlanIds = overlapping.map((p) => p.id);
       }
     }
 
@@ -505,7 +507,7 @@ export default function PlanSetupScreen() {
         ))
       );
 
-      const input = {
+      const input: PlanGenerationInput = {
         profile: profilePayload,
         goals,
         preferences,
@@ -528,22 +530,89 @@ export default function PlanSetupScreen() {
       setGenPhase('generating');
       const outline = await generatePlanOutline(input);
 
-      if (!mountedRef.current) return;
-      setGenPhase('saving');
-      const { plan: savedPlan, workouts: savedWorkouts } = await savePlanOutline(user.id, input, outline);
-
-      track('plan_generated', {
-        plan_id: savedPlan.id,
+      track('plan_proposed', {
         race_type: effectiveRaceType,
         goal_type: goalType,
         weeks: outline.weeks.length,
         days_per_week: input.daysPerWeek,
+      });
+
+      if (!mountedRef.current) return;
+      setExchanges([]);
+      setProposal({ input, outline, archivePlanIds, paceSelection });
+      setGenPhase('idle');
+    } catch (err: any) {
+      track('plan_generation_failed', {
+        race_type: effectiveRaceType,
+        goal_type: goalType,
+        error: String(err?.message ?? err).slice(0, 200),
+      });
+      if (mountedRef.current) {
+        setGenPhase('idle');
+        Alert.alert('Error', err.message || 'Failed to generate plan. Please try again.');
+      }
+    }
+  }, [user, canGeneratePlan, plans, goalType, raceType, customDistance, customDistanceUnit, validatePaceGoal, coachPicksPace, typedPace, selectedTierId, paceBaseline, paceDistanceLabel, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate, profile, goals, preferences, limitations, router]);
+
+  const handleRevise = useCallback(async (feedback: string) => {
+    if (!proposal || revising) return;
+    if (exchanges.length >= MAX_PLAN_REVISIONS) {
+      Alert.alert(
+        'Revision limit reached',
+        'Approve this version to get started. You can keep fine-tuning anytime from Adjust Plan.',
+      );
+      return;
+    }
+
+    const priorFeedback = exchanges.map((e) => e.feedback);
+    setExchanges((prev) => [...prev, { feedback, reply: null }]);
+    setRevising(true);
+    try {
+      const outline = await generatePlanOutline(proposal.input, {
+        previous: proposal.outline,
+        feedback,
+        priorFeedback,
+      });
+      track('plan_revision_requested', {
+        revision: priorFeedback.length + 1,
+        weeks: outline.weeks.length,
+      });
+      if (!mountedRef.current) return;
+      setProposal((prev) => (prev ? { ...prev, outline } : prev));
+      setExchanges((prev) => prev.map((e, i) =>
+        i === prev.length - 1 ? { ...e, reply: outline.message || 'Done. Take a look at the updated plan above.' } : e,
+      ));
+    } catch (err: any) {
+      if (!mountedRef.current) return;
+      setExchanges((prev) => prev.slice(0, -1));
+      Alert.alert('Error', err.message || 'Failed to revise the plan. Please try again.');
+    } finally {
+      if (mountedRef.current) setRevising(false);
+    }
+  }, [proposal, revising, exchanges]);
+
+  const handleApprove = useCallback(async () => {
+    if (!user || !proposal || approving) return;
+    const { input, outline, archivePlanIds, paceSelection } = proposal;
+    setApproving(true);
+    try {
+      for (const id of archivePlanIds) {
+        await archivePlan(id);
+      }
+      const { plan: savedPlan, workouts: savedWorkouts } = await savePlanOutline(user.id, input, outline);
+
+      track('plan_generated', {
+        plan_id: savedPlan.id,
+        race_type: input.raceType,
+        goal_type: input.goalType ?? 'race',
+        weeks: outline.weeks.length,
+        days_per_week: input.daysPerWeek,
+        revisions: exchanges.length,
         ...(paceSelection ? { pace_selection: paceSelection, pace_baseline_source: paceBaseline?.source ?? 'none' } : {}),
       });
 
       if (!mountedRef.current) return;
 
-      setGenPhase('done');
       await Promise.all([refresh(), refreshSubscription()]);
       AsyncStorage.removeItem(DRAFT_KEY).catch(() => {});
 
@@ -552,7 +621,7 @@ export default function PlanSetupScreen() {
 
       Alert.alert(
         'Your plan is ready',
-        `Your coach built a ${outline.weeks.length}-week plan toward your ${goalType === 'pace_target' ? 'pace goal' : 'race'}.\n\n` +
+        `Your ${outline.weeks.length}-week plan is on your calendar.\n\n` +
           'Detailed workouts are being prepared for the next 2 weeks (highlighted on your calendar). ' +
           'Later workouts will be filled in as you go, adjusted based on how your actual runs perform.',
         [{ text: 'Got it' }],
@@ -566,22 +635,40 @@ export default function PlanSetupScreen() {
         .slice(0, 3);
 
       if (upcoming.length > 0) {
-        generateWorkoutDetails(savedPlan, upcoming, { profile: profilePayload, historySummary: summary })
+        generateWorkoutDetails(savedPlan, upcoming, { profile: input.profile, historySummary: input.historySummary })
           .then(() => refresh())
           .catch((err) => console.warn('Background detail generation failed:', err));
       }
     } catch (err: any) {
       track('plan_generation_failed', {
-        race_type: effectiveRaceType,
-        goal_type: goalType,
+        race_type: input.raceType,
+        goal_type: input.goalType ?? 'race',
         error: String(err?.message ?? err).slice(0, 200),
       });
       if (mountedRef.current) {
-        setGenPhase('idle');
-        Alert.alert('Error', err.message || 'Failed to generate plan. Please try again.');
+        setApproving(false);
+        Alert.alert('Error', err.message || 'Failed to save plan. Please try again.');
       }
     }
-  }, [user, canGeneratePlan, plans, archivePlan, goalType, raceType, customDistance, customDistanceUnit, validatePaceGoal, coachPicksPace, typedPace, selectedTierId, paceBaseline, paceDistanceLabel, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate, profile, goals, preferences, limitations, refresh, refreshSubscription, router]);
+  }, [user, proposal, approving, exchanges.length, archivePlan, paceBaseline, refresh, refreshSubscription, router]);
+
+  const handleDiscardProposal = useCallback(() => {
+    Alert.alert(
+      'Edit your answers?',
+      "This proposal will be discarded and you'll need to generate a new one.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            setProposal(null);
+            setExchanges([]);
+          },
+        },
+      ],
+    );
+  }, []);
 
   if (!user) {
     return (
@@ -597,6 +684,20 @@ export default function PlanSetupScreen() {
           <Text style={styles.signInBtnText}>Sign In</Text>
         </TouchableOpacity>
       </View>
+    );
+  }
+
+  if (proposal) {
+    return (
+      <PlanProposalReview
+        outline={proposal.outline}
+        exchanges={exchanges}
+        revising={revising}
+        approving={approving}
+        onApprove={handleApprove}
+        onRevise={handleRevise}
+        onBack={handleDiscardProposal}
+      />
     );
   }
 

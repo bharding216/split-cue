@@ -2,18 +2,35 @@
  * generate-plan-outline — Supabase Edge Function
  *
  * Fast single-call plan generator that returns only week-level data:
- * themes, volume targets, day labels, and coaching descriptions.
+ * themes, volume targets, day labels, and coaching descriptions, plus a
+ * high-level approach and phase breakdown the runner reviews before saving.
  * No detailed workout objects (intervals, warmup, blocks, cooldown).
+ *
+ * Pass `revision` to revise a previously proposed outline from runner feedback.
  *
  * Detailed workouts are generated on-demand by `generate-workouts`.
  *
+ * Free users get one AI plan; the quota is checked here against the
+ * plan_generations ledger so it can't be bypassed client-side.
+ *
  * Deploy:  supabase functions deploy generate-plan-outline
  * Secrets: supabase secrets set OPENAI_API_KEY=sk-...
+ *          Optional: PLAN_QUOTA_EXEMPT_USER_IDS=uuid1,uuid2 (e.g. dev accounts
+ *          testing Pro via the in-app tier override)
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const QUOTA_EXEMPT_USER_IDS = new Set(
+  (Deno.env.get("PLAN_QUOTA_EXEMPT_USER_IDS") ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -54,6 +71,29 @@ interface RequestBody {
   days_per_week: number;
   days_per_week_min?: number | null;
   history_summary?: string | null;
+  /** Present when the runner asked for changes to a proposed outline. */
+  revision?: {
+    previous: {
+      approach?: string | null;
+      phases?: PlanPhase[] | null;
+      goal_pace?: number | null;
+      weeks: {
+        theme: string;
+        total_miles_target: number;
+        days: { day_label: string; description: string | null }[];
+      }[];
+    };
+    feedback: string;
+    /** Earlier feedback from this same review session, oldest first. */
+    prior_feedback?: string[];
+  } | null;
+}
+
+interface PlanPhase {
+  start_week: number;
+  end_week: number;
+  name: string;
+  focus: string;
 }
 
 function formatPaceMi(pace: number): string {
@@ -201,12 +241,17 @@ OUTLINE only — no detailed workout structures. Just day labels and short coach
 
   // Compact output schema — dates are assigned server-side, not by the model
   const coachPicksPace = isPaceTarget && !body.goal_pace;
+  const isRevision = !!body.revision;
 
   sections.push(`## Output — COMPACT FORMAT (dates assigned automatically)
 
 JSON only, no markdown fences:
 
-{${coachPicksPace ? `\n  "goal_pace": number (the target pace you chose, decimal min/mile, e.g. 10.5 = 10:30/mi),` : ''}
+{${coachPicksPace ? `\n  "goal_pace": number (the target pace you chose, decimal min/mile, e.g. 10.5 = 10:30/mi),` : ''}${isRevision ? `\n  "message": "1–2 sentences to the runner explaining what you changed (or why you kept something the same)",` : ''}
+  "approach": "2–3 sentences, written to the runner, explaining the overall strategy of this plan",
+  "phases": [
+    { "start_week": 1, "end_week": 3, "name": "Base Building", "focus": "one sentence on what these weeks focus on and why" }
+  ],
   "weeks": [
     {
       "theme": "phase name, e.g. Base Building 1",
@@ -233,6 +278,7 @@ Rules:
 - ${daysLabel} training days per full week; rest days fill remaining slots.
 - miles = reasonable weekly mileage for runner's level and phase.
 - Keep descriptions to one short sentence.
+- phases must cover weeks 1–${dims.totalWeeks} in order with no gaps or overlaps, and match the week themes. Use 2–5 phases.
 - REUSE THE SAME DAY LABELS across weeks. Real training plans repeat the same session types (e.g. "Intervals" every Tuesday, "Tempo" every Thursday, "Long Run" every Saturday). Use the SAME label for the same slot across weeks — progress by changing the description (e.g. "4×800m" → "5×800m"), not by inventing new labels each week. Limit yourself to 3–5 distinct workout labels for the entire plan.`);
 
   return sections.join("\n\n");
@@ -269,6 +315,108 @@ function expandCompactOutline(
   }));
 }
 
+// ── Revision conversation ────────────────────────────────────
+
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+function buildMessages(body: RequestBody, systemPrompt: string, dims: PlanDimensions): ChatMessage[] {
+  const messages: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: `Generate the ${dims.totalWeeks}-week plan outline.` },
+  ];
+  const revision = body.revision;
+  if (!revision) return messages;
+
+  const prev = revision.previous;
+  const previousCompact = {
+    ...(prev.goal_pace ? { goal_pace: prev.goal_pace } : {}),
+    approach: prev.approach ?? "",
+    phases: prev.phases ?? [],
+    weeks: prev.weeks.map((w) => ({
+      theme: w.theme,
+      miles: w.total_miles_target,
+      days: w.days.map((d) => d.day_label === "Rest Day" ? [null] : [d.day_label, d.description ?? ""]),
+    })),
+  };
+  messages.push({ role: "assistant", content: JSON.stringify(previousCompact) });
+
+  const earlier = (revision.prior_feedback ?? []).filter((f) => f.trim());
+  const earlierNote = earlier.length
+    ? `\n\nEarlier requests in this conversation (already reflected above — keep honoring them):\n${earlier.map((f) => `- ${f}`).join("\n")}`
+    : "";
+  messages.push({
+    role: "user",
+    content: `The runner reviewed this plan and replied:\n"${revision.feedback}"${earlierNote}\n\nRevise the plan to address their feedback while keeping it safe and appropriate for their level. If a request would be unsafe or conflicts with the plan rules, adjust as close as you responsibly can and explain in "message". Return the FULL revised plan in the same JSON format, including "message".`,
+  });
+  return messages;
+}
+
+function sanitizePhases(raw: unknown, totalWeeks: number): PlanPhase[] | null {
+  if (!Array.isArray(raw)) return null;
+  const phases = raw
+    .map((p) => ({
+      start_week: Math.max(1, Math.round(Number(p?.start_week))),
+      end_week: Math.min(totalWeeks, Math.round(Number(p?.end_week))),
+      name: typeof p?.name === "string" ? p.name.trim() : "",
+      focus: typeof p?.focus === "string" ? p.focus.trim() : "",
+    }))
+    .filter((p) => isFinite(p.start_week) && isFinite(p.end_week) && p.start_week <= p.end_week && p.name)
+    .sort((a, b) => a.start_week - b.start_week);
+  return phases.length > 0 ? phases : null;
+}
+
+// ── Plan quota ───────────────────────────────────────────────
+
+const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+async function getAuthUserId(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) return null;
+  const { data: { user }, error } = await adminClient.auth.getUser(authHeader.replace("Bearer ", ""));
+  if (error || !user) return null;
+  return user.id;
+}
+
+interface SubscriptionRow {
+  tier: string;
+  status: string;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+}
+
+/** Mirrors getEffectiveTier in the app's SubscriptionContext. */
+function isPro(sub: SubscriptionRow | null): boolean {
+  if (!sub) return false;
+  const now = Date.now();
+  if (sub.tier === "pro" && sub.status === "active") return true;
+  if (sub.status === "trialing" && sub.trial_ends_at && new Date(sub.trial_ends_at).getTime() > now) return true;
+  if (sub.status === "canceled" && sub.current_period_end && new Date(sub.current_period_end).getTime() > now) return true;
+  return false;
+}
+
+/** First AI plan is free for everyone; additional plans require Pro. */
+async function canGeneratePlan(userId: string): Promise<boolean> {
+  if (QUOTA_EXEMPT_USER_IDS.has(userId)) return true;
+
+  const [subResult, countResult] = await Promise.all([
+    adminClient
+      .from("subscriptions")
+      .select("tier, status, trial_ends_at, current_period_end")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    adminClient
+      .from("plan_generations")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId),
+  ]);
+  if (subResult.error) throw new Error(`Failed to load subscription: ${subResult.error.message}`);
+  if (countResult.error) throw new Error(`Failed to load plan count: ${countResult.error.message}`);
+
+  return isPro(subResult.data as SubscriptionRow | null) || (countResult.count ?? 0) === 0;
+}
+
 // ── Handler ──────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -279,6 +427,20 @@ Deno.serve(async (req) => {
   try {
     if (!OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is not configured");
+    }
+
+    const userId = await getAuthUserId(req);
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "Sign in to create a training plan." }),
+        { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+    if (!(await canGeneratePlan(userId))) {
+      return new Response(
+        JSON.stringify({ error: "You've used your free training plan. Upgrade to SplitCue Pro to create another." }),
+        { status: 402, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
     }
 
     const body: RequestBody = await req.json();
@@ -301,10 +463,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Generate the ${dims.totalWeeks}-week plan outline.` },
-        ],
+        messages: buildMessages(body, systemPrompt, dims),
         temperature: 0.7,
         max_tokens: 8192,
         response_format: { type: "json_object" },
@@ -352,8 +511,22 @@ Deno.serve(async (req) => {
       title = `${raceLabel} Training - ${targetMonth}`;
     }
 
+    const approach = typeof compact.approach === "string" && compact.approach.trim()
+      ? compact.approach.trim()
+      : null;
+    const message = body.revision && typeof compact.message === "string" && compact.message.trim()
+      ? compact.message.trim()
+      : null;
+
     return new Response(
-      JSON.stringify({ title, weeks, suggested_goal_pace: suggestedGoalPace }),
+      JSON.stringify({
+        title,
+        weeks,
+        suggested_goal_pace: suggestedGoalPace,
+        approach,
+        phases: sanitizePhases(compact.phases, weeks.length),
+        message,
+      }),
       { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   } catch (err: unknown) {

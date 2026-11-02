@@ -14,7 +14,7 @@
 import { supabase } from '../analytics/supabaseClient';
 import { generateId, type CompletedWorkout } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
-import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, RaceType, GoalType } from '../types/database';
+import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
 import type { AIContext } from './aiWorkoutService';
 import { buildHistorySummary, serializeHistorySummary } from './historySummary';
 
@@ -63,6 +63,18 @@ export interface PlanOutlineResult {
   weeks: PlanOutlineWeek[];
   /** Pace chosen by the coach (min/mi) when a pace_target plan was requested without one. */
   suggested_goal_pace?: number | null;
+  /** Coach's high-level description of the plan strategy, shown for approval. */
+  approach?: string | null;
+  phases?: PlanPhase[] | null;
+  /** Coach's reply to revision feedback. Only set on revisions. */
+  message?: string | null;
+}
+
+export interface PlanRevisionRequest {
+  previous: PlanOutlineResult;
+  feedback: string;
+  /** Earlier feedback from the same review session, oldest first. */
+  priorFeedback?: string[];
 }
 
 /** Detail result — full workout objects for specific dates. */
@@ -180,7 +192,10 @@ async function extractFunctionError(error: any, fallback: string): Promise<strin
 
 // ── Phase 1: Plan Outline ───────────────────────────────────
 
-export async function generatePlanOutline(input: PlanGenerationInput): Promise<PlanOutlineResult> {
+export async function generatePlanOutline(
+  input: PlanGenerationInput,
+  revision?: PlanRevisionRequest,
+): Promise<PlanOutlineResult> {
   const { data, error } = await supabase.functions.invoke('generate-plan-outline', {
     body: {
       profile: {
@@ -211,6 +226,22 @@ export async function generatePlanOutline(input: PlanGenerationInput): Promise<P
       days_per_week_min: input.daysPerWeekMin ?? null,
       history_summary: input.historySummary,
       use_effort_based: input.useEffortBased ?? false,
+      revision: revision
+        ? {
+            previous: {
+              approach: revision.previous.approach ?? null,
+              phases: revision.previous.phases ?? null,
+              goal_pace: revision.previous.suggested_goal_pace ?? null,
+              weeks: revision.previous.weeks.map((w) => ({
+                theme: w.theme,
+                total_miles_target: w.total_miles_target,
+                days: w.days.map((d) => ({ day_label: d.day_label, description: d.description })),
+              })),
+            },
+            feedback: revision.feedback,
+            prior_feedback: revision.priorFeedback ?? [],
+          }
+        : null,
     },
   });
 
@@ -666,6 +697,8 @@ export async function savePlanOutline(
       start_date: input.startDate,
       days_per_week: input.daysPerWeek,
       outline: result.weeks,
+      approach: result.approach ?? null,
+      phases: result.phases ?? null,
       status: 'active',
     })
     .select()
@@ -1085,6 +1118,59 @@ export async function loadArchivedPlans(userId: string): Promise<TrainingPlan[]>
     .order('updated_at', { ascending: false });
 
   if (error) throw new Error(`Failed to load archived plans: ${error.message}`);
+
+  return (data ?? []) as TrainingPlan[];
+}
+
+/** Days a deleted plan stays recoverable before the server purges it. */
+export const DELETED_PLAN_RETENTION_DAYS = 30;
+
+/** Move an archived plan to Recently Deleted. It is purged permanently after the retention window. */
+export async function deletePlan(planId: string): Promise<string> {
+  const deletedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('training_plans')
+    .update({
+      status: 'deleted',
+      deleted_at: deletedAt,
+      updated_at: deletedAt,
+    })
+    .eq('id', planId)
+    .eq('status', 'archived');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return deletedAt;
+}
+
+/** Recover a deleted plan back to the archived list. */
+export async function restoreDeletedPlan(planId: string): Promise<void> {
+  const { error } = await supabase
+    .from('training_plans')
+    .update({
+      status: 'archived',
+      deleted_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', planId)
+    .eq('status', 'deleted');
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Load plans that are deleted but still inside the recovery window. */
+export async function loadDeletedPlans(userId: string): Promise<TrainingPlan[]> {
+  const { data, error } = await supabase
+    .from('training_plans')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'deleted')
+    .order('deleted_at', { ascending: false });
+
+  if (error) throw new Error(`Failed to load deleted plans: ${error.message}`);
 
   return (data ?? []) as TrainingPlan[];
 }

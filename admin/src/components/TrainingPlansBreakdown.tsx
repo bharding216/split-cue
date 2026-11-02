@@ -53,7 +53,7 @@ export default function TrainingPlansBreakdown({ data }: Props) {
                   />
                 </div>
                 <p className="mt-0.5 text-[10px] text-gray-600">
-                  {user.accepted_count}/{user.plan_count} accepted · Last generated {lastUsed}
+                  {user.accepted_count}/{user.plan_count} started · Last generated {lastUsed}
                 </p>
               </div>
             );
