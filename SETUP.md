@@ -115,7 +115,7 @@ create table if not exists subscriptions (
   user_id uuid references auth.users on delete cascade not null unique,
   tier text not null default 'free' check (tier in ('free', 'pro')),
   status text not null default 'active' check (status in ('trialing', 'active', 'canceled', 'expired', 'past_due')),
-  provider text check (provider in ('apple', 'stripe', 'manual')),
+  provider text check (provider in ('apple', 'google', 'stripe', 'manual')),
   provider_subscription_id text,
   trial_started_at timestamptz,
   trial_ends_at timestamptz,

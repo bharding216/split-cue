@@ -73,6 +73,12 @@ export type CountryCount = {
   user_count: number;
 };
 
+export type CountryPlatformCount = {
+  country: string;
+  platform: 'ios' | 'android' | 'unknown';
+  user_count: number;
+};
+
 export type AppVersionCount = {
   app_version: string;
   user_count: number;
@@ -256,14 +262,15 @@ export async function getEventsOverTime(days = 30): Promise<DailyCount[]> {
 }
 
 /**
- * Unique devices by country for the last N days.
- * Devices that opened the app before country tracking report as "unknown".
+ * Unique devices by country and platform for the last N days.
+ * Devices whose latest open came from a build without country or platform
+ * tracking report that field as "unknown".
  */
-export async function getUsersByCountry(days = 30): Promise<CountryCount[]> {
+export async function getUsersByCountryPlatform(days = 30): Promise<CountryPlatformCount[]> {
   const supabase = createServiceClient();
 
-  const { data } = await supabase.rpc('users_by_country', { num_days: days });
-  return (data as CountryCount[]) ?? [];
+  const { data } = await supabase.rpc('users_by_country_platform', { num_days: days });
+  return (data as CountryPlatformCount[]) ?? [];
 }
 
 /**

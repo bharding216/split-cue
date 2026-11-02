@@ -13,7 +13,7 @@ import {
   getTodaysEventsByUser,
   getTrainingPlansByUser,
   getWorkoutRetentionCurve,
-  getUsersByCountry,
+  getUsersByCountryPlatform,
   getUsersByAppVersion,
   getStravaStats,
   getStravaUsers,
@@ -26,6 +26,7 @@ import EventsChart from '@/components/EventsChart';
 import OnboardingFunnel from '@/components/OnboardingFunnel';
 import RetentionCurveChart from '@/components/RetentionCurveChart';
 import TodaysActivity from '@/components/TodaysActivity';
+import PlatformsSection from '@/components/PlatformsSection';
 import CountriesSection from '@/components/CountriesSection';
 import AppVersionsSection from '@/components/AppVersionsSection';
 import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
@@ -71,7 +72,7 @@ export default async function DashboardPage() {
     getEventsOverTime(30),
     getTodaysEventsByUser(),
     getTrainingPlansByUser(30),
-    getUsersByCountry(30),
+    getUsersByCountryPlatform(30),
     getUsersByAppVersion(30),
     getStravaStats(30),
     getStravaUsers(30),
@@ -230,6 +231,9 @@ export default async function DashboardPage() {
       <section className="mb-8">
         <StravaUsersBreakdown data={stravaUsers} />
       </section>
+
+      {/* ── Platforms ─────────────────────────────────────── */}
+      <PlatformsSection data={countries} />
 
       {/* ── Countries ─────────────────────────────────────── */}
       <CountriesSection data={countries} />

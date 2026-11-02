@@ -13,7 +13,7 @@ export type SubscriptionStatus =
   | 'canceled'
   | 'expired'
   | 'past_due';
-export type SubscriptionProvider = 'apple' | 'stripe' | 'manual';
+export type SubscriptionProvider = 'apple' | 'google' | 'stripe' | 'manual';
 
 export type Subscription = {
   id: string;
