@@ -191,6 +191,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const refreshEpoch = useRef(0);
   /** User whose plan data is currently in state; only that user's data may be written to the cache. */
   const stateOwnerId = useRef<string | null>(null);
+  /** Workouts removed this session; in-flight loads started before the removal must not resurrect them. */
+  const removedWorkoutIds = useRef(new Set<string>());
 
   // Primary plan: first real training plan (non-custom, or custom with outline)
   const plan = plans.find((p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0)) ?? plans[0] ?? null;
@@ -256,7 +258,9 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
       // Keep plan workouts only for active plans
       const activePlanIds = new Set(activePlans.map((p) => p.id));
-      const activeWorkouts = allWorkouts.filter((w) => activePlanIds.has(w.plan_id));
+      const activeWorkouts = allWorkouts.filter(
+        (w) => activePlanIds.has(w.plan_id) && !removedWorkoutIds.current.has(w.id),
+      );
       setPlanWorkouts(activeWorkouts);
       stateOwnerId.current = user.id;
 
@@ -281,7 +285,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
               return;
             }
 
-            const allUpdated = results.flat();
+            const allUpdated = results.flat().filter((w) => !removedWorkoutIds.current.has(w.id));
             if (allUpdated.length > 0) {
               const updatedIds = new Set(allUpdated.map((w) => w.id));
               setPlanWorkouts((prev) => [
@@ -318,6 +322,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
   const removeWorkout = useCallback(async (workoutId: string) => {
     await removePlanWorkoutApi(workoutId);
+    removedWorkoutIds.current.add(workoutId);
     setPlanWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
   }, []);
 
