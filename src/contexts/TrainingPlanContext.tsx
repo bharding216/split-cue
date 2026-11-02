@@ -138,6 +138,25 @@ function toDateKey(epoch: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+interface RecentMove {
+  date: string;
+  weekNumber: number;
+  /** `refreshEpoch` when the move was saved. */
+  epoch: number;
+}
+
+/** Re-apply moves that a load from refresh `epoch` may predate. */
+function applyRecentMoves(
+  workouts: PlanWorkout[],
+  moves: Map<string, RecentMove>,
+  epoch: number,
+): PlanWorkout[] {
+  return workouts.map((w) => {
+    const move = moves.get(w.id);
+    return move && epoch <= move.epoch ? { ...w, date: move.date, week_number: move.weekNumber } : w;
+  });
+}
+
 function buildDayEntries(
   planWorkouts: PlanWorkout[],
   history: CompletedWorkout[],
@@ -193,6 +212,11 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const stateOwnerId = useRef<string | null>(null);
   /** Workouts removed this session; in-flight loads started before the removal must not resurrect them. */
   const removedWorkoutIds = useRef(new Set<string>());
+  /**
+   * Latest move per workout, tagged with `refreshEpoch` when the move was saved. Loads from
+   * refreshes at or before that epoch may predate the move and would restore the old date.
+   */
+  const movedWorkouts = useRef(new Map<string, RecentMove>());
 
   // Primary plan: first real training plan (non-custom, or custom with outline)
   const plan = plans.find((p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0)) ?? plans[0] ?? null;
@@ -261,7 +285,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
       const activeWorkouts = allWorkouts.filter(
         (w) => activePlanIds.has(w.plan_id) && !removedWorkoutIds.current.has(w.id),
       );
-      setPlanWorkouts(activeWorkouts);
+      setPlanWorkouts(applyRecentMoves(activeWorkouts, movedWorkouts.current, epoch).sort((a, b) => a.date.localeCompare(b.date)));
       stateOwnerId.current = user.id;
 
       // Auto-fill upcoming workout details for each real training plan
@@ -285,7 +309,11 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
               return;
             }
 
-            const allUpdated = results.flat().filter((w) => !removedWorkoutIds.current.has(w.id));
+            const allUpdated = applyRecentMoves(
+              results.flat().filter((w) => !removedWorkoutIds.current.has(w.id)),
+              movedWorkouts.current,
+              epoch,
+            );
             if (allUpdated.length > 0) {
               const updatedIds = new Set(allUpdated.map((w) => w.id));
               setPlanWorkouts((prev) => [
@@ -336,6 +364,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     const target = new Date(newDate);
     const diffMs = target.getTime() - start.getTime();
     const weekNumber = Math.max(1, Math.ceil(diffMs / (7 * 24 * 60 * 60 * 1000)));
+    movedWorkouts.current.set(workoutId, { date: newDate, weekNumber, epoch: refreshEpoch.current });
     setPlanWorkouts((prev) =>
       prev.map((w) => (w.id === workoutId ? { ...w, date: newDate, week_number: weekNumber } : w))
         .sort((a, b) => a.date.localeCompare(b.date))
