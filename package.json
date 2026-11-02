@@ -68,8 +68,8 @@
     "build:prod:android": "eas build --profile production --platform android",
     "submit:ios": "eas submit --platform ios",
     "submit:android": "eas submit --platform android",
-    "update:preview": "eas update --branch preview --message",
-    "update:prod": "eas update --branch production --message"
+    "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --message",
+    "update:prod": "eas update --branch production --environment production --message"
   },
   "private": true
 }
