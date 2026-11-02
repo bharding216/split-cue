@@ -23,7 +23,7 @@ import { hapticTap } from '../../../src/audio/haptics';
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
 const PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.toddly.runningintervals';
+  'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
 
 export default function AboutSettingsScreen() {
   const handleShare = async () => {

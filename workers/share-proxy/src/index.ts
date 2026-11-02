@@ -65,7 +65,7 @@ const ASSET_LINKS = JSON.stringify([
     relation: ['delegate_permission/common.handle_all_urls'],
     target: {
       namespace: 'android_app',
-      package_name: BUNDLE_ID,
+      package_name: 'com.surmount.pacecue',
       // TODO: Replace with your app signing certificate SHA-256 fingerprint
       sha256_cert_fingerprints: ['TODO:ADD:YOUR:SHA256:FINGERPRINT:HERE'],
     },

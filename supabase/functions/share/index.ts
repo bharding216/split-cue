@@ -20,7 +20,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 const APP_STORE_URL = "https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816";
-const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.toddly.runningintervals";
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.surmount.pacecue";
 const SHARE_BASE_URL = "https://splitcue.app/w";
 
 const PRODUCTION_SCHEME = "pacecue";

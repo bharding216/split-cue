@@ -8,6 +8,8 @@ const BUNDLE_ID = IS_DEV
   : IS_PREVIEW
     ? 'com.toddly.runningintervals.preview'
     : 'com.toddly.runningintervals';
+// Production Android package must match the Google Play Console listing
+const ANDROID_PACKAGE = IS_DEV || IS_PREVIEW ? BUNDLE_ID : 'com.surmount.pacecue';
 // Preview reuses the production App Group (the preview-specific one can't be created in Apple)
 const APP_GROUP = IS_DEV
   ? 'group.com.toddly.runningintervals.dev'
@@ -76,7 +78,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/android-icon-foreground.png',
       monochromeImage: './assets/android-icon-monochrome.png',
     },
-    package: BUNDLE_ID,
+    package: ANDROID_PACKAGE,
     googleServicesFile: GOOGLE_SERVICES_FILE,
     permissions: [
       'android.permission.RECORD_AUDIO',

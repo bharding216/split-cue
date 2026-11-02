@@ -7,9 +7,66 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:746766227473:android:d299c60c64c173938fb9b0",
+        "android_client_info": {
+          "package_name": "com.surmount.pacecue"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxDORFBVBKMrgNZq3Bb6JznCFjRJRDC50"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:746766227473:android:e2c5976f1ab0d05e8fb9b0",
         "android_client_info": {
           "package_name": "com.toddly.runningintervals"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxDORFBVBKMrgNZq3Bb6JznCFjRJRDC50"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:746766227473:android:02da12b71209c65f8fb9b0",
+        "android_client_info": {
+          "package_name": "com.toddly.runningintervals.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxDORFBVBKMrgNZq3Bb6JznCFjRJRDC50"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:746766227473:android:ced4c0cd0d4f742c8fb9b0",
+        "android_client_info": {
+          "package_name": "com.toddly.runningintervals.preview"
         }
       },
       "oauth_client": [],
