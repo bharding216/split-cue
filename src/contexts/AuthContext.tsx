@@ -20,10 +20,12 @@ import { Platform } from 'react-native';
 import { Session, User } from '@supabase/supabase-js';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { supabase } from '../analytics/supabaseClient';
 
-const IS_DEV = process.env.APP_VARIANT === 'development';
-const REDIRECT_URI = `${IS_DEV ? 'pacecue-dev' : 'pacecue'}://auth/callback`;
+const configScheme = Constants.expoConfig?.scheme;
+const SCHEME = (Array.isArray(configScheme) ? configScheme[0] : configScheme) ?? 'pacecue';
+const REDIRECT_URI = `${SCHEME}://auth/callback`;
 
 type AuthContextType = {
   session: Session | null;

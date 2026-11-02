@@ -8,6 +8,7 @@
  */
 
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { supabase } from '../analytics/supabaseClient';
 import { track } from '../analytics/track';
 import { updateHistoryEntry, loadSettings, saveSettings } from '../workout/workoutStorage';
@@ -18,9 +19,8 @@ import type { CompletedWorkout, RoutePoint } from '../workout/workoutTypes';
 // redirect through splitcue.app which then bounces into the app via
 // the custom URL scheme.
 
-const IS_DEV = process.env.APP_VARIANT === 'development';
-const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
-const SCHEME = IS_DEV ? 'pacecue-dev' : IS_PREVIEW ? 'pacecue-preview' : 'pacecue';
+const configScheme = Constants.expoConfig?.scheme;
+const SCHEME = (Array.isArray(configScheme) ? configScheme[0] : configScheme) ?? 'pacecue';
 
 /** The HTTPS URL Strava redirects to (must match the registered callback domain). */
 const STRAVA_REDIRECT_URI = 'https://splitcue.app/strava/callback';
