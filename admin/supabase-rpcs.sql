@@ -310,7 +310,8 @@ returns table(date text, started int, completed int) as $$
 $$ language sql security definer;
 
 -- Onboarding funnel: % of users at each step (last N days)
--- Tracks: app_opened → workout_saved/workout_created → workout_started → workout_completed
+-- Tracks: app_opened → workout_saved/workout_created → run_screen_opened → workout_started → workout_completed
+-- workout_session_started is the pre-rename name of run_screen_opened, still sent by older app builds.
 create or replace function onboarding_funnel(num_days int default 30)
 returns table(
   step text,
@@ -335,6 +336,12 @@ returns table(
       (select count(distinct e.anonymous_user_id)
        from events e
        inner join base b on b.anonymous_user_id = e.anonymous_user_id
+       where e.event_name in ('run_screen_opened', 'workout_session_started')
+         and e.created_at > now() - (num_days || ' days')::interval
+      )::int as run_screen,
+      (select count(distinct e.anonymous_user_id)
+       from events e
+       inner join base b on b.anonymous_user_id = e.anonymous_user_id
        where e.event_name = 'workout_started'
          and e.created_at > now() - (num_days || ' days')::interval
       )::int as started,
@@ -353,6 +360,7 @@ returns table(
   lateral (values
     ('Opened App', steps.opened),
     ('Edited/Created Workout', steps.edited),
+    ('Opened Run Screen', steps.run_screen),
     ('Started Workout', steps.started),
     ('Completed Workout', steps.completed)
   ) as s(step, user_count);
@@ -655,3 +663,159 @@ returns table(
   group by sw.user_id, p.display_name, u.email
   order by share_count desc;
 $$ language sql security definer;
+
+-- ── Strava ───────────────────────────────────────────────────
+-- Push counts come from the client's strava_workout_pushed events, which are
+-- only sent after a successful upload; pushes before that event shipped are
+-- not counted.
+
+drop function if exists strava_stats(int);
+drop function if exists strava_users(int);
+drop function if exists power_users(int, int);
+
+-- Strava summary: connected accounts (current) plus activity in the last N days.
+create or replace function strava_stats(num_days int default 30)
+returns table(
+  connected_users int,
+  connected_pct numeric,
+  new_connections int,
+  disconnects int,
+  pushes int,
+  auto_pushes int,
+  unique_pushers int
+) as $$
+  with connections as (
+    select
+      count(*)::int as connected_users,
+      count(*) filter (
+        where connected_at > now() - (num_days || ' days')::interval
+      )::int as new_connections
+    from strava_connections
+  ),
+  activity as (
+    select
+      count(*) filter (where event_name = 'strava_disconnected')::int as disconnects,
+      count(*) filter (where event_name = 'strava_workout_pushed')::int as pushes,
+      count(*) filter (
+        where event_name = 'strava_workout_pushed' and metadata->>'trigger' = 'auto'
+      )::int as auto_pushes,
+      count(distinct coalesce(user_id::text, anonymous_user_id)) filter (
+        where event_name = 'strava_workout_pushed'
+      )::int as unique_pushers
+    from events
+    where event_name in ('strava_workout_pushed', 'strava_disconnected')
+      and created_at > now() - (num_days || ' days')::interval
+  ),
+  total as (
+    select count(*) as n from profiles
+  )
+  select
+    c.connected_users,
+    case
+      when total.n = 0 then 0
+      else round(c.connected_users::numeric / total.n::numeric * 100, 1)
+    end as connected_pct,
+    c.new_connections,
+    a.disconnects,
+    a.pushes,
+    a.auto_pushes,
+    a.unique_pushers
+  from connections c, activity a, total;
+$$ language sql security definer;
+
+-- Every user who is connected to Strava or has ever pushed a workout,
+-- with all-time and last-N-days push counts.
+create or replace function strava_users(num_days int default 30)
+returns table(
+  user_id uuid,
+  display_name text,
+  athlete_name text,
+  is_connected boolean,
+  connected_at timestamptz,
+  push_count int,
+  pushes_period int,
+  auto_push_count int,
+  latest_push_at timestamptz
+) as $$
+  with pushes as (
+    select
+      e.user_id,
+      count(*)::int as push_count,
+      count(*) filter (
+        where e.created_at > now() - (num_days || ' days')::interval
+      )::int as pushes_period,
+      count(*) filter (where e.metadata->>'trigger' = 'auto')::int as auto_push_count,
+      max(e.created_at) as latest_push_at
+    from events e
+    where e.event_name = 'strava_workout_pushed'
+      and e.user_id is not null
+    group by e.user_id
+  ),
+  people as (
+    select sc.user_id from strava_connections sc
+    union
+    select pu.user_id from pushes pu
+  )
+  select
+    pp.user_id,
+    coalesce(p.display_name, u.email, pp.user_id::text) as display_name,
+    sc.athlete_name,
+    sc.user_id is not null as is_connected,
+    sc.connected_at,
+    coalesce(pu.push_count, 0) as push_count,
+    coalesce(pu.pushes_period, 0) as pushes_period,
+    coalesce(pu.auto_push_count, 0) as auto_push_count,
+    pu.latest_push_at
+  from people pp
+  left join strava_connections sc on sc.user_id = pp.user_id
+  left join pushes pu on pu.user_id = pp.user_id
+  left join profiles p on p.id = pp.user_id
+  left join auth.users u on u.id = pp.user_id
+  order by push_count desc, sc.connected_at desc nulls last;
+$$ language sql security definer;
+
+-- ── Access Control ───────────────────────────────────────────
+-- Keep this block last. Dropping and recreating a function restores the
+-- default execute grant to anon/authenticated (the mobile app's public key).
+-- These are security definer and several return emails, so only the admin
+-- dashboard's service-role client may call them.
+do $$
+declare
+  fn text;
+begin
+  foreach fn in array array[
+    'activation_rate()',
+    'ai_adoption_rate(int)',
+    'ai_generations_by_user(int)',
+    'ai_generations_count(int)',
+    'core_engagement_rate()',
+    'dau_per_day(int)',
+    'dau_today()',
+    'events_per_day(int)',
+    'free_to_paid_rate()',
+    'new_users(int)',
+    'onboarding_funnel(int)',
+    'pro_subscribers()',
+    'share_stats(int)',
+    'shares_by_user(int)',
+    'shares_per_day(int)',
+    'signups_per_day(int)',
+    'strava_stats(int)',
+    'strava_users(int)',
+    'todays_events_by_user()',
+    'total_users()',
+    'training_plan_stats(int)',
+    'training_plans_by_user(int)',
+    'users_by_app_version(int)',
+    'users_by_country(int)',
+    'wau()',
+    'week4_retention()',
+    'workout_completion_stats(int)',
+    'workout_retention_curve(int)',
+    'workouts_per_day(int)'
+  ] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', fn);
+    execute format('grant execute on function %s to service_role', fn);
+  end loop;
+end;
+$$;

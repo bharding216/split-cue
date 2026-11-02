@@ -687,6 +687,9 @@ export function useWorkoutRunner(
       total_duration_seconds: next.intervals.reduce((s, i) => s + i.durationSeconds, 0),
       gps_enabled: needsGps,
       settings: settingsRef.current,
+      template_id: sessionMeta?.templateId,
+      plan_workout_id: sessionMeta?.planWorkoutId,
+      quick_start_type: sessionMeta?.quickStartType,
     };
     getPowerSnapshot().then((power) => {
       batteryAtStartRef.current = power.batteryLevel;
@@ -697,7 +700,7 @@ export function useWorkoutRunner(
         low_power_mode: power.lowPowerMode,
       });
     });
-  }, [buildLAProps, markIntervalStart]);
+  }, [buildLAProps, markIntervalStart, sessionMeta]);
 
   const pause = useCallback(() => {
     lastRunningTickAtRef.current = 0;

@@ -97,12 +97,21 @@ export default function ActiveWorkoutScreen() {
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | undefined>();
 
   useEffect(() => {
+    const trackOpened = (workoutId: string, meta?: SessionMeta) =>
+      track('run_screen_opened', {
+        workout_id: workoutId,
+        template_id: meta?.templateId,
+        plan_workout_id: meta?.planWorkoutId,
+        quick_start_type: meta?.quickStartType,
+      });
+
     const cached = getTempWorkout(id!);
     if (cached) {
       const meta = getTempWorkoutMeta(id!);
       clearTempWorkout(id!);
       setWorkout(cached);
       setSessionMeta(meta ? { ...meta } : undefined);
+      trackOpened(cached.id, meta);
       loadSettings().then((s) => {
         setSettings(s);
         setSettingsLoaded(true);
@@ -113,6 +122,7 @@ export default function ActiveWorkoutScreen() {
         if (found) {
           setWorkout(found);
           setSessionMeta({ templateId: found.id });
+          trackOpened(found.id, { templateId: found.id });
         }
         setSettings(s);
         setSettingsLoaded(true);

@@ -86,6 +86,28 @@ export type TrainingPlanUserBreakdown = {
   latest_at: string;
 };
 
+export type StravaStats = {
+  connectedUsers: number;
+  connectedPct: number;
+  newConnections: number;
+  disconnects: number;
+  pushes: number;
+  autoPushes: number;
+  uniquePushers: number;
+};
+
+export type StravaUser = {
+  user_id: string;
+  display_name: string;
+  athlete_name: string | null;
+  is_connected: boolean;
+  connected_at: string | null;
+  push_count: number;
+  pushes_period: number;
+  auto_push_count: number;
+  latest_push_at: string | null;
+};
+
 /**
  * Fetch all overview metrics in parallel.
  */
@@ -289,4 +311,33 @@ export async function getWorkoutRetentionCurve(months = 6): Promise<RetentionCur
 
   const { data } = await supabase.rpc('workout_retention_curve', { num_months: months });
   return (data as RetentionCurvePoint[]) ?? [];
+}
+
+/**
+ * Strava connections (current) and push activity (last N days).
+ */
+export async function getStravaStats(days = 30): Promise<StravaStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('strava_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    connectedUsers: row?.connected_users ?? 0,
+    connectedPct: row?.connected_pct ?? 0,
+    newConnections: row?.new_connections ?? 0,
+    disconnects: row?.disconnects ?? 0,
+    pushes: row?.pushes ?? 0,
+    autoPushes: row?.auto_pushes ?? 0,
+    uniquePushers: row?.unique_pushers ?? 0,
+  };
+}
+
+/**
+ * Users connected to Strava or who have pushed a workout, most pushes first.
+ */
+export async function getStravaUsers(days = 30): Promise<StravaUser[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('strava_users', { num_days: days });
+  return (data as StravaUser[]) ?? [];
 }

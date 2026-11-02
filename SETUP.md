@@ -214,6 +214,9 @@ begin
 end;
 $$ language plpgsql security definer;
 
+revoke execute on function increment_ai_workouts(uuid) from public, anon, authenticated;
+grant execute on function increment_ai_workouts(uuid) to service_role;
+
 ```
 
 ---

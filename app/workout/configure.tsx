@@ -104,12 +104,6 @@ export default function ConfigureWorkoutScreen() {
     const w = latestRef.current ?? workout;
     if (!w) return;
     setTempWorkout(w, meta);
-    track('workout_session_started', {
-      workout_id: w.id,
-      template_id: meta.templateId,
-      plan_workout_id: meta.planWorkoutId,
-      quick_start_type: meta.quickStartType,
-    });
     if (meta.quickStartType) {
       saveQuickStartDefault(meta.quickStartType, w).catch(() => {});
     }

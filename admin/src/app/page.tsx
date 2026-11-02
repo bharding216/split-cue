@@ -15,6 +15,8 @@ import {
   getWorkoutRetentionCurve,
   getUsersByCountry,
   getUsersByAppVersion,
+  getStravaStats,
+  getStravaUsers,
 } from '@/lib/queries';
 import StatCard from '@/components/StatCard';
 import DAUChart from '@/components/DAUChart';
@@ -27,6 +29,7 @@ import TodaysActivity from '@/components/TodaysActivity';
 import CountriesSection from '@/components/CountriesSection';
 import AppVersionsSection from '@/components/AppVersionsSection';
 import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
+import StravaUsersBreakdown from '@/components/StravaUsersBreakdown';
 import SignOutButton from '@/components/SignOutButton';
 import Link from 'next/link';
 
@@ -52,6 +55,8 @@ export default async function DashboardPage() {
     planUsers,
     countries,
     appVersions,
+    stravaStats,
+    stravaUsers,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -68,6 +73,8 @@ export default async function DashboardPage() {
     getTrainingPlansByUser(30),
     getUsersByCountry(30),
     getUsersByAppVersion(30),
+    getStravaStats(30),
+    getStravaUsers(30),
   ]);
 
   return (
@@ -192,6 +199,36 @@ export default async function DashboardPage() {
           format="percent"
           detail={`${aiAdoption.aiUsersCompleted}/${aiAdoption.aiUsers} AI users completed a workout`}
         />
+      </section>
+
+      {/* ── Strava ────────────────────────────────────────── */}
+      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        Strava
+      </h2>
+      <section className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Strava Connected"
+          value={stravaStats.connectedUsers}
+          detail={`${stravaStats.connectedPct}% of accounts · ${stravaStats.newConnections} new, last 30 days`}
+        />
+        <StatCard
+          label="Strava Pushes"
+          value={stravaStats.pushes}
+          detail={`${stravaStats.autoPushes} auto-uploaded, last 30 days`}
+        />
+        <StatCard
+          label="Users Pushing"
+          value={stravaStats.uniquePushers}
+          detail="Pushed ≥ 1 workout, last 30 days"
+        />
+        <StatCard
+          label="Strava Disconnects"
+          value={stravaStats.disconnects}
+          detail="Last 30 days"
+        />
+      </section>
+      <section className="mb-8">
+        <StravaUsersBreakdown data={stravaUsers} />
       </section>
 
       {/* ── Countries ─────────────────────────────────────── */}
