@@ -24,7 +24,13 @@ interface RequestBody {
     name: string;
     total_duration_ms: number;
     total_distance_meters?: number | null;
-    splits?: { pace_min_per_mile: number; distance_meters: number }[];
+    splits?: {
+      label?: string;
+      type?: string;
+      pace_min_per_mile: number;
+      distance_meters: number;
+      target_pace?: number | null;
+    }[];
     average_pace_min_per_mile?: number | null;
   };
   planned_workout?: {
@@ -38,6 +44,15 @@ interface RequestBody {
     fast_pace?: number;
   } | null;
   recent_history_summary?: string | null;
+  today?: string;
+  upcoming_workouts?: { date: string; day_label: string; description: string | null }[];
+  missed_workouts_last_14_days?: number;
+}
+
+function formatPace(pace: number): string {
+  const m = Math.floor(pace);
+  const s = Math.round((pace - m) * 60);
+  return `${m}:${s.toString().padStart(2, '0')}/mi`;
 }
 
 Deno.serve(async (req) => {
@@ -85,7 +100,11 @@ Guidelines:
 - If they struggled (pace faded, couldn't complete), suggest "decrease"
 - Only recommend plan changes when there's a meaningful signal, not after every workout
 - A successful workout on target should usually result in requires_changes: false
-- For fatigue signals, look for pace fade across intervals, much slower than targets, or very short duration`;
+- For fatigue signals, look for pace fade across intervals, much slower than targets, or very short duration
+- Repeated missed workouts are a signal to ease volume for consistency, not to cram missed work in
+- workout_changes may ONLY use dates listed under UPCOMING WORKOUTS. Never change today's run or invent new dates
+- Each change replaces that day's label and description; the detailed workout is regenerated from them, so make the description specific (duration or distance, effort, and pace guidance)
+- Keep changes minimal: usually 1-3 upcoming days, the ones most affected by this run`;
 
     const userContent = `Analyze this completed workout:
 
@@ -94,7 +113,7 @@ COMPLETED WORKOUT:
 - Duration: ${Math.round(body.completed_workout.total_duration_ms / 60000)} minutes
 ${body.completed_workout.total_distance_meters ? `- Distance: ${(body.completed_workout.total_distance_meters / 1609.344).toFixed(2)} miles` : ''}
 ${body.completed_workout.average_pace_min_per_mile ? `- Average pace: ${Math.floor(body.completed_workout.average_pace_min_per_mile)}:${Math.round((body.completed_workout.average_pace_min_per_mile % 1) * 60).toString().padStart(2, '0')}/mi` : ''}
-${body.completed_workout.splits?.length ? `- Splits: ${body.completed_workout.splits.map((s, i) => `Split ${i + 1}: ${Math.floor(s.pace_min_per_mile)}:${Math.round((s.pace_min_per_mile % 1) * 60).toString().padStart(2, '0')}/mi`).join(', ')}` : ''}
+${body.completed_workout.splits?.length ? `- Splits:\n${body.completed_workout.splits.map((s, i) => `  ${i + 1}. ${s.label ?? s.type ?? 'Split'}: ${formatPace(s.pace_min_per_mile)} over ${Math.round(s.distance_meters)}m${s.target_pace ? ` (target ${formatPace(s.target_pace)})` : ''}`).join('\n')}` : ''}
 
 ${body.planned_workout ? `PLANNED WORKOUT:
 - Label: ${body.planned_workout.day_label}
@@ -105,7 +124,15 @@ ${body.profile ? `RUNNER PROFILE:
 - Easy pace: ${body.profile.easy_pace ? `${Math.floor(body.profile.easy_pace)}:${Math.round((body.profile.easy_pace % 1) * 60).toString().padStart(2, '0')}/mi` : 'unknown'}
 - Fast pace: ${body.profile.fast_pace ? `${Math.floor(body.profile.fast_pace)}:${Math.round((body.profile.fast_pace % 1) * 60).toString().padStart(2, '0')}/mi` : 'unknown'}` : ''}
 
-${body.recent_history_summary ? `RECENT TRAINING CONTEXT:\n${body.recent_history_summary}` : ''}`;
+${body.recent_history_summary ? `RECENT TRAINING CONTEXT:\n${body.recent_history_summary}` : ''}
+${body.missed_workouts_last_14_days ? `\nMissed plan workouts in the last 14 days: ${body.missed_workouts_last_14_days}` : ''}
+
+${body.today ? `TODAY: ${body.today}` : ''}
+
+UPCOMING WORKOUTS (the only dates you may change):
+${body.upcoming_workouts?.length
+  ? body.upcoming_workouts.map((w) => `- ${w.date}: ${w.day_label}${w.description ? ` — ${w.description}` : ''}`).join('\n')
+  : 'None — set requires_changes to false.'}`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

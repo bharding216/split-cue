@@ -6,15 +6,17 @@
  *   1. generatePlanOutline() — fast single-call outline (week themes + day labels, no workout objects)
  *   2. generateWorkoutDetails() — on-demand batch detail for N specific dates
  *
- * ensureUpcomingWorkoutsDetailed() auto-fills the next 3 upcoming workouts when called.
+ * ensureUpcomingWorkoutsDetailed() auto-fills undetailed workouts in the next 14 days,
+ * calibrated to the runner's recent runs. reviewCompletedRun() analyzes each finished
+ * plan run and proposes changes to upcoming workouts.
  */
 
 import { supabase } from '../analytics/supabaseClient';
-import { generateId } from '../workout/workoutTypes';
+import { generateId, type CompletedWorkout } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, RaceType, GoalType } from '../types/database';
 import type { AIContext } from './aiWorkoutService';
-import { serializeHistorySummary } from './historySummary';
+import { buildHistorySummary, serializeHistorySummary } from './historySummary';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -114,7 +116,13 @@ export interface WorkoutAnalysisInput {
     name: string;
     total_duration_ms: number;
     total_distance_meters?: number | null;
-    splits?: { pace_min_per_mile: number; distance_meters: number }[];
+    splits?: {
+      label?: string;
+      type?: string;
+      pace_min_per_mile: number;
+      distance_meters: number;
+      target_pace?: number | null;
+    }[];
     average_pace_min_per_mile?: number | null;
   };
   planned_workout?: {
@@ -128,6 +136,24 @@ export interface WorkoutAnalysisInput {
     fast_pace?: number;
   } | null;
   recent_history_summary?: string | null;
+  /** YYYY-MM-DD in the runner's local time. */
+  today?: string;
+  /** The only plan days the coach may propose changes to. */
+  upcoming_workouts?: { date: string; day_label: string; description: string | null }[];
+  missed_workouts_last_14_days?: number;
+}
+
+/** Runner context shared by every AI call that writes workout detail. */
+export interface CoachContext {
+  profile?: {
+    experience_level?: string;
+    typical_run_minutes?: number;
+    typical_run_minutes_max?: number;
+    easy_pace?: number;
+    fast_pace?: number;
+    race_times?: Record<string, { slow: number | null; avg: number | null; fast: number | null }> | null;
+  };
+  historySummary?: string | null;
 }
 
 // ── Supabase error helper ───────────────────────────────────
@@ -204,6 +230,7 @@ export async function generatePlanOutline(input: PlanGenerationInput): Promise<P
 export async function generateWorkoutDetails(
   plan: TrainingPlan,
   workoutsToDetail: PlanWorkout[],
+  context?: CoachContext,
 ): Promise<void> {
   if (workoutsToDetail.length === 0) return;
 
@@ -226,9 +253,8 @@ export async function generateWorkoutDetails(
 
   const { data, error } = await supabase.functions.invoke('generate-workouts', {
     body: {
-      profile: {
-        experience_level: undefined, // will be filled from plan context below
-      },
+      profile: context?.profile,
+      history_summary: context?.historySummary ?? null,
       race_type: plan.race_type,
       race_date: plan.race_date,
       goal_time_minutes: plan.goal_time_minutes,
@@ -276,84 +302,77 @@ export async function generateWorkoutDetails(
   );
 }
 
-/** Also accept profile context for richer detail generation. */
-export async function generateWorkoutDetailsWithProfile(
-  plan: TrainingPlan,
-  workoutsToDetail: PlanWorkout[],
-  profile?: PlanGenerationInput['profile'],
-): Promise<void> {
-  if (workoutsToDetail.length === 0) return;
+// ── Coach context ───────────────────────────────────────────
 
-  const outline = plan.outline ?? [];
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
-  const workoutRequests = workoutsToDetail.map((pw) => {
-    const week = outline.find((w) => w.week_number === pw.week_number);
-    return {
-      date: pw.date,
-      day_label: pw.day_label ?? 'Training',
-      description: pw.description,
-      week_number: pw.week_number,
-      week_theme: week?.theme ?? `Week ${pw.week_number}`,
-      total_miles_target: week?.total_miles_target ?? null,
-    };
-  });
+function isRestDayLabel(label: string | null | undefined): boolean {
+  const l = label?.toLowerCase() ?? '';
+  return l.includes('rest') || l.includes('off');
+}
 
-  const totalWeeks = outline.length || Math.max(...workoutsToDetail.map((w) => w.week_number), 1);
+/** Plan days in the last 14 days whose date passed without the run being done or skipped. */
+function countMissedWorkouts(planWorkouts: PlanWorkout[], todayStr: string): number {
+  const since = new Date();
+  since.setDate(since.getDate() - 14);
+  const sinceStr = localDateKey(since);
+  return planWorkouts.filter((w) =>
+    w.date >= sinceStr &&
+    w.date < todayStr &&
+    w.status === 'planned' &&
+    !isRestDayLabel(w.day_label)
+  ).length;
+}
 
-  const { data, error } = await supabase.functions.invoke('generate-workouts', {
-    body: {
-      profile: profile ? {
-        experience_level: profile.experience_level,
-        typical_run_minutes: profile.typical_run_minutes,
-        typical_run_minutes_max: profile.typical_run_minutes_max,
-        easy_pace: profile.easy_pace,
-        fast_pace: profile.fast_pace,
-        race_times: profile.race_times,
-      } : undefined,
-      race_type: plan.race_type,
-      race_date: plan.race_date,
-      goal_time_minutes: plan.goal_time_minutes,
-      goal_type: plan.goal_type ?? 'race',
-      goal_pace: plan.goal_pace ?? null,
-      days_per_week: plan.days_per_week,
-      total_weeks: totalWeeks,
-      workouts: workoutRequests,
-    },
-  });
+/** Last-14-day plan adherence, appended to the history summary so the coach can calibrate. */
+export function describePlanAdherence(planWorkouts: PlanWorkout[]): string | null {
+  const todayStr = localDateKey(new Date());
+  const since = new Date();
+  since.setDate(since.getDate() - 14);
+  const sinceStr = localDateKey(since);
+  const past = planWorkouts.filter((w) => w.date >= sinceStr && w.date < todayStr && !isRestDayLabel(w.day_label));
+  if (past.length === 0) return null;
+  const completed = past.filter((w) => w.status === 'completed').length;
+  const skipped = past.filter((w) => w.status === 'skipped').length;
+  const missed = countMissedWorkouts(planWorkouts, todayStr);
+  return `Plan adherence (last 14d): ${completed} completed, ${skipped} skipped, ${missed} missed of ${past.length} scheduled`;
+}
 
-  if (error) {
-    throw new Error(await extractFunctionError(error, 'Failed to generate workout details'));
-  }
-  if (data?.error) {
-    throw new Error(data.error);
-  }
+/** Load the runner profile and a recent-runs summary for AI detail generation and run review. */
+export async function loadCoachContext(
+  userId: string,
+  history: CompletedWorkout[],
+): Promise<CoachContext> {
+  const { data: profile } = await supabase
+    .from('running_profiles')
+    .select('experience_level, typical_run_minutes, typical_run_minutes_max, easy_pace, fast_pace, race_times')
+    .eq('user_id', userId)
+    .maybeSingle();
 
-  const result = data as WorkoutDetailResult;
+  return {
+    profile: profile
+      ? {
+          experience_level: profile.experience_level ?? undefined,
+          typical_run_minutes: profile.typical_run_minutes ?? undefined,
+          typical_run_minutes_max: profile.typical_run_minutes_max ?? undefined,
+          easy_pace: profile.easy_pace ?? undefined,
+          fast_pace: profile.fast_pace ?? undefined,
+          race_times: profile.race_times ?? undefined,
+        }
+      : undefined,
+    historySummary: serializeHistorySummary(buildHistorySummary(history)),
+  };
+}
 
-  await Promise.all(
-    result.workouts.map((detail) => {
-      const matchingPw = workoutsToDetail.find((pw) => pw.date === detail.date);
-      if (!matchingPw || !detail.workout) return Promise.resolve();
-
-      const workoutData = migrateToBlockModel({
-        id: generateId(),
-        name: detail.workout.name,
-        warmup: detail.workout.warmup ?? [],
-        blocks: detail.workout.blocks ?? [],
-        cooldown: detail.workout.cooldown ?? [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-
-      return supabase
-        .from('plan_workouts')
-        .update({
-          workout_data: workoutData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', matchingPw.id);
-    })
-  );
+function withAdherence(context: CoachContext, planWorkouts: PlanWorkout[]): CoachContext {
+  const adherence = describePlanAdherence(planWorkouts);
+  if (!adherence) return context;
+  return {
+    ...context,
+    historySummary: context.historySummary ? `${context.historySummary}\n${adherence}` : adherence,
+  };
 }
 
 // ── Auto-fill upcoming workouts ─────────────────────────────
@@ -363,12 +382,15 @@ const DETAIL_WINDOW_DAYS = 14;
 
 /**
  * Checks whether upcoming planned workouts within the next 14 days have workout_data.
- * If not, generates details for them. Returns the updated workouts.
+ * If not, generates details for them, calibrated to the runner's profile, recent runs,
+ * and plan adherence. Returns the updated workouts.
  * Safe to call repeatedly — no-ops if workouts already have detail.
+ * `getContext` is only invoked when something actually needs generating.
  */
 export async function ensureUpcomingWorkoutsDetailed(
   plan: TrainingPlan,
   allWorkouts: PlanWorkout[],
+  getContext?: () => Promise<CoachContext>,
 ): Promise<PlanWorkout[]> {
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
@@ -390,7 +412,13 @@ export async function ensureUpcomingWorkoutsDetailed(
   if (needsDetail.length === 0) return allWorkouts;
 
   try {
-    await generateWorkoutDetails(plan, needsDetail);
+    const baseContext = getContext
+      ? await getContext().catch((err) => {
+          console.warn('Failed to load coach context:', err);
+          return {} as CoachContext;
+        })
+      : {};
+    await generateWorkoutDetails(plan, needsDetail, withAdherence(baseContext, allWorkouts));
 
     // Re-fetch the updated workouts from the database
     const { data } = await supabase
@@ -505,83 +533,92 @@ export async function adjustPlan(input: PlanAdjustmentInput): Promise<PlanAdjust
   return result;
 }
 
-// ── Rolling 14-Day Refinement ───────────────────────────────
+// ── Post-run Review ─────────────────────────────────────────
 
-export interface RefinementResult {
-  missedWorkoutIds: string[];
+export interface RunReviewResult {
+  analysis: WorkoutAnalysis;
+  /** Proposed changes, limited to upcoming planned days in the 14-day window. */
   adjustments: PlanModification[];
-  analysis: WorkoutAnalysis | null;
 }
 
 /**
- * Checks the rolling 14-day window for missed/skipped workouts
- * and optionally analyzes a just-completed workout.
- * Returns suggested modifications (if any) for the ModificationReview component.
+ * Analyze a just-finished plan run against its prescription, the runner's recent
+ * history, and plan adherence. Returns coach feedback plus any proposed changes
+ * to upcoming workouts for the ModificationReview component.
  */
-export async function maintainTrainingWindow(
-  planId: string,
-  completedWorkoutInput?: WorkoutAnalysisInput,
-): Promise<RefinementResult> {
-  const today = new Date();
-  const fourteenDaysAgo = new Date(today);
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+export async function reviewCompletedRun(input: {
+  plannedWorkout: PlanWorkout;
+  completedRun: CompletedWorkout;
+  planWorkouts: PlanWorkout[];
+  context: CoachContext;
+}): Promise<RunReviewResult> {
+  const { plannedWorkout, completedRun, planWorkouts, context } = input;
+  const todayStr = localDateKey(new Date());
+  const windowEnd = new Date();
+  windowEnd.setDate(windowEnd.getDate() + DETAIL_WINDOW_DAYS);
+  const windowEndStr = localDateKey(windowEnd);
 
-  const dateStr = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const upcoming = planWorkouts
+    .filter((w) =>
+      w.id !== plannedWorkout.id &&
+      w.status === 'planned' &&
+      w.date > todayStr &&
+      w.date <= windowEndStr &&
+      !isRestDayLabel(w.day_label)
+    )
+    .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Get plan workouts from the last 14 days
-  const { data: recentWorkouts, error } = await supabase
-    .from('plan_workouts')
-    .select('*')
-    .eq('plan_id', planId)
-    .gte('date', dateStr(fourteenDaysAgo))
-    .lte('date', dateStr(today))
-    .order('date', { ascending: true });
+  const distance = completedRun.totalDistanceMeters ?? null;
+  const averagePace = distance && distance > 0
+    ? (completedRun.totalDurationMs / 60_000) / (distance / 1609.344)
+    : null;
 
-  if (error) {
-    console.error('Failed to fetch recent workouts for refinement:', error);
-    return { missedWorkoutIds: [], adjustments: [], analysis: null };
-  }
+  const splits = (completedRun.splits ?? [])
+    .filter((s) => s.avgPaceMinPerMile != null && isFinite(s.avgPaceMinPerMile) && s.distanceMeters)
+    .map((s) => ({
+      label: s.label,
+      type: s.type,
+      pace_min_per_mile: s.avgPaceMinPerMile!,
+      distance_meters: s.distanceMeters!,
+      target_pace: s.targetPace ?? null,
+    }));
 
-  // Identify missed workouts (scheduled date passed, no completion entry, not rest day)
-  const missedWorkoutIds = (recentWorkouts ?? [])
-    .filter((w: any) => {
-      const isRestDay = w.day_label?.toLowerCase().includes('rest') || w.day_label?.toLowerCase().includes('off');
-      const isCompleted = w.status === 'completed';
-      const isSkipped = w.status === 'skipped';
-      const isPast = new Date(w.date) < today;
-      return isPast && !isRestDay && !isCompleted && !isSkipped;
-    })
-    .map((w: any) => w.id);
+  const analysis = await analyzeCompletedWorkout({
+    completed_workout: {
+      name: completedRun.workoutName,
+      total_duration_ms: completedRun.totalDurationMs,
+      total_distance_meters: distance,
+      splits: splits.length > 0 ? splits : undefined,
+      average_pace_min_per_mile: averagePace,
+    },
+    planned_workout: {
+      day_label: plannedWorkout.day_label ?? 'Training',
+      description: plannedWorkout.description ?? undefined,
+      workout_data: plannedWorkout.workout_data ?? undefined,
+    },
+    profile: context.profile
+      ? {
+          experience_level: context.profile.experience_level,
+          easy_pace: context.profile.easy_pace,
+          fast_pace: context.profile.fast_pace,
+        }
+      : null,
+    recent_history_summary: withAdherence(context, planWorkouts).historySummary ?? null,
+    today: todayStr,
+    upcoming_workouts: upcoming.map((w) => ({
+      date: w.date,
+      day_label: w.day_label ?? 'Training',
+      description: w.description,
+    })),
+    missed_workouts_last_14_days: countMissedWorkouts(planWorkouts, todayStr),
+  });
 
-  // Analyze completed workout if provided
-  let analysis: WorkoutAnalysis | null = null;
-  if (completedWorkoutInput) {
-    try {
-      analysis = await analyzeCompletedWorkout(completedWorkoutInput);
-    } catch (err) {
-      console.error('Workout analysis failed:', err);
-    }
-  }
+  const allowedDates = new Set(upcoming.map((w) => w.date));
+  const adjustments = analysis.plan_update?.requires_changes
+    ? (analysis.plan_update.workout_changes ?? []).filter((c) => allowedDates.has(c.date))
+    : [];
 
-  // Collect adjustments from analysis
-  const adjustments: PlanModification[] = [];
-
-  if (analysis?.plan_update?.requires_changes && analysis.plan_update.workout_changes) {
-    adjustments.push(...analysis.plan_update.workout_changes);
-  }
-
-  // If 3+ missed workouts in 14 days, suggest reducing upcoming volume
-  if (missedWorkoutIds.length >= 3) {
-    adjustments.push({
-      date: dateStr(today),
-      action: 'update',
-      day_label: 'Adjusted Schedule',
-      description: `Training load reduced — ${missedWorkoutIds.length} workouts missed in the past 2 weeks. Focus on consistency with shorter, easier runs.`,
-    });
-  }
-
-  return { missedWorkoutIds, adjustments, analysis };
+  return { analysis, adjustments };
 }
 
 // ── Workout Analysis ────────────────────────────────────────

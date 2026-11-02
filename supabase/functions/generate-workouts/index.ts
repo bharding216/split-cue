@@ -49,6 +49,8 @@ interface RequestBody {
   days_per_week: number;
   total_weeks: number;
   workouts: WorkoutRequest[];
+  /** Compact summary of the runner's actual recent runs and plan adherence. */
+  history_summary?: string | null;
 }
 
 // ── System prompt ────────────────────────────────────────────
@@ -108,6 +110,17 @@ Each workout must be a complete structured interval workout matching the SplitCu
     const hrs = Math.floor(body.goal_time_minutes / 60);
     const mins = Math.round(body.goal_time_minutes % 60);
     sections.push(`## Goal Time\n${hrs > 0 ? `${hrs}h ` : ''}${mins}m`);
+  }
+
+  if (body.history_summary) {
+    sections.push(`## Recent Training (actual performance)
+${body.history_summary}
+
+Calibrate these workouts to how the runner is actually training, not just the original outline:
+- Base paces on recent actual paces when they differ from the profile.
+- If recent runs show strong progress (faster paces, consistent completion), progress normally or slightly faster.
+- If workouts were missed, skipped, or recent volume is well below the plan, be conservative: hold or reduce volume and intensity rather than jumping ahead.
+- Never increase weekly volume by more than ~10% over what the runner has recently been doing.`);
   }
 
   // The workouts to generate

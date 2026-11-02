@@ -30,6 +30,11 @@ import {
   restorePlan as restorePlanApi,
   updateTrainingPlan as updateTrainingPlanApi,
   ensureUpcomingWorkoutsDetailed,
+  loadCoachContext,
+  reviewCompletedRun,
+  applyPlanModifications,
+  type WorkoutAnalysis,
+  type PlanModification,
 } from '../ai/planService';
 import { loadHistory } from '../workout/workoutStorage';
 
@@ -40,6 +45,17 @@ export interface DayEntry {
   date: string; // YYYY-MM-DD
   planWorkouts: PlanWorkout[];
   completedRuns: CompletedWorkout[];
+}
+
+/** AI coach review of the most recently finished plan run. */
+export interface RunReview {
+  planId: string;
+  planWorkoutId: string;
+  status: 'loading' | 'ready' | 'error';
+  analysis: WorkoutAnalysis | null;
+  adjustments: PlanModification[];
+  /** The runner's response to the proposed changes; null when none were proposed. */
+  decision: 'pending' | 'applied' | 'declined' | null;
 }
 
 interface TrainingPlanContextType {
@@ -62,8 +78,16 @@ interface TrainingPlanContextType {
   removeWorkout: (workoutId: string) => Promise<void>;
   /** Move a planned workout to a different date */
   moveWorkout: (workoutId: string, newDate: string) => Promise<void>;
-  /** Mark a planned workout as completed */
-  completeWorkout: (workoutId: string, completedWorkoutId: string) => Promise<void>;
+  /**
+   * Mark a planned workout as completed. When the finished run is provided and the
+   * workout belongs to an AI training plan, the coach reviews it in the background.
+   */
+  completeWorkout: (workoutId: string, completedWorkoutId: string, completedRun?: CompletedWorkout) => Promise<void>;
+  runReview: RunReview | null;
+  /** Apply the selected proposed changes from the run review. */
+  applyRunReviewChanges: (modifications: PlanModification[]) => Promise<void>;
+  /** Decline the proposed changes from the run review. */
+  dismissRunReview: () => void;
   /** Replace the intervals/details of a planned workout */
   updateWorkoutData: (workoutId: string, workout: WorkoutDefinition) => Promise<void>;
   /** Archive a specific plan */
@@ -147,6 +171,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const [planWorkouts, setPlanWorkouts] = useState<PlanWorkout[]>([]);
   const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [runReview, setRunReview] = useState<RunReview | null>(null);
+  const activeReviewId = useRef<string | null>(null);
   const hasLoadedOnce = useRef(false);
   const isGeneratingDetails = useRef(false);
   /** Incremented on each refresh so stale background tasks can detect they're outdated. */
@@ -179,9 +205,11 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
       // Superseded refreshes return before awaiting `remote`.
       remote.catch(() => {});
 
+      let historyData: CompletedWorkout[];
       // Show the last-known plan immediately while the network request is in flight.
       if (stateOwnerId.current !== user.id) {
-        const [historyData, cached] = await Promise.all([loadHistory(), readPlanCache(user.id)]);
+        const [loadedHistory, cached] = await Promise.all([loadHistory(), readPlanCache(user.id)]);
+        historyData = loadedHistory;
         if (refreshEpoch.current !== epoch) return;
         setHistory(historyData);
         if (cached) {
@@ -196,7 +224,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
           setPlanWorkouts([]);
         }
       } else {
-        setHistory(await loadHistory());
+        historyData = await loadHistory();
+        setHistory(historyData);
       }
 
       const [activePlans, archived, allWorkouts] = await remote;
@@ -215,10 +244,12 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
       const racePlans = activePlans.filter((p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0));
       if (racePlans.length > 0 && !isGeneratingDetails.current) {
         isGeneratingDetails.current = true;
+        let coachContext: ReturnType<typeof loadCoachContext> | null = null;
+        const getCoachContext = () => (coachContext ??= loadCoachContext(user.id, historyData));
         Promise.all(
           racePlans.map((rp) => {
             const rpWorkouts = allWorkouts.filter((w) => w.plan_id === rp.id);
-            return ensureUpcomingWorkoutsDetailed(rp, rpWorkouts);
+            return ensureUpcomingWorkoutsDetailed(rp, rpWorkouts, getCoachContext);
           })
         )
           .then((results) => {
@@ -285,8 +316,55 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     );
   }, [planWorkouts, plans]);
 
+  const startRunReview = useCallback(
+    (plannedWorkout: PlanWorkout, completedRun: CompletedWorkout) => {
+      if (!user) return;
+      const ownerPlan = plans.find((p) => p.id === plannedWorkout.plan_id);
+      // Only AI training plans have an outline to coach against; skip the manual-workout plan.
+      if (!ownerPlan?.outline?.length) return;
+
+      const reviewId = plannedWorkout.id;
+      activeReviewId.current = reviewId;
+      setRunReview({
+        planId: ownerPlan.id,
+        planWorkoutId: reviewId,
+        status: 'loading',
+        analysis: null,
+        adjustments: [],
+        decision: null,
+      });
+
+      const planOnlyWorkouts = planWorkouts
+        .filter((w) => w.plan_id === ownerPlan.id)
+        .map((w) => (w.id === reviewId ? { ...w, status: 'completed' as const } : w));
+      const runsIncludingThis = [completedRun, ...history.filter((h) => h.id !== completedRun.id)];
+
+      loadCoachContext(user.id, runsIncludingThis)
+        .then((context) =>
+          reviewCompletedRun({ plannedWorkout, completedRun, planWorkouts: planOnlyWorkouts, context }),
+        )
+        .then(({ analysis, adjustments }) => {
+          if (activeReviewId.current !== reviewId) return;
+          setRunReview((prev) =>
+            prev && prev.planWorkoutId === reviewId
+              ? { ...prev, status: 'ready', analysis, adjustments, decision: adjustments.length > 0 ? 'pending' : null }
+              : prev,
+          );
+        })
+        .catch((err) => {
+          console.warn('Run review failed:', err);
+          if (activeReviewId.current !== reviewId) return;
+          setRunReview((prev) =>
+            prev && prev.planWorkoutId === reviewId ? { ...prev, status: 'error' } : prev,
+          );
+        });
+    },
+    [user, plans, planWorkouts, history],
+  );
+
   const completeWorkout = useCallback(
-    async (workoutId: string, completedWorkoutId: string) => {
+    async (workoutId: string, completedWorkoutId: string, completedRun?: CompletedWorkout) => {
+      const plannedWorkout = planWorkouts.find((w) => w.id === workoutId);
       await completePlanWorkoutApi(workoutId, completedWorkoutId);
       setPlanWorkouts((prev) =>
         prev.map((w) =>
@@ -295,9 +373,22 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
             : w
         )
       );
+      if (plannedWorkout && completedRun) startRunReview(plannedWorkout, completedRun);
     },
-    [],
+    [planWorkouts, startRunReview],
   );
+
+  const applyRunReviewChanges = useCallback(async (modifications: PlanModification[]) => {
+    if (!runReview) return;
+    await applyPlanModifications(runReview.planId, modifications);
+    setRunReview((prev) => (prev ? { ...prev, decision: 'applied' } : prev));
+    // Changed days lose their old detail; refresh regenerates them with the latest context.
+    await refresh();
+  }, [runReview, refresh]);
+
+  const dismissRunReview = useCallback(() => {
+    setRunReview((prev) => (prev ? { ...prev, decision: 'declined' } : prev));
+  }, []);
 
   const updateWorkoutData = useCallback(async (workoutId: string, workout: WorkoutDefinition) => {
     const existing = planWorkouts.find((w) => w.id === workoutId);
@@ -376,6 +467,9 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         removeWorkout,
         moveWorkout,
         completeWorkout,
+        runReview,
+        applyRunReviewChanges,
+        dismissRunReview,
         updateWorkoutData,
         archivePlan: archivePlanFn,
         restorePlan: restorePlanFn,

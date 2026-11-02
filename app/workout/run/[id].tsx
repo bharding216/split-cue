@@ -68,6 +68,7 @@ import { useRunAnnotations } from '../../../src/hooks/useRunAnnotations';
 import { track } from '../../../src/analytics/track';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
+import { RunReviewCard } from '../../../src/components/RunReviewCard';
 import { detectNewRecords, detectNewAwards } from '../../../src/stats/personalRecords';
 import type { PersonalRecord, AwardBadge } from '../../../src/stats/personalRecords';
 
@@ -217,7 +218,8 @@ function ActiveWorkoutInner({
       planCompletionDone.current
     ) return;
     planCompletionDone.current = true;
-    completePlanWorkout(sessionMeta.planWorkoutId, runner.completedEntryId).catch((e) =>
+    const completedRun = buildCompletedEntry() ?? undefined;
+    completePlanWorkout(sessionMeta.planWorkoutId, runner.completedEntryId, completedRun).catch((e) =>
       console.warn('Failed to complete plan workout:', e),
     );
   }, [state.phase, runner.completedEntryId, sessionMeta?.planWorkoutId, completePlanWorkout]);
@@ -535,6 +537,10 @@ function ActiveWorkoutInner({
             })}
           </View>
         </View>
+
+        {sessionMeta?.planWorkoutId && (
+          <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
+        )}
 
         {autoUploadEnabled ? (
           <View style={styles.stravaAutoRow}>

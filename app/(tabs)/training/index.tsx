@@ -28,6 +28,7 @@ import { useAuth } from '../../../src/contexts/AuthContext';
 import { TrainingCalendar, CalendarViewMode } from '../../../src/components/TrainingCalendar';
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
 import { DayDetail } from '../../../src/components/DayDetail';
+import { RunReviewCard } from '../../../src/components/RunReviewCard';
 import { derivePhases } from '../../../src/components/TrainingPhases';
 import { WorkoutDefinition, generateId } from '../../../src/workout/workoutTypes';
 import { loadHistory } from '../../../src/workout/workoutStorage';
@@ -103,6 +104,11 @@ export default function TrainingScreen() {
 
   const raceDates = useMemo(
     () => racePlans.filter((p) => p.race_date && (p.goal_type ?? 'race') === 'race').map((p) => p.race_date),
+    [racePlans],
+  );
+
+  const goalDates = useMemo(
+    () => racePlans.filter((p) => p.race_date && p.goal_type === 'pace_target').map((p) => p.race_date),
     [racePlans],
   );
 
@@ -487,6 +493,7 @@ export default function TrainingScreen() {
                 </View>
               </TouchableOpacity>
 
+              <RunReviewCard placement="training" />
             </>
           )}
 
@@ -538,6 +545,7 @@ export default function TrainingScreen() {
             viewMode={calendarViewMode}
             onChangeViewMode={setCalendarViewMode}
             raceDates={raceDates}
+            goalDates={goalDates}
             showAIWindow={hasPlan}
           />
 

@@ -213,6 +213,7 @@ export function DayDetail({
   const planWorkouts = (entry?.planWorkouts ?? []).filter(
     (pw) =>
       pw.day_label !== 'Rest Day' &&
+      pw.status !== 'skipped' &&
       !(pw.status === 'completed' && pw.completed_workout_id && runIds.has(pw.completed_workout_id)),
   );
 

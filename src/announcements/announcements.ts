@@ -18,6 +18,14 @@ export interface Announcement {
  */
 export const ANNOUNCEMENTS: Announcement[] = [
   {
+    id: '2026-11-training-plans-fixed',
+    // Full timestamp so users who installed on Nov 1 (and hit the bug) still qualify.
+    date: '2026-11-02T02:30:00Z',
+    expiresAt: '2026-11-30',
+    title: 'Training Plans Are Back on Track',
+    body: "We fixed an issue that kept some new training plans from saving. If you ran into an error, thank you for your patience — your plan is ready to build from the Training tab.",
+  },
+  {
     id: '2026-10-gps-pace-tracking',
     date: '2026-10-15',
     expiresAt: '2026-11-15',

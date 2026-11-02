@@ -39,6 +39,8 @@ interface TrainingCalendarProps {
   onChangeViewMode: (mode: CalendarViewMode) => void;
   /** ISO date strings (YYYY-MM-DD) of races — shown with flag markers */
   raceDates?: string[];
+  /** ISO date strings (YYYY-MM-DD) of pace-goal target dates — shown with speedometer markers */
+  goalDates?: string[];
   /** When true, shows the 14-day AI coach planning window overlay */
   showAIWindow?: boolean;
 }
@@ -127,9 +129,11 @@ export function TrainingCalendar({
   viewMode,
   onChangeViewMode,
   raceDates,
+  goalDates,
   showAIWindow,
 }: TrainingCalendarProps) {
   const raceDateSet = useMemo(() => new Set(raceDates ?? []), [raceDates]);
+  const goalDateSet = useMemo(() => new Set(goalDates ?? []), [goalDates]);
   const today = todayKey();
 
   // Compute the 14-day AI coach window boundary
@@ -279,6 +283,7 @@ export function TrainingCalendar({
                 const isToday = key === today;
                 const isSelected = key === selectedDate;
                 const isRaceDay = raceDateSet.has(key);
+                const isGoalDay = !isRaceDay && goalDateSet.has(key);
                 const isInAIWindow = showAIWindow && key >= today && key <= aiWindowEnd;
                 const entry = dayEntries[key];
                 const dots = entry ? dotColor(entry) : [];
@@ -290,7 +295,7 @@ export function TrainingCalendar({
                       styles.dayCell,
                       isInAIWindow && styles.dayCellAIWindow,
                       isSelected && styles.dayCellSelected,
-                      isRaceDay && styles.dayCellRace,
+                      (isRaceDay || isGoalDay) && styles.dayCellRace,
                     ]}
                     onPress={() => onSelectDate(key)}
                     activeOpacity={0.6}
@@ -311,6 +316,11 @@ export function TrainingCalendar({
                       <View style={styles.raceBadge}>
                         <Ionicons name="flag" size={9} color={Colors.warning} />
                         <Text style={styles.raceBadgeText}>Race</Text>
+                      </View>
+                    ) : isGoalDay ? (
+                      <View style={styles.raceBadge}>
+                        <Ionicons name="speedometer" size={9} color={Colors.warning} />
+                        <Text style={styles.raceBadgeText}>Goal</Text>
                       </View>
                     ) : (
                       <View style={styles.dotRow}>
@@ -333,6 +343,7 @@ export function TrainingCalendar({
                 const isToday = key === today;
                 const isSelected = key === selectedDate;
                 const isRaceDay = raceDateSet.has(key);
+                const isGoalDay = !isRaceDay && goalDateSet.has(key);
                 const isInAIWindow = showAIWindow && key >= today && key <= aiWindowEnd;
                 const entry = dayEntries[key];
                 const primaryPw = entry?.planWorkouts?.[0];
@@ -345,7 +356,7 @@ export function TrainingCalendar({
                       styles.weekDayCard,
                       isInAIWindow && styles.weekDayCardAIWindow,
                       isSelected && styles.weekDayCardSelected,
-                      isRaceDay && styles.weekDayCardRace,
+                      (isRaceDay || isGoalDay) && styles.weekDayCardRace,
                     ]}
                     onPress={() => onSelectDate(key)}
                     activeOpacity={0.6}
@@ -366,6 +377,13 @@ export function TrainingCalendar({
                         <View style={styles.weekRaceRow}>
                           <Ionicons name="flag" size={10} color={Colors.warning} />
                           <Text style={styles.weekRaceText}>Race Day</Text>
+                        </View>
+                      </View>
+                    ) : isGoalDay ? (
+                      <View style={[styles.weekWorkoutChip, { borderLeftColor: Colors.warning }]}>
+                        <View style={styles.weekRaceRow}>
+                          <Ionicons name="speedometer" size={10} color={Colors.warning} />
+                          <Text style={styles.weekRaceText}>Goal Day</Text>
                         </View>
                       </View>
                     ) : dayLabel ? (

@@ -25,7 +25,7 @@ import { useAuth } from '../../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { supabase } from '../../../src/analytics/supabaseClient';
-import { generatePlanOutline, savePlanOutline, generateWorkoutDetailsWithProfile } from '../../../src/ai/planService';
+import { generatePlanOutline, savePlanOutline, generateWorkoutDetails } from '../../../src/ai/planService';
 import { track } from '../../../src/analytics/track';
 import { loadHistory, loadSettings } from '../../../src/workout/workoutStorage';
 import { buildHistorySummary, serializeHistorySummary } from '../../../src/ai/historySummary';
@@ -550,6 +550,14 @@ export default function PlanSetupScreen() {
       // Navigate back to training page so the setup screen auto-closes
       router.back();
 
+      Alert.alert(
+        'Your plan is ready',
+        `Your coach built a ${outline.weeks.length}-week plan toward your ${goalType === 'pace_target' ? 'pace goal' : 'race'}.\n\n` +
+          'Detailed workouts are being prepared for the next 2 weeks (highlighted on your calendar). ' +
+          'Later workouts will be filled in as you go, adjusted based on how your actual runs perform.',
+        [{ text: 'Got it' }],
+      );
+
       // Generate details for the first 3 workouts in the background
       const today = new Date().toISOString().split('T')[0];
       const upcoming = savedWorkouts
@@ -558,7 +566,7 @@ export default function PlanSetupScreen() {
         .slice(0, 3);
 
       if (upcoming.length > 0) {
-        generateWorkoutDetailsWithProfile(savedPlan, upcoming, profilePayload)
+        generateWorkoutDetails(savedPlan, upcoming, { profile: profilePayload, historySummary: summary })
           .then(() => refresh())
           .catch((err) => console.warn('Background detail generation failed:', err));
       }

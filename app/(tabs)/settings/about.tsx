@@ -30,10 +30,12 @@ export default function AboutSettingsScreen() {
     hapticTap();
     const storeUrl = Platform.OS === 'android' ? PLAY_STORE_URL : APP_STORE_URL;
     try {
-      await Share.share({
-        message: `Check out SplitCue — a free interval timer for runners with audio pacing cues. No subscriptions!\n\n${storeUrl}`,
-        url: Platform.OS === 'ios' ? storeUrl : undefined,
-      });
+      const pitch = 'Check out SplitCue — an interval timer for runners with audio pacing cues.';
+      await Share.share(
+        Platform.OS === 'ios'
+          ? { message: pitch, url: storeUrl }
+          : { message: `${pitch}\n\n${storeUrl}` },
+      );
     } catch (_) {
       // User dismissed the share sheet
     }

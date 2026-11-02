@@ -22,7 +22,8 @@ import { WorkoutStructure } from '../../../src/components/WorkoutStructure';
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
 import { WorkoutDefinition, generateId, totalWorkoutSeconds, flattenWorkout } from '../../../src/workout/workoutTypes';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
-import { generateWorkoutDetails } from '../../../src/ai/planService';
+import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
+import { useAuth } from '../../../src/contexts/AuthContext';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
 import { track } from '../../../src/analytics/track';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
@@ -47,7 +48,8 @@ function getIntensityTag(label: string | null): { text: string; color: string } 
 export default function WorkoutDetailScreen() {
   const router = useRouter();
   const { workoutId } = useLocalSearchParams<{ workoutId: string }>();
-  const { plans, planWorkouts, dayEntries, refresh, removeWorkout, moveWorkout } = useTrainingPlan();
+  const { plans, planWorkouts, history, dayEntries, refresh, removeWorkout, moveWorkout } = useTrainingPlan();
+  const { user } = useAuth();
   const [generatingDetail, setGeneratingDetail] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
 
@@ -118,14 +120,17 @@ export default function WorkoutDetailScreen() {
     if (!planWorkout || !ownerPlan) return;
     setGeneratingDetail(true);
     try {
-      await generateWorkoutDetails(ownerPlan, [planWorkout]);
+      const context = user
+        ? await loadCoachContext(user.id, history).catch(() => undefined)
+        : undefined;
+      await generateWorkoutDetails(ownerPlan, [planWorkout], context);
       await refresh();
     } catch (err) {
       console.warn('Failed to generate workout detail:', err);
     } finally {
       setGeneratingDetail(false);
     }
-  }, [planWorkout, ownerPlan, refresh]);
+  }, [planWorkout, ownerPlan, user, history, refresh]);
 
   const handleMove = useCallback(async (newDate: string) => {
     if (!planWorkout) return;

@@ -21,6 +21,9 @@ import {
   ScrollView,
   Alert,
   Animated,
+  Keyboard,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +49,7 @@ import {
   defaultSegmentLabel,
   segmentToIntervalType,
 } from '../workout/workoutTypes';
+import { migrateToBlockModel } from '../workout/workoutStorage';
 import { hapticTap } from '../audio/haptics';
 
 // ── Types ────────────────────────────────────────────────────
@@ -231,7 +235,7 @@ function WorkoutDetailCard({
   workoutData: any;
   variant: 'before' | 'after';
 }) {
-  const wd = workoutData as WorkoutDefinition;
+  const wd = migrateToBlockModel(workoutData);
   const flat = flattenWorkout(wd);
   const totalSec = totalWorkoutSeconds(wd);
 
@@ -357,9 +361,29 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function todayStr(): string {
-  const d = new Date();
+function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function todayStr(): string {
+  return toDateStr(new Date());
+}
+
+function weekdayName(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+/** Lines of "YYYY-MM-DD = Weekday" from `fromStr` through `toStr`, inclusive. */
+function buildCalendar(fromStr: string, toStr: string): string[] {
+  const lines: string[] = [];
+  const d = new Date(fromStr + 'T12:00:00');
+  const end = new Date(toStr + 'T12:00:00');
+  while (d <= end) {
+    const s = toDateStr(d);
+    lines.push(`${s} = ${weekdayName(s)}`);
+    d.setDate(d.getDate() + 1);
+  }
+  return lines;
 }
 
 // ── Main Component ──────────────────────────────────────────
@@ -433,10 +457,15 @@ export function VoiceEditSheet({
     const totalWeeks = outline.length ||
       Math.max(...planWorkouts.map((w) => w.week_number), 1);
 
+    const calendarStart = workout.date < today ? workout.date : today;
+    const calendarEndDate = new Date((workout.date > today ? workout.date : today) + 'T12:00:00');
+    calendarEndDate.setDate(calendarEndDate.getDate() + 14);
+    const calendar = buildCalendar(calendarStart, toDateStr(calendarEndDate));
+
     const workoutContext = [
-      `Today is ${today}.`,
+      `Today is ${weekdayName(today)}, ${today}.`,
       `The user wants to edit a specific workout:`,
-      `- Date: ${workout.date}`,
+      `- Date: ${weekdayName(workout.date)}, ${workout.date}`,
       `- Label: ${workout.day_label || 'Training'}`,
       workout.description ? `- Description: ${workout.description}` : null,
       ``,
@@ -444,6 +473,13 @@ export function VoiceEditSheet({
       ``,
       `Important: If the user asks to move the workout, change the date field in the modification. ` +
       `You may produce modifications for the original date (to skip/update it) and a new date (to add the workout there).`,
+      ``,
+      `Calendar (use this to resolve weekday names to dates — do not compute weekdays yourself):`,
+      ...calendar,
+      ``,
+      `When the user names a weekday, it means the next occurrence of that weekday on or after today, ` +
+      `using the calendar above. If the workout is already on the requested day, return no modifications ` +
+      `and tell the user it's already scheduled for that day.`,
     ].filter(Boolean).join('\n');
 
     const workoutWindow = planWorkouts
@@ -517,6 +553,7 @@ export function VoiceEditSheet({
   const handleTextSubmit = useCallback(async () => {
     const text = textInput.trim();
     if (!text) return;
+    Keyboard.dismiss();
     hapticTap();
     setTextInput('');
     try {
@@ -572,7 +609,10 @@ export function VoiceEditSheet({
       transparent
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
           <View style={styles.handleRow}>
@@ -600,6 +640,7 @@ export function VoiceEditSheet({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             bounces={false}
+            keyboardShouldPersistTaps="handled"
           >
           {/* ── Idle / Recording ── */}
           {(phase === 'idle' || phase === 'recording') && (
@@ -838,7 +879,7 @@ export function VoiceEditSheet({
           )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
