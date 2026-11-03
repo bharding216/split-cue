@@ -1,6 +1,6 @@
 {
   "name": "split-cue",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~57.0.17",

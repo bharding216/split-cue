@@ -30,7 +30,7 @@ const GOOGLE_SERVICES_FILE = IS_DEV
 export default ({ config }: ConfigContext): ExpoConfig => ({
   name: APP_NAME,
   slug: 'pace-cue',
-  version: '1.8.0',
+  version: '1.9.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'dark',
