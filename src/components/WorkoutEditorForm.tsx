@@ -629,9 +629,12 @@ function targetSummary(seg: Segment, paceUnit: PaceUnit): string {
 /** One-line description of a segment, e.g. "10:00 · Easy" or "1.00 mi · Tempo · RPE 8". */
 function summarizeSegment(seg: Segment, paceUnit: PaceUnit): string {
   const parts = [targetSummary(seg, paceUnit)];
+  if (seg.targetPace != null) {
+    parts.push(formatPace(seg.targetPace, paceUnit));
+    return parts.join(' · ');
+  }
   if (seg.intensity) parts.push(intensityLabel(seg.intensity));
   if (seg.effort != null && seg.effort !== intensityToEffort(seg.intensity)) parts.push(`RPE ${seg.effort}`);
-  if (seg.targetPace != null) parts.push(formatPace(seg.targetPace, paceUnit));
   return parts.join(' · ');
 }
 
@@ -744,6 +747,7 @@ function SegmentEditor({
   onChange: (s: Segment) => void;
   paceUnit: PaceUnit;
 }) {
+  const usesPace = segment.targetPace != null;
   const autoEffort = intensityToEffort(segment.intensity);
   const hasCustomEffort = segment.effort != null && segment.effort !== autoEffort;
   const [showMore, setShowMore] = useState(
@@ -798,17 +802,17 @@ function SegmentEditor({
       {/* Intensity */}
       <View style={segStyles.intensityHeader}>
         <Text style={segStyles.sectionLabel}>INTENSITY</Text>
-        {segment.effort != null || autoEffort != null ? (
+        {usesPace ? (
+          <Text style={segStyles.rpeHint}>Using target pace</Text>
+        ) : segment.effort != null || autoEffort != null ? (
           <Text style={segStyles.rpeHint}>
             RPE {segment.effort ?? autoEffort} {hasCustomEffort ? '(custom)' : '(auto)'}
           </Text>
-        ) : segment.targetPace != null ? (
-          <Text style={segStyles.rpeHint}>Using target pace</Text>
         ) : null}
       </View>
       <View style={segStyles.intensityRow}>
         {INTENSITY_LEVELS.map((il) => {
-          const isActive = segment.intensity === il.value;
+          const isActive = !usesPace && segment.intensity === il.value;
           return (
             <TouchableOpacity
               key={il.value}
@@ -849,7 +853,7 @@ function SegmentEditor({
           <Text style={segStyles.sectionHint}>Override the intensity's default effort (1–10)</Text>
           <View style={segStyles.effortNumberRow}>
             {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const).map((n) => {
-              const currentEffort = segment.effort ?? autoEffort;
+              const currentEffort = usesPace ? undefined : segment.effort ?? autoEffort;
               const isActive = currentEffort === n;
               const effortColor = n <= 3 ? Colors.accent : n <= 6 ? '#F59E0B' : Colors.danger;
               return (
@@ -869,7 +873,7 @@ function SegmentEditor({
           </View>
 
           {/* Pace — alternative to named intensity */}
-          {!segment.intensity && !segment.effort && (
+          {(usesPace || (!segment.intensity && !segment.effort)) && (
             <PacePicker
               targetPace={segment.targetPace}
               onChange={(p) => update({ targetPace: p })}

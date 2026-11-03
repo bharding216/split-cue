@@ -52,7 +52,7 @@ import {
 } from '../audio/audioManager';
 import {
   buildCueContext,
-  intervalProgressPhrase,
+  intervalProgressCue,
   distanceProgressPhrase,
   paceCue,
   type CueContext,
@@ -512,7 +512,7 @@ export function useWorkoutRunner(
             const mark = nextCueMark(elapsedSec, step, lastProgressMark.current);
             if (mark != null) {
               lastProgressMark.current = mark;
-              phrases.push(textPhrase(intervalProgressPhrase(mark * step)));
+              phrases.push(intervalProgressCue(mark * step));
             }
           }
 

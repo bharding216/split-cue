@@ -172,14 +172,17 @@ function convertOldInterval(int: any, section: 'warmup' | 'main' | 'cooldown'): 
     target = { type: 'time', durationSeconds };
   }
 
+  const targetPace: number | undefined = typeof int.targetPace === 'number' ? int.targetPace : undefined;
+
+  // Intensity and target pace are mutually exclusive; an explicit pace wins.
   return {
     id: generateId(),
     blockType: 'segment',
     segmentType,
     label: int.label,
     target,
-    intensity,
-    targetPace: int.targetPace,
+    intensity: targetPace != null ? undefined : intensity,
+    targetPace,
   };
 }
 

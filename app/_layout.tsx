@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Alert, AppState } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +25,11 @@ import {
   refreshPushToken,
   subscribeToNotificationOpens,
 } from '../src/notifications/pushRegistration';
+
+const APP_STORE_URL =
+  'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
+const PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
 
 function RootLayoutInner() {
   const router = useRouter();
@@ -131,6 +136,22 @@ function RootLayoutInner() {
       const workout = shortMatch
         ? await resolveShareCode(shortMatch[1])
         : decodeWorkoutLink(url);
+
+      if (workout === 'needs-update') {
+        Alert.alert(
+          'Update SplitCue',
+          'This workout was shared from a newer version of SplitCue. Update the app to import it.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Update',
+              onPress: () =>
+                Linking.openURL(Platform.OS === 'android' ? PLAY_STORE_URL : APP_STORE_URL),
+            },
+          ],
+        );
+        return;
+      }
 
       if (!workout) {
         Alert.alert('Invalid Link', 'Could not read the shared workout.');

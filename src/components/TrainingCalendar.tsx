@@ -5,7 +5,7 @@
  * Supports swipe-to-navigate in both month and week views.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -144,6 +144,21 @@ export function TrainingCalendar({
     return toDateKey(d);
   }, [showAIWindow]);
   const [refDate, setRefDate] = useState(() => new Date());
+
+  // Keep the selected date visible when it changes from outside the calendar (e.g. swiping the day detail)
+  useEffect(() => {
+    const selected = new Date(selectedDate + 'T12:00:00');
+    setRefDate((prev) => {
+      if (viewMode === 'month') {
+        const sameMonth = prev.getFullYear() === selected.getFullYear() && prev.getMonth() === selected.getMonth();
+        return sameMonth ? prev : selected;
+      }
+      const weekStart = toDateKey(getWeekDays(prev)[0]);
+      const weekEnd = toDateKey(getWeekDays(prev)[6]);
+      return selectedDate >= weekStart && selectedDate <= weekEnd ? prev : selected;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
   const monthGrid = useMemo(
     () => getMonthGrid(refDate.getFullYear(), refDate.getMonth()),

@@ -6,7 +6,7 @@
 import { createAudioPlaylist, type AudioPlaylist, type AudioSource } from 'expo-audio';
 
 /** Upper bound for one cue so a missed finish event can't leave the queue stuck. */
-const MAX_SEQUENCE_MS = 20000;
+const MAX_SEQUENCE_MS = 30000;
 
 let playlist: AudioPlaylist | null = null;
 let subscription: { remove: () => void } | null = null;

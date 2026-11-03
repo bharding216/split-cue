@@ -48,6 +48,15 @@ export const FontSize = {
   timer: 72,
 } as const;
 
+/**
+ * `maxFontSizeMultiplier` caps for text that is already large. Body text
+ * scales freely; headings and the timer would otherwise overflow the screen.
+ */
+export const MaxFontScale = {
+  timer: 1.25,
+  display: 1.5,
+} as const;
+
 export const BorderRadius = {
   sm: 8,
   md: 12,

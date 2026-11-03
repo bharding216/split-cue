@@ -51,8 +51,10 @@ import {
   Spacing,
   FontSize,
   BorderRadius,
+  MaxFontScale,
   intervalColor,
 } from '../../../src/constants/theme';
+import { useLargeText, useScaledSize } from '../../../src/hooks/useLargeText';
 import { hapticTap } from '../../../src/audio/haptics';
 import { setDuckingEnabled, setVoiceIdentifier } from '../../../src/audio/audioManager';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
@@ -178,6 +180,7 @@ function ActiveWorkoutInner({
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const large = useLargeText();
   const runner = useWorkoutRunner(workout, settings, sessionMeta);
   const { completeWorkout: completePlanWorkout } = useTrainingPlan();
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -360,29 +363,53 @@ function ActiveWorkoutInner({
       }
     }
 
+    const idleHeader = (
+      <View style={styles.idleHeader}>
+        <Text style={styles.workoutName} maxFontSizeMultiplier={MaxFontScale.display}>
+          {workout.name}
+        </Text>
+        <Text style={styles.intervalCount}>
+          {state.intervals.length} intervals
+          {workout.targetDistanceMeters
+            ? ` · ${formatDistanceShort(workout.targetDistanceMeters, settings.paceUnit)} goal`
+            : ` · ${formatTime(state.intervals.reduce((s, i) => s + i.durationSeconds, 0))}`
+          }
+        </Text>
+        {hasDistanceFeature(workout) && (
+          <Text style={styles.gpsNote}>📍 GPS will auto-enable for distance-based runs</Text>
+        )}
+      </View>
+    );
+
+    const preRunPanel = (
+      <View style={[styles.preRunPanel, large && styles.preRunPanelLarge]}>
+        {needsGps && locationAccess && (
+          <PreRunLocationCard access={locationAccess} onAllow={handleAllowLocation} />
+        )}
+        {needsGps && locationAccess === 'granted' && (
+          <BackgroundLocationCard placement="preRun" />
+        )}
+        <PreRunSettings
+          settings={settings}
+          onUpdate={onUpdateSettings}
+          hasDistanceFeature={hasDistanceFeature(workout)}
+        />
+      </View>
+    );
+
+    // With large text the header and settings would leave no room for the
+    // preview, so everything but Start/Back scrolls together.
     return (
-      <View style={styles.idleContainer}>
-        {/* Static header */}
-        <View style={styles.idleHeader}>
-          <Text style={styles.workoutName}>{workout.name}</Text>
-          <Text style={styles.intervalCount}>
-            {state.intervals.length} intervals
-            {workout.targetDistanceMeters
-              ? ` · ${formatDistanceShort(workout.targetDistanceMeters, settings.paceUnit)} goal`
-              : ` · ${formatTime(state.intervals.reduce((s, i) => s + i.durationSeconds, 0))}`
-            }
-          </Text>
-          {hasDistanceFeature(workout) && (
-            <Text style={styles.gpsNote}>📍 GPS will auto-enable for distance-based runs</Text>
-          )}
-        </View>
+      <View style={[styles.idleContainer, large && { paddingTop: insets.top + Spacing.md }]}>
+        {!large && idleHeader}
 
         {/* Scrollable workout preview */}
         <ScrollView
           style={styles.idleScroll}
           contentContainerStyle={styles.idleScrollContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={large}
         >
+          {large && idleHeader}
           {sections.map((section) => {
             const sectionColor = intervalColor(section.firstType);
             const sectionLabel =
@@ -434,35 +461,30 @@ function ActiveWorkoutInner({
               </View>
             );
           })}
+          {large && preRunPanel}
         </ScrollView>
 
         {/* Static footer */}
         <View style={styles.idleFooter}>
-          {needsGps && locationAccess && (
-            <PreRunLocationCard access={locationAccess} onAllow={handleAllowLocation} />
-          )}
-          {needsGps && locationAccess === 'granted' && (
-            <BackgroundLocationCard placement="preRun" />
-          )}
-          <PreRunSettings
-            settings={settings}
-            onUpdate={onUpdateSettings}
-            hasDistanceFeature={hasDistanceFeature(workout)}
-          />
+          {!large && preRunPanel}
           <TouchableOpacity
-            style={styles.bigStartBtn}
+            style={[styles.bigStartBtn, large && styles.bigStartBtnLarge]}
             onPress={handleStart}
             activeOpacity={0.8}
+            accessibilityRole="button"
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.bigStartInner}>
               <Ionicons name="play" size={22} color={Colors.black} />
-              <Text style={styles.bigStartText}>START RUN</Text>
+              <Text style={styles.bigStartText} maxFontSizeMultiplier={MaxFontScale.display}>
+                START RUN
+              </Text>
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
+            accessibilityRole="button"
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="arrow-back" size={16} color={Colors.textMuted} />
@@ -496,14 +518,21 @@ function ActiveWorkoutInner({
               color={Colors.primary}
               style={styles.doneIcon}
             />
-            <Text style={styles.doneTitle}>Workout Complete</Text>
+            <Text style={styles.doneTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+              Workout Complete
+            </Text>
           </>
         )}
         <Text style={styles.doneWorkoutName}>{workout.name}</Text>
 
         <View style={styles.doneStatBlock}>
           <Text style={styles.doneStatLabel}>Total time</Text>
-          <Text style={styles.doneDuration}>
+          <Text
+            style={styles.doneDuration}
+            maxFontSizeMultiplier={MaxFontScale.timer}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
             {formatTime(Math.floor(state.totalElapsedMs / 1000))}
           </Text>
         </View>
@@ -531,7 +560,7 @@ function ActiveWorkoutInner({
               return (
                 <TouchableOpacity
                   key={tag}
-                  style={[styles.feelOption, active && styles.feelOptionActive]}
+                  style={[styles.feelOption, large && styles.feelOptionLarge, active && styles.feelOptionActive]}
                   onPress={() => handleFeelPress(tag)}
                   activeOpacity={0.7}
                   accessibilityRole="button"
@@ -580,7 +609,7 @@ function ActiveWorkoutInner({
           activeOpacity={0.8}
           accessibilityRole="button"
         >
-          <Text style={styles.doneBtnText}>Done</Text>
+          <Text style={styles.doneBtnText} maxFontSizeMultiplier={MaxFontScale.display}>Done</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -601,7 +630,9 @@ function ActiveWorkoutInner({
     <View style={[styles.container, { borderTopColor: color, borderTopWidth: 4, paddingTop: insets.top + Spacing.md }]}>
       {/* Top info bar */}
       <View style={styles.topBar}>
-        <Text style={styles.topBarText}>{workout.name}</Text>
+        <Text style={[styles.topBarText, styles.topBarName]} numberOfLines={large ? 2 : 1}>
+          {workout.name}
+        </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
           <Text style={styles.topBarText}>{runner.intervalNumber}</Text>
           <TouchableOpacity
@@ -609,9 +640,11 @@ function ActiveWorkoutInner({
               hapticTap();
               setSettingsVisible(true);
             }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Run settings"
           >
-            <Ionicons name="settings-outline" size={20} color={Colors.textSecondary} />
+            <Ionicons name="settings-outline" size={large ? 24 : 20} color={Colors.textSecondary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -624,90 +657,110 @@ function ActiveWorkoutInner({
         onClose={() => setSettingsVisible(false)}
       />
 
-      {/* Main timer — or distance display for distance-based intervals */}
-      <View style={styles.timerArea}>
-        {runner.isDistanceInterval ? (
-          <View style={styles.distanceTimerArea}>
-            <Text style={styles.distLabel}>{runner.currentLabel}</Text>
-            <Text style={[styles.distRemaining, { color }]}>
-              {formatDistanceShort(runner.intervalDistanceRemaining ?? 0, settings.paceUnit)}
-            </Text>
-            <Text style={styles.distSubLabel}>remaining</Text>
-            {/* Also show elapsed time for distance intervals */}
-            <Text style={styles.distElapsed}>
-              {formatTime(Math.floor((Date.now() - state.startedAt) / 1000))} elapsed
-            </Text>
-          </View>
-        ) : (
-          <Timer
-            remainingSeconds={runner.remaining}
+      {/* Fills the screen at default sizes; scrolls when large text needs more room. */}
+      <ScrollView
+        style={styles.runScroll}
+        contentContainerStyle={styles.runScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Main timer — or distance display for distance-based intervals */}
+        <View style={[styles.timerArea, large && styles.timerAreaLarge]}>
+          {runner.isDistanceInterval ? (
+            <View style={styles.distanceTimerArea}>
+              <Text style={styles.distLabel} maxFontSizeMultiplier={MaxFontScale.display}>
+                {runner.currentLabel}
+              </Text>
+              <Text
+                style={[styles.distRemaining, { color }]}
+                maxFontSizeMultiplier={MaxFontScale.timer}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatDistanceShort(runner.intervalDistanceRemaining ?? 0, settings.paceUnit)}
+              </Text>
+              <Text style={styles.distSubLabel}>remaining</Text>
+              {/* Also show elapsed time for distance intervals */}
+              <Text style={styles.distElapsed}>
+                {formatTime(Math.floor((Date.now() - state.startedAt) / 1000))} elapsed
+              </Text>
+            </View>
+          ) : (
+            <Timer
+              remainingSeconds={runner.remaining}
+              intervalType={runner.currentType}
+              label={runner.currentLabel}
+            />
+          )}
+        </View>
+
+        {/* Progress bar */}
+        <View style={styles.progressArea}>
+          <IntervalProgress
+            progress={runner.progress}
             intervalType={runner.currentType}
-            label={runner.currentLabel}
+          />
+        </View>
+
+        {/* Workout distance target progress */}
+        {runner.workoutDistanceTarget != null && (
+          <View style={styles.distTargetBar}>
+            <View style={styles.distTargetInfo}>
+              <Text style={styles.distTargetLabel}>DISTANCE GOAL</Text>
+              <Text style={styles.distTargetValue}>
+                {formatDistanceShort(runner.paceState.totalDistanceMeters, settings.paceUnit)}
+                {' / '}
+                {formatDistanceShort(runner.workoutDistanceTarget, settings.paceUnit)}
+              </Text>
+            </View>
+            <View style={styles.distProgressTrack}>
+              <View
+                style={[
+                  styles.distProgressFill,
+                  {
+                    width: `${Math.min(100, (runner.paceState.totalDistanceMeters / runner.workoutDistanceTarget) * 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Pace display (when tracking) */}
+        {(settings.paceTrackingEnabled ||
+          hasDistanceFeature(workout) ||
+          distanceProgressCuesNeedGps(settings)) &&
+          runner.isPaceTracking && (
+          <PaceDisplay
+            paceState={runner.paceState}
+            paceUnit={settings.paceUnit}
+            targetPace={getCurrentInterval(state)?.targetPace}
           />
         )}
-      </View>
 
-      {/* Progress bar */}
-      <View style={styles.progressArea}>
-        <IntervalProgress
-          progress={runner.progress}
-          intervalType={runner.currentType}
-        />
-      </View>
-
-      {/* Workout distance target progress */}
-      {runner.workoutDistanceTarget != null && (
-        <View style={styles.distTargetBar}>
-          <View style={styles.distTargetInfo}>
-            <Text style={styles.distTargetLabel}>DISTANCE GOAL</Text>
-            <Text style={styles.distTargetValue}>
-              {formatDistanceShort(runner.paceState.totalDistanceMeters, settings.paceUnit)}
-              {' / '}
-              {formatDistanceShort(runner.workoutDistanceTarget, settings.paceUnit)}
-            </Text>
-          </View>
-          <View style={styles.distProgressTrack}>
-            <View
-              style={[
-                styles.distProgressFill,
-                {
-                  width: `${Math.min(100, (runner.paceState.totalDistanceMeters / runner.workoutDistanceTarget) * 100)}%`,
-                },
-              ]}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Pace display (when tracking) */}
-      {(settings.paceTrackingEnabled ||
-        hasDistanceFeature(workout) ||
-        distanceProgressCuesNeedGps(settings)) &&
-        runner.isPaceTracking && (
-        <PaceDisplay
-          paceState={runner.paceState}
+        {/* Workout timeline */}
+        <WorkoutTimeline
+          intervals={state.intervals}
+          currentIndex={state.currentIndex}
           paceUnit={settings.paceUnit}
-          targetPace={getCurrentInterval(state)?.targetPace}
         />
-      )}
 
-      {/* Workout timeline */}
-      <WorkoutTimeline
-        intervals={state.intervals}
-        currentIndex={state.currentIndex}
-        paceUnit={settings.paceUnit}
-      />
-
-      {/* Total remaining */}
-      <Text style={styles.totalRemaining}>
-        {runner.workoutDistanceTarget != null && runner.workoutDistanceRemaining != null
-          ? `${formatDistanceShort(runner.workoutDistanceRemaining, settings.paceUnit)} to go`
-          : `${formatTime(runner.totalRemaining)} remaining`
-        }
-      </Text>
+        {/* Total remaining */}
+        <Text style={styles.totalRemaining}>
+          {runner.workoutDistanceTarget != null && runner.workoutDistanceRemaining != null
+            ? `${formatDistanceShort(runner.workoutDistanceRemaining, settings.paceUnit)} to go`
+            : `${formatTime(runner.totalRemaining)} remaining`
+          }
+        </Text>
+      </ScrollView>
 
       {/* Controls */}
-      <View style={[styles.controls, { paddingBottom: Math.max(Spacing.xxl, insets.bottom + Spacing.md) }]}>
+      <View
+        style={[
+          styles.controls,
+          large && { paddingTop: Spacing.sm },
+          { paddingBottom: Math.max(large ? Spacing.lg : Spacing.xxl, insets.bottom + Spacing.md) },
+        ]}
+      >
         {/* Stop */}
         <TouchableOpacity
           style={[styles.controlBtn, styles.stopBtn]}
@@ -715,6 +768,8 @@ function ActiveWorkoutInner({
             hapticTap();
             handleStop();
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Stop workout"
         >
           <Ionicons name="stop" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -727,6 +782,8 @@ function ActiveWorkoutInner({
               hapticTap();
               runner.pause();
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Pause"
           >
             <Ionicons name="pause" size={32} color={Colors.textPrimary} />
           </TouchableOpacity>
@@ -737,6 +794,8 @@ function ActiveWorkoutInner({
               hapticTap();
               runner.resume();
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Resume"
           >
             <Ionicons name="play" size={32} color={Colors.black} />
           </TouchableOpacity>
@@ -749,6 +808,8 @@ function ActiveWorkoutInner({
             hapticTap();
             runner.skip();
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Skip interval"
         >
           <Ionicons name="play-skip-forward" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -799,6 +860,7 @@ function MidRunSettingsSheet({
   onUpdate: (partial: Partial<AppSettings>) => Promise<void>;
   onClose: () => void;
 }) {
+  const large = useLargeText();
   return (
     <Modal
       visible={visible}
@@ -808,7 +870,7 @@ function MidRunSettingsSheet({
     >
       <View style={sheetStyles.overlay}>
         <TouchableOpacity style={sheetStyles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={sheetStyles.sheet}>
+        <View style={[sheetStyles.sheet, large && sheetStyles.sheetLarge]}>
           {/* Handle */}
           <View style={sheetStyles.handleRow}>
             <View style={sheetStyles.handle} />
@@ -816,8 +878,15 @@ function MidRunSettingsSheet({
 
           {/* Header */}
           <View style={sheetStyles.header}>
-            <Text style={sheetStyles.headerTitle}>Settings</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={sheetStyles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+              Settings
+            </Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Close settings"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -1146,6 +1215,9 @@ const sheetStyles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
+  sheetLarge: {
+    maxHeight: '92%',
+  },
   handleRow: {
     alignItems: 'center',
     paddingTop: Spacing.sm,
@@ -1246,6 +1318,7 @@ function PaceDisplay({
   paceUnit: import('../../../src/pace/paceTypes').PaceUnit;
   targetPace?: number;
 }) {
+  const large = useLargeText();
   const currentPace =
     paceUnit === 'minPerMile'
       ? paceState.currentPaceMinPerMile
@@ -1273,16 +1346,16 @@ function PaceDisplay({
 
   return (
     <View style={paceStyles.container}>
-      <View style={paceStyles.mainRow}>
-        <View style={paceStyles.paceCol}>
+      <View style={[paceStyles.mainRow, large && paceStyles.mainRowLarge]}>
+        <View style={[paceStyles.paceCol, large && paceStyles.colLarge]}>
           <Text style={paceStyles.paceLabel}>PACE</Text>
-          <Text style={paceStyles.paceValue}>
+          <Text style={paceStyles.paceValue} maxFontSizeMultiplier={MaxFontScale.display}>
             {paceStr}
             <Text style={paceStyles.paceUnit}> {unitLabel}</Text>
           </Text>
         </View>
         {targetPace != null && (
-          <View style={paceStyles.targetCol}>
+          <View style={[paceStyles.targetCol, large && paceStyles.colLarge]}>
             <Text style={paceStyles.paceLabel}>TARGET</Text>
             <Text style={[paceStyles.targetValue]}>
               {formatPaceDisplay(targetPace)}
@@ -1290,7 +1363,7 @@ function PaceDisplay({
             </Text>
           </View>
         )}
-        <View style={paceStyles.distCol}>
+        <View style={[paceStyles.distCol, large && paceStyles.colLarge]}>
           <Text style={paceStyles.paceLabel}>DIST</Text>
           <Text style={paceStyles.distValue}>{distStr}</Text>
         </View>
@@ -1317,8 +1390,17 @@ const paceStyles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-end',
   },
+  mainRowLarge: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: Spacing.sm,
+  },
   paceCol: {
     flex: 1,
+  },
+  colLarge: {
+    flex: 0,
+    alignItems: 'flex-start',
   },
   targetCol: {
     flex: 1,
@@ -1377,29 +1459,30 @@ function WorkoutTimeline({
   currentIndex: number;
   paceUnit: import('../../../src/pace/paceTypes').PaceUnit;
 }) {
-  const flatListRef = useRef<FlatList<FlatInterval>>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  // Row text is capped at MaxFontScale.display, so rows only need to grow that much.
+  const rowHeight = useScaledSize(TIMELINE_ROW_HEIGHT, MaxFontScale.display);
+  // Keeps the previous interval in view with the current one about a third of the way down.
+  const offsetFor = (index: number) =>
+    Math.max(0, (index - 1) * rowHeight - 0.3 * (TIMELINE_VISIBLE_ROWS - 1) * rowHeight);
 
   useEffect(() => {
-    if (flatListRef.current && currentIndex >= 0 && currentIndex < intervals.length) {
-      try {
-        flatListRef.current.scrollToIndex({
-          index: Math.max(0, currentIndex - 1),
-          animated: true,
-          viewPosition: 0.3,
-        });
-      } catch {}
+    if (currentIndex >= 0 && currentIndex < intervals.length) {
+      scrollRef.current?.scrollTo({ y: offsetFor(currentIndex), animated: true });
     }
-  }, [currentIndex, intervals.length]);
+  }, [currentIndex, intervals.length, rowHeight]);
 
   const renderItem = useCallback(
-    ({ item, index }: { item: FlatInterval; index: number }) => {
+    (item: FlatInterval, index: number) => {
       const isCompleted = index < currentIndex;
       const isCurrent = index === currentIndex;
 
       return (
         <View
+          key={item.index}
           style={[
             tlStyles.row,
+            { height: rowHeight },
             isCurrent && tlStyles.currentRow,
           ]}
         >
@@ -1425,6 +1508,7 @@ function WorkoutTimeline({
               isCurrent && { color: intervalColor(item.type) },
             ]}
             numberOfLines={1}
+            maxFontSizeMultiplier={MaxFontScale.display}
           >
             {item.blockName && item.isFirstInSet
               ? `${item.blockName} · ${item.label}`
@@ -1439,6 +1523,7 @@ function WorkoutTimeline({
                 isCompleted && tlStyles.completedText,
                 isCurrent && { color: intervalColor(item.type) },
               ]}
+              maxFontSizeMultiplier={MaxFontScale.display}
             >
               {item.setNumber}/{item.totalSets}
             </Text>
@@ -1451,6 +1536,7 @@ function WorkoutTimeline({
               isCompleted && tlStyles.completedText,
               isCurrent && { color: intervalColor(item.type) },
             ]}
+            maxFontSizeMultiplier={MaxFontScale.display}
           >
             {isDistanceInterval(item)
               ? formatDistanceShort(item.distanceMeters!, paceUnit)
@@ -1460,32 +1546,28 @@ function WorkoutTimeline({
         </View>
       );
     },
-    [currentIndex, paceUnit],
+    [currentIndex, paceUnit, rowHeight],
   );
 
   return (
-    <View style={tlStyles.container}>
-      <FlatList
-        ref={flatListRef}
-        data={intervals}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.index.toString()}
+    <View style={[tlStyles.container, { maxHeight: TIMELINE_VISIBLE_ROWS * rowHeight }]}>
+      <ScrollView
+        ref={scrollRef}
+        nestedScrollEnabled
         showsVerticalScrollIndicator={false}
-        getItemLayout={(_, index) => ({
-          length: 32,
-          offset: 32 * index,
-          index,
-        })}
-        onScrollToIndexFailed={() => {}}
-        initialScrollIndex={Math.max(0, currentIndex - 1)}
-      />
+        contentOffset={{ x: 0, y: offsetFor(currentIndex) }}
+      >
+        {intervals.map(renderItem)}
+      </ScrollView>
     </View>
   );
 }
 
+const TIMELINE_ROW_HEIGHT = 32;
+const TIMELINE_VISIBLE_ROWS = 5;
+
 const tlStyles = StyleSheet.create({
   container: {
-    maxHeight: 160,
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,
     backgroundColor: Colors.surface,
@@ -1495,7 +1577,6 @@ const tlStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 32,
     paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
   },
@@ -1670,12 +1751,31 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontVariant: ['tabular-nums'],
   },
+  preRunPanel: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  preRunPanelLarge: {
+    alignItems: 'stretch',
+    marginTop: Spacing.sm,
+  },
   bigStartBtn: {
     backgroundColor: Colors.primary,
     paddingVertical: Spacing.lg,
     paddingHorizontal: Spacing.xxl,
     borderRadius: BorderRadius.xl,
     marginBottom: Spacing.lg,
+  },
+  bigStartBtnLarge: {
+    alignSelf: 'stretch',
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.xs,
+  },
+  bigStartInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   bigStartText: {
     color: Colors.black,
@@ -1703,10 +1803,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: '600',
   },
-  timerArea: {
+  topBarName: {
     flex: 1,
+    marginRight: Spacing.sm,
+  },
+  runScroll: {
+    flex: 1,
+  },
+  runScrollContent: {
+    flexGrow: 1,
+  },
+  timerArea: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  timerAreaLarge: {
+    paddingVertical: Spacing.lg,
   },
   progressArea: {
     paddingHorizontal: Spacing.lg,
@@ -1754,8 +1867,10 @@ const styles = StyleSheet.create({
   },
   distTargetInfo: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.xs,
     marginBottom: Spacing.sm,
   },
   distTargetLabel: {
@@ -1920,24 +2035,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.primary,
     paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    marginTop: Spacing.xs,
-  },
-  doneBtnText: {
-    color: Colors.black,
-    fontSize: FontSize.lg,
-    fontWeight: '800',
-  },
-  detailsLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: Spacing.md,
-    minHeight: 44,
-  },
-  detailsLinkText: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-});
+    borderRadius: BorderRa

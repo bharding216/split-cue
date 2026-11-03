@@ -124,9 +124,26 @@ export default {
     if (workoutMatch) {
       const code = workoutMatch[1];
       const upstream = `${SUPABASE_SHARE_FN}?code=${code}`;
-      const resp = await fetch(upstream, {
-        headers: { 'User-Agent': 'pacecue-share-proxy' },
-      });
+      let resp: Response | null = null;
+      try {
+        resp = await fetch(upstream, {
+          headers: { 'User-Agent': 'pacecue-share-proxy' },
+        });
+      } catch {
+        resp = null;
+      }
+
+      // Never show recipients a raw server error: fall back to a static page
+      // that can still open the app or send them to the store.
+      if (!resp || resp.status >= 500) {
+        return new Response(shareFallbackPage(code), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
 
       return new Response(resp.body, {
         status: resp.status,
@@ -187,6 +204,43 @@ export default {
     return htmlResponse(notFoundPage(), 404);
   },
 } satisfies ExportedHandler;
+
+const APP_STORE_URL = 'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
+
+function shareFallbackPage(code: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Shared Workout \u2014 SplitCue</title>
+  <meta property="og:title" content="Shared Workout \u2014 SplitCue">
+  <meta property="og:description" content="Open in SplitCue to try this workout.">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#181818;color:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    .card{background:#242424;border-radius:16px;padding:32px;max-width:380px;width:100%;text-align:center}
+    h1{font-size:22px;margin-bottom:8px}
+    .summary{color:#aaa;font-size:14px;margin-bottom:24px}
+    .btn{display:block;width:100%;padding:14px;border-radius:10px;font-size:16px;font-weight:600;text-decoration:none;margin-bottom:12px}
+    .btn-primary{background:#4ADE80;color:#181818}
+    .btn-secondary{background:#333;color:#f5f5f5}
+    .footer{margin-top:20px;color:#666;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Shared Workout</h1>
+    <p class="summary">Open in SplitCue to try this workout. If it doesn't open, update to the latest version.</p>
+    <a class="btn btn-primary" href="pacecue://w/${code}">Open in SplitCue</a>
+    <a class="btn btn-secondary" href="${APP_STORE_URL}">Get SplitCue on the App Store</a>
+    <a class="btn btn-secondary" href="${PLAY_STORE_URL}">Get SplitCue on Google Play</a>
+    <p class="footer">SplitCue \u2014 Interval running, guided by audio cues</p>
+  </div>
+</body>
+</html>`;
+}
 
 function notFoundPage(): string {
   return `<!DOCTYPE html>

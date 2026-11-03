@@ -156,6 +156,7 @@ function renderPage(code: string, workout: Json | null): string {
     .btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none;margin-bottom:12px}
     .btn-primary{background:#4ADE80;color:#181818}
     .btn-secondary{background:#333;color:#f5f5f5}
+    .hint{color:#888;font-size:13px;margin-top:4px}
     .footer{margin-top:20px;color:#666;font-size:12px}
   </style>
 </head>
@@ -167,6 +168,7 @@ function renderPage(code: string, workout: Json | null): string {
     ${secondaryOpen}
     <a id="ios" class="btn btn-secondary" href="${APP_STORE_URL}" style="display:none">Download on the App Store</a>
     <a id="android" class="btn btn-secondary" href="${PLAY_STORE_URL}" style="display:none">Get it on Google Play</a>
+    <p class="hint">Already have SplitCue? If the workout doesn't open, update to the latest version.</p>
     <p class="footer">SplitCue \u2014 Interval running, guided by audio cues</p>
   </div>
   <script>
@@ -203,7 +205,14 @@ Deno.serve(async (req: Request) => {
     // Serve the page with generic info
   }
 
-  return new Response(renderPage(code, workout), {
+  let html: string;
+  try {
+    html = renderPage(code, workout);
+  } catch {
+    html = renderPage(code, null);
+  }
+
+  return new Response(html, {
     status: workout ? 200 : 404,
     headers: {
       "Content-Type": "text/html; charset=utf-8",

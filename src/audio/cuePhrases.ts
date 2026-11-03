@@ -2,22 +2,31 @@
  * Spoken cue text, kept pure so the same strings are used both to
  * pre-generate premium voice clips and to play them at cue time.
  * The exact text of each phrase is its clip cache key.
+ *
+ * Cues are stitched from short pieces ("Starting Run for", "3 minutes",
+ * "8 out of 10 effort.") rather than spoken as whole sentences, so a clip
+ * generated for one workout is reused by every workout that says the same
+ * piece. Each piece is generated with fixed sample context instead of its
+ * real neighbors, which keeps its cache key independent of the workout.
  */
 
 import type { PaceUnit } from '../pace/paceTypes';
 import { formatPaceForSpeech } from '../pace/paceTracker';
 import {
   type AppSettings,
+  type BlockSegmentSummary,
   type FlatInterval,
+  type Intensity,
+  type SegmentType,
   type WorkoutDefinition,
   flattenWorkout,
   isDistanceInterval,
-  formatDurationForSpeech,
+  defaultSegmentLabel,
   formatDistanceForSpeech,
   formatCueDistanceForSpeech,
 } from '../workout/workoutTypes';
 import { cueDistanceMeters } from './cueSchedule';
-import type { Clip } from './clipKey';
+import { type Clip, clipKey } from './clipKey';
 
 export interface CueContext {
   /** The label of the interval that just started (e.g. "Hard", "Easy", "Warm Up"). */
@@ -34,7 +43,7 @@ export interface CueContext {
   totalSets?: number;
   isFirstInBlock?: boolean;
   isFirstInSet?: boolean;
-  blockSummary?: string;
+  blockSegments?: BlockSegmentSummary[];
   blockIntervalCount?: number;
   nextLabel?: string;
   nextDuration?: number;
@@ -67,6 +76,19 @@ const PACE_SEGMENT_MAX_MINUTES = 30;
 /** Generate pace segments with ElevenLabs previous/next text so joins sound continuous. */
 const PACE_SEGMENT_CONTEXT = true;
 
+// Ranges of the shared vocabulary bundled with the app. Values outside
+// these are still stitched from pieces, just downloaded on first use.
+const SHARED_MAX_MINUTES = 60;
+const SHARED_MAX_SETS = 20;
+const SHARED_MAX_BLOCK_NUMBER = 10;
+/** Countdown warnings above the 3-2-1 beeps that settings offer. */
+const SHARED_WARNING_SECONDS = [5, 10, 15, 30];
+/** Remainders of the 15-second-multiple progress steps settings offer. */
+const SHARED_PROGRESS_SECONDS = [15, 30, 45];
+const SEGMENT_TYPES: SegmentType[] = ['warmup', 'run', 'recovery', 'rest', 'cooldown'];
+/** Intensities a block summary names; easy segments go unqualified. */
+const SUMMARY_INTENSITIES: Intensity[] = ['recovery', 'moderate', 'tempo', 'hard', 'sprint'];
+
 export function buildCueContext(
   ci: FlatInterval,
   ni: FlatInterval | null | undefined,
@@ -83,7 +105,7 @@ export function buildCueContext(
     totalSets: ci.totalSets,
     isFirstInBlock: ci.isFirstInBlock,
     isFirstInSet: ci.isFirstInSet,
-    blockSummary: ci.blockSummary,
+    blockSegments: ci.blockSegments,
     blockIntervalCount: ci.blockIntervalCount,
     nextLabel: ni?.label,
     nextDuration: ni?.durationSeconds,
@@ -99,6 +121,130 @@ function paceUnitLabel(unit: PaceUnit | undefined): string {
   return unit === 'minPerKm' ? 'per K' : 'per mile';
 }
 
+function plural(n: number, word: string): string {
+  return `${n} ${n === 1 ? word : `${word}s`}`;
+}
+
+function range(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+}
+
+// ── Pieces ───────────────────────────────────────────────────────────
+
+/** One stitched piece of a cue: its clip, and its text for device TTS. */
+interface Piece {
+  clip: Clip;
+  text: string;
+}
+
+function piece(text: string, previousText?: string, nextText?: string): Piece {
+  return { clip: previousText || nextText ? { text, previousText, nextText } : text, text };
+}
+
+function toPhrase(pieces: Piece[]): CuePhrase {
+  return { clips: pieces.map((p) => p.clip), text: pieces.map((p) => p.text).join(' ') };
+}
+
+const MEASURE_BEFORE = 'Starting Run for';
+const MEASURE_AFTER = '8 out of 10 effort.';
+
+/** "3 minutes", or "3 minutes." when it ends the sentence. */
+function minutesPiece(minutes: number, final: boolean): Piece {
+  const text = plural(minutes, 'minute');
+  return final ? piece(`${text}.`, MEASURE_BEFORE) : piece(text, MEASURE_BEFORE, '30 seconds.');
+}
+
+function secondsPiece(seconds: number, final: boolean): Piece {
+  const text = plural(seconds, 'second');
+  const before = `${MEASURE_BEFORE} 3 minutes`;
+  return final ? piece(`${text}.`, before) : piece(text, before, MEASURE_AFTER);
+}
+
+function distancePiece(meters: number, final: boolean): Piece {
+  const text = formatDistanceForSpeech(meters);
+  return final ? piece(`${text}.`, MEASURE_BEFORE) : piece(text, MEASURE_BEFORE, MEASURE_AFTER);
+}
+
+/** An interval's length as pieces, e.g. [3 minutes] [30 seconds]. Empty when it has none. */
+function measurePieces(durationSeconds: number | undefined, distanceMeters: number | undefined, final: boolean): Piece[] {
+  const seconds = Math.round(durationSeconds ?? 0);
+  if (seconds <= 0) {
+    return distanceMeters && distanceMeters > 0 ? [distancePiece(distanceMeters, final)] : [];
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const pieces: Piece[] = [];
+  if (mins > 0) pieces.push(minutesPiece(mins, final && secs === 0));
+  if (secs > 0) pieces.push(secondsPiece(secs, final));
+  return pieces;
+}
+
+function blockTitlePiece(title: string): Piece {
+  return piece(`Beginning ${title}.`);
+}
+
+function setsPiece(totalSets: number): Piece {
+  return piece(`${totalSets} sets.`, '3 minutes Run, 2 minutes Recovery.');
+}
+
+function setNumberPiece(setNumber: number): Piece {
+  return piece(`Beginning set ${setNumber}`, undefined, 'of 4.');
+}
+
+function setTotalPiece(totalSets: number): Piece {
+  return piece(`of ${totalSets}.`, 'Beginning set 2');
+}
+
+function startingPiece(label: string): Piece {
+  return piece(`Starting ${label} for`, undefined, '3 minutes.');
+}
+
+function startEffortPiece(effort: number): Piece {
+  return piece(`${effort} out of 10 effort.`, `${MEASURE_BEFORE} 3 minutes`);
+}
+
+function nextUpPiece(label: string): Piece {
+  return piece(`Next up, ${label} for`, '10 seconds.', '2 minutes.');
+}
+
+function nextEffortPiece(effort: number): Piece {
+  return piece(`${effort} out of 10.`, 'Next up, Recovery for 2 minutes');
+}
+
+function warningSecondsPiece(seconds: number): Piece {
+  return piece(`${seconds} seconds.`);
+}
+
+function almostDonePiece(): Piece {
+  return piece('Almost done.', '10 seconds.');
+}
+
+function endingPiece(label: string): Piece {
+  return piece(`Ending ${label}.`, '10 seconds.');
+}
+
+function minutesPassedPiece(minutes: number): Piece {
+  return piece(`${plural(minutes, 'minute')} passed.`);
+}
+
+function secondsPassedPiece(seconds: number): Piece {
+  return piece(`${plural(seconds, 'second')} passed.`, '3 minutes');
+}
+
+function summaryLabelPiece(label: string, intensity: Intensity | undefined, last: boolean): Piece {
+  return piece(`${label}${intensity ? ` at ${intensity}` : ''}${last ? '.' : ','}`, '3 minutes');
+}
+
+/** "3 minutes Run at tempo, 2 minutes Recovery." */
+function blockSummaryPieces(segments: BlockSegmentSummary[]): Piece[] {
+  return segments.flatMap((seg, i) => [
+    ...measurePieces(seg.durationSeconds, seg.distanceMeters, false),
+    summaryLabelPiece(seg.label, seg.intensity, i === segments.length - 1),
+  ]);
+}
+
+// ── Cues ─────────────────────────────────────────────────────────────
+
 /**
  * Interval transition announcement.
  *
@@ -107,75 +253,64 @@ function paceUnitLabel(unit: PaceUnit | undefined): string {
  *   Set start:   "Beginning set 2 of 4. Starting hard for 3 minutes."
  *   Interval:    "Starting easy for 2 minutes."
  */
-export function intervalStartText(ctx: CueContext): string | null {
-  const hasDuration = ctx.currentDuration && ctx.currentDuration > 0;
-  const hasDistance = ctx.currentDistanceMeters && ctx.currentDistanceMeters > 0;
-  if (!hasDuration && !hasDistance) {
-    return ctx.currentLabel ? `Beginning ${ctx.currentLabel}` : null;
+export function intervalStartCue(ctx: CueContext): CuePhrase | null {
+  const measure = (final: boolean) => measurePieces(ctx.currentDuration, ctx.currentDistanceMeters, final);
+  if (measure(true).length === 0) {
+    return ctx.currentLabel ? toPhrase([blockTitlePiece(ctx.currentLabel)]) : null;
   }
-  const parts: string[] = [];
-  const measure = hasDistance && !hasDuration
-    ? formatDistanceForSpeech(ctx.currentDistanceMeters!)
-    : formatDurationForSpeech(ctx.currentDuration!);
-  const effortSuffix = ctx.effort ? `, ${ctx.effort} out of 10 effort` : '';
 
-  if (ctx.isFirstInBlock && ctx.totalSets && ctx.totalSets > 1) {
-    parts.push(`Beginning ${ctx.blockName || `interval ${ctx.blockNumber}`}`);
-    if (ctx.blockSummary) parts.push(ctx.blockSummary);
-    parts.push(`${ctx.totalSets} sets`);
+  const pieces: Piece[] = [];
+  const blockTitle = ctx.blockName || `interval ${ctx.blockNumber}`;
+  const totalSets = ctx.totalSets ?? 1;
+  if (ctx.isFirstInBlock && totalSets > 1) {
+    pieces.push(blockTitlePiece(blockTitle), ...blockSummaryPieces(ctx.blockSegments ?? []), setsPiece(totalSets));
   } else if (ctx.isFirstInBlock && (ctx.blockIntervalCount ?? 0) > 1) {
-    parts.push(`Beginning ${ctx.blockName || `interval ${ctx.blockNumber}`}`);
-  } else if (ctx.isFirstInSet && ctx.totalSets && ctx.totalSets > 1) {
-    parts.push(`Beginning set ${ctx.setNumber} of ${ctx.totalSets}`);
+    pieces.push(blockTitlePiece(blockTitle));
+  } else if (ctx.isFirstInSet && totalSets > 1) {
+    pieces.push(setNumberPiece(ctx.setNumber ?? 1), setTotalPiece(totalSets));
   }
 
-  parts.push(`Starting ${ctx.currentLabel} for ${measure}${effortSuffix}`);
-
+  pieces.push(startingPiece(ctx.currentLabel ?? ''), ...measure(!ctx.effort));
+  if (ctx.effort) pieces.push(startEffortPiece(ctx.effort));
   if (ctx.targetPace != null && isFinite(ctx.targetPace)) {
-    parts.push(`Target pace ${formatPaceForSpeech(ctx.targetPace)} ${paceUnitLabel(ctx.paceUnit)}`);
+    pieces.push(...targetPacePieces(ctx.targetPace, ctx.paceUnit));
   }
-
-  return parts.join('. ') + '.';
+  return toPhrase(pieces);
 }
 
 /** Countdown warning, e.g. "10 seconds. Next up, easy for 2 minutes." */
-export function warningText(ctx: CueContext): string | null {
-  const parts: string[] = [];
-  if (ctx.warningSeconds) {
-    parts.push(`${ctx.warningSeconds} seconds`);
-  }
-  const nextHasDuration = ctx.nextDuration && ctx.nextDuration > 0;
-  const nextHasDistance = ctx.nextDistanceMeters && ctx.nextDistanceMeters > 0;
-  if (ctx.nextLabel && (nextHasDuration || nextHasDistance)) {
-    const nextMeasure = nextHasDistance && !nextHasDuration
-      ? formatDistanceForSpeech(ctx.nextDistanceMeters!)
-      : formatDurationForSpeech(ctx.nextDuration!);
-    const nextEffort = ctx.nextEffort ? `, ${ctx.nextEffort} out of 10` : '';
-    parts.push(`Next up, ${ctx.nextLabel} for ${nextMeasure}${nextEffort}`);
+export function warningCue(ctx: CueContext): CuePhrase | null {
+  const pieces: Piece[] = [];
+  if (ctx.warningSeconds) pieces.push(warningSecondsPiece(ctx.warningSeconds));
+
+  const nextMeasure = (final: boolean) => measurePieces(ctx.nextDuration, ctx.nextDistanceMeters, final);
+  if (ctx.nextLabel && nextMeasure(true).length > 0) {
+    pieces.push(nextUpPiece(ctx.nextLabel), ...nextMeasure(!ctx.nextEffort));
+    if (ctx.nextEffort) pieces.push(nextEffortPiece(ctx.nextEffort));
     if (ctx.nextTargetPace != null && isFinite(ctx.nextTargetPace)) {
-      parts.push(`Target pace ${formatPaceForSpeech(ctx.nextTargetPace)} ${paceUnitLabel(ctx.paceUnit)}`);
+      pieces.push(...targetPacePieces(ctx.nextTargetPace, ctx.paceUnit));
     }
   } else if (!ctx.nextLabel) {
-    parts.push('almost done');
+    pieces.push(almostDonePiece());
   } else if (ctx.currentLabel) {
-    parts.push(`Ending ${ctx.currentLabel}`);
+    pieces.push(endingPiece(ctx.currentLabel));
   }
-  return parts.length > 0 ? parts.join('. ') + '.' : null;
+  return pieces.length > 0 ? toPhrase(pieces) : null;
 }
 
 /** Spoken in beeps-only mode so users can tell which countdown fired. */
-export function warningSecondsText(seconds: number): string {
-  return `${seconds} seconds`;
+export function warningSecondsCue(seconds: number): CuePhrase {
+  return toPhrase([warningSecondsPiece(seconds)]);
 }
 
-/** "1 minute passed", "1 minute 30 seconds passed", "45 seconds passed". */
-export function intervalProgressPhrase(elapsedSeconds: number): string {
+/** "1 minute passed.", "1 minute 30 seconds passed.", "45 seconds passed." */
+export function intervalProgressCue(elapsedSeconds: number): CuePhrase {
   const mins = Math.floor(elapsedSeconds / 60);
   const secs = elapsedSeconds % 60;
-  const minWord = mins === 1 ? 'minute' : 'minutes';
-  if (mins > 0 && secs > 0) return `${mins} ${minWord} ${secs} seconds passed`;
-  if (mins > 0) return `${mins} ${minWord} passed`;
-  return `${secs} seconds passed`;
+  if (secs === 0) return toPhrase([minutesPassedPiece(mins)]);
+  const pieces = mins > 0 ? [minutesPiece(mins, false)] : [];
+  pieces.push(secondsPassedPiece(secs));
+  return toPhrase(pieces);
 }
 
 /** "half mile passed", "1 kilometer passed", "500 meters passed". */
@@ -202,28 +337,53 @@ export function paceCuePhrase(
 
 // ── Pace segments ────────────────────────────────────────────────────
 
-function prefixSegment(unit: PaceUnit): Clip {
-  const text = 'Current pace';
-  return PACE_SEGMENT_CONTEXT ? { text, nextText: `7 minutes 30 seconds ${paceUnitLabel(unit)}.` } : text;
-}
-
-function minutesSegment(minutes: number, unit: PaceUnit): Clip {
-  const text = `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+function currentPacePrefix(unit: PaceUnit): Piece {
   return PACE_SEGMENT_CONTEXT
-    ? { text, previousText: 'Current pace', nextText: `30 seconds ${paceUnitLabel(unit)}.` }
-    : text;
+    ? piece('Current pace', undefined, `7 minutes 30 seconds ${paceUnitLabel(unit)}.`)
+    : piece('Current pace');
 }
 
-function secondsSegment(seconds: number, unit: PaceUnit): Clip {
-  const text = `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
+function targetPacePrefix(unit: PaceUnit): Piece {
+  return piece('Target pace', undefined, `7 minutes 30 seconds ${paceUnitLabel(unit)}.`);
+}
+
+function paceMinutesSegment(minutes: number, unit: PaceUnit): Piece {
+  const text = plural(minutes, 'minute');
   return PACE_SEGMENT_CONTEXT
-    ? { text, previousText: 'Current pace 7 minutes', nextText: `${paceUnitLabel(unit)}.` }
-    : text;
+    ? piece(text, 'Current pace', `30 seconds ${paceUnitLabel(unit)}.`)
+    : piece(text);
 }
 
-function suffixSegment(unit: PaceUnit): Clip {
+function paceSecondsSegment(seconds: number, unit: PaceUnit): Piece {
+  const text = plural(seconds, 'second');
+  return PACE_SEGMENT_CONTEXT
+    ? piece(text, 'Current pace 7 minutes', `${paceUnitLabel(unit)}.`)
+    : piece(text);
+}
+
+function paceSuffixSegment(unit: PaceUnit): Piece {
   const text = paceUnitLabel(unit);
-  return PACE_SEGMENT_CONTEXT ? { text, previousText: 'Current pace 7 minutes 30 seconds' } : text;
+  return PACE_SEGMENT_CONTEXT ? piece(text, 'Current pace 7 minutes 30 seconds') : piece(text);
+}
+
+/** [prefix] [7 minutes] [39 seconds] [per mile], or null when the pace is out of segment range. */
+function pacePieces(prefix: Piece, paceMinutes: number, unit: PaceUnit): Piece[] | null {
+  const total = Math.round(paceMinutes * 60);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  if (mins < 1 || mins > PACE_SEGMENT_MAX_MINUTES) return null;
+  const pieces = [prefix, paceMinutesSegment(mins, unit)];
+  if (secs > 0) pieces.push(paceSecondsSegment(secs, unit));
+  pieces.push(paceSuffixSegment(unit));
+  return pieces;
+}
+
+function targetPacePieces(paceMinutes: number, unit: PaceUnit = 'minPerMile'): Piece[] {
+  return (
+    pacePieces(targetPacePrefix(unit), paceMinutes, unit) ?? [
+      piece(`Target pace ${formatPaceForSpeech(paceMinutes)} ${paceUnitLabel(unit)}.`),
+    ]
+  );
 }
 
 /** Pace cue as stitched clips: [Current pace] [7 minutes] [39 seconds] [per mile]. */
@@ -236,21 +396,41 @@ export function paceCue(
   if (currentPaceMinutes == null || !isFinite(currentPaceMinutes)) {
     return { clips: [text], text };
   }
-  const total = Math.round(currentPaceMinutes * 60);
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  if (mins < 1 || mins > PACE_SEGMENT_MAX_MINUTES) {
-    return { clips: [text], text };
-  }
-  const clips: Clip[] = [prefixSegment(unit), minutesSegment(mins, unit)];
-  if (secs > 0) clips.push(secondsSegment(secs, unit));
-  clips.push(suffixSegment(unit));
-  return { clips, text };
+  const pieces = pacePieces(currentPacePrefix(unit), currentPaceMinutes, unit);
+  return pieces ? { clips: pieces.map((p) => p.clip), text } : { clips: [text], text };
 }
 
 // ── Clip lists for pre-generation ────────────────────────────────────
 
-/** Clips shared by every workout: completion, pace segments, and distance progress. */
+/** Pieces any workout can use, independent of its labels and names. */
+function sharedCuePieces(unit: PaceUnit): Piece[] {
+  const labels = SEGMENT_TYPES.map(defaultSegmentLabel);
+  return [
+    ...range(1, SHARED_MAX_MINUTES).flatMap((m) => [
+      minutesPiece(m, false),
+      minutesPiece(m, true),
+      minutesPassedPiece(m),
+    ]),
+    ...range(1, 59).flatMap((s) => [secondsPiece(s, false), secondsPiece(s, true)]),
+    ...SHARED_PROGRESS_SECONDS.map(secondsPassedPiece),
+    ...range(1, 10).flatMap((e) => [startEffortPiece(e), nextEffortPiece(e)]),
+    ...range(1, SHARED_MAX_SETS).map(setNumberPiece),
+    ...range(2, SHARED_MAX_SETS).flatMap((n) => [setTotalPiece(n), setsPiece(n)]),
+    ...range(1, SHARED_MAX_BLOCK_NUMBER).map((n) => blockTitlePiece(`interval ${n}`)),
+    ...labels.flatMap((label) => [startingPiece(label), nextUpPiece(label), endingPiece(label)]),
+    ...labels.flatMap((label) =>
+      [undefined, ...SUMMARY_INTENSITIES].flatMap((intensity) => [
+        summaryLabelPiece(label, intensity, false),
+        summaryLabelPiece(label, intensity, true),
+      ]),
+    ),
+    ...SHARED_WARNING_SECONDS.map(warningSecondsPiece),
+    almostDonePiece(),
+    targetPacePrefix(unit),
+  ];
+}
+
+/** Clips shared by every workout: completion, pace segments, cue pieces, and distance progress. */
 export function globalPackClips(unit: PaceUnit): Clip[] {
   const clips: Clip[] = [
     WORKOUT_COMPLETE_TEXT,
@@ -259,9 +439,10 @@ export function globalPackClips(unit: PaceUnit): Clip[] {
     VOICE_PREVIEW_TEXT,
   ];
 
-  clips.push(prefixSegment(unit), suffixSegment(unit));
-  for (let m = 1; m <= PACE_SEGMENT_MAX_MINUTES; m++) clips.push(minutesSegment(m, unit));
-  for (let s = 1; s < 60; s++) clips.push(secondsSegment(s, unit));
+  clips.push(currentPacePrefix(unit).clip, paceSuffixSegment(unit).clip);
+  for (let m = 1; m <= PACE_SEGMENT_MAX_MINUTES; m++) clips.push(paceMinutesSegment(m, unit).clip);
+  for (let s = 1; s < 60; s++) clips.push(paceSecondsSegment(s, unit).clip);
+  clips.push(...sharedCuePieces(unit).map((p) => p.clip));
 
   const step = cueDistanceMeters('quarter', unit);
   for (let d = step; d <= DISTANCE_PROGRESS_LIMIT[unit] + 1; d += step) {
@@ -270,35 +451,36 @@ export function globalPackClips(unit: PaceUnit): Clip[] {
   return clips;
 }
 
-/** Every sentence this workout can speak, given the user's cue settings. */
-export function enumerateWorkoutPhrases(workout: WorkoutDefinition, settings: AppSettings): Clip[] {
-  const phrases = new Set<string>();
+/** Every clip this workout can speak, given the user's cue settings. */
+export function enumerateWorkoutClips(workout: WorkoutDefinition, settings: AppSettings): Clip[] {
+  const clips = new Map<string, Clip>();
+  const add = (phrase: CuePhrase | null) => {
+    for (const clip of phrase?.clips ?? []) clips.set(clipKey(clip), clip);
+  };
   const intervals = flattenWorkout(workout);
   const progressStep =
     settings.progressCueBasis === 'time' ? settings.timeRemainingInterval : 0;
 
   intervals.forEach((ci, i) => {
     const ctx = buildCueContext(ci, intervals[i + 1], settings.paceUnit);
-    const start = intervalStartText(ctx);
-    if (start) phrases.add(start);
+    add(intervalStartCue(ctx));
 
     const timed = !isDistanceInterval(ci) && ci.durationSeconds > 0;
     if (timed) {
       for (const w of settings.countdownWarningSeconds) {
         if (w <= 3) continue;
-        const warning = warningText({ ...ctx, warningSeconds: w });
-        if (warning) phrases.add(warning);
-        phrases.add(warningSecondsText(w));
+        add(warningCue({ ...ctx, warningSeconds: w }));
+        add(warningSecondsCue(w));
       }
     }
 
     if (progressStep > 0) {
       const limit = timed ? ci.durationSeconds : UNTIMED_PROGRESS_LIMIT_SECONDS;
       for (let t = progressStep; t < limit; t += progressStep) {
-        phrases.add(intervalProgressPhrase(t));
+        add(intervalProgressCue(t));
       }
     }
   });
 
-  return [...phrases];
+  return [...clips.values()];
 }

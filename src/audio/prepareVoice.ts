@@ -7,7 +7,7 @@ import type { AppSettings, WorkoutDefinition } from '../workout/workoutTypes';
 import { loadSettings } from '../workout/workoutStorage';
 import type { PaceUnit } from '../pace/paceTypes';
 import type { PlanWorkout } from '../types/database';
-import { enumerateWorkoutPhrases, globalPackClips } from './cuePhrases';
+import { enumerateWorkoutClips, globalPackClips } from './cuePhrases';
 import { ensureClips, type EnsureProgress } from './premiumVoice';
 import { setPremiumVoice } from './audioManager';
 
@@ -50,7 +50,7 @@ export async function prepareWorkoutAudio(
   try {
     await ensureClips(settings.premiumVoiceId, [
       ...globalPackClips(settings.paceUnit),
-      ...enumerateWorkoutPhrases(workout, settings),
+      ...enumerateWorkoutClips(workout, settings),
     ]);
   } catch (e) {
     console.warn('Failed to prepare workout audio:', e);

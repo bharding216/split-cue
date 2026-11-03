@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { formatTime } from '../workout/workoutTypes';
-import { Colors, FontSize, Spacing } from '../constants/theme';
+import { FontSize, MaxFontScale, Spacing } from '../constants/theme';
 import { intervalColor } from '../constants/theme';
 
 interface TimerProps {
@@ -15,8 +15,15 @@ export function Timer({ remainingSeconds, intervalType, label }: TimerProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, { color }]}>{label.toUpperCase()}</Text>
-      <Text style={[styles.time, { color }]}>
+      <Text style={[styles.label, { color }]} maxFontSizeMultiplier={MaxFontScale.display}>
+        {label.toUpperCase()}
+      </Text>
+      <Text
+        style={[styles.time, { color }]}
+        maxFontSizeMultiplier={MaxFontScale.timer}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
         {formatTime(remainingSeconds)}
       </Text>
     </View>
@@ -25,17 +32,20 @@ export function Timer({ remainingSeconds, intervalType, label }: TimerProps) {
 
 const styles = StyleSheet.create({
   container: {
+    alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
   },
   label: {
     fontSize: FontSize.xl,
     fontWeight: '700',
     letterSpacing: 2,
     marginBottom: Spacing.sm,
+    textAlign: 'center',
   },
   time: {
-    fontSize: Colors.white ? FontSize.timer : FontSize.timer, // always timer size
+    fontSize: FontSize.timer,
     fontWeight: '200',
     fontVariant: ['tabular-nums'],
   },

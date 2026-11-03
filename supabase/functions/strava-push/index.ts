@@ -126,6 +126,7 @@ async function uploadGpx(
   name: string,
   description: string,
   trainer: boolean,
+  stravaTags: string[],
 ): Promise<{ uploadId: number; activityId?: number }> {
   const formData = new FormData();
   formData.append("file", new Blob([gpx], { type: "application/gpx+xml" }), "workout.gpx");
@@ -134,6 +135,7 @@ async function uploadGpx(
   formData.append("description", description);
   formData.append("sport_type", "Run");
   if (trainer) formData.append("trainer", "1");
+  for (const tag of stravaTags) formData.append(`tags[${tag}]`, "true");
 
   const res = await fetch("https://www.strava.com/api/v3/uploads", {
     method: "POST",
@@ -194,31 +196,31 @@ async function createManualActivity(
   distanceMeters: number | undefined,
   description: string,
   trainer: boolean,
+  stravaTags: string[],
 ): Promise<{ activityId: number }> {
-  const body: Record<string, unknown> = {
+  const body = new URLSearchParams({
     name,
     sport_type: "Run",
     start_date_local: startDate,
-    elapsed_time: elapsedSeconds,
+    elapsed_time: String(elapsedSeconds),
     type: "Run",
     description,
-  };
+  });
 
   if (trainer) {
-    body.trainer = 1;
+    body.append("trainer", "1");
   }
 
   if (distanceMeters != null && distanceMeters > 0) {
-    body.distance = distanceMeters;
+    body.append("distance", String(distanceMeters));
   }
+
+  for (const tag of stravaTags) body.append(`tags[${tag}]`, "true");
 
   const res = await fetch("https://www.strava.com/api/v3/activities", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body,
   });
 
   if (!res.ok) {
@@ -243,14 +245,22 @@ interface PushRequest {
   notes?: string;
 }
 
-/** Notes first, then tags, then the SplitCue credit line. */
-function buildDescription(notes: string | undefined, tags: string[] | undefined): string {
+function buildDescription(notes: string | undefined): string {
   const parts: string[] = [];
   const trimmedNotes = notes?.trim();
   if (trimmedNotes) parts.push(trimmedNotes);
-  if (tags && tags.length > 0) parts.push(`Tags: ${tags.join(" · ")}`);
   parts.push("Recorded with SplitCue");
   return parts.join("\n\n");
+}
+
+/**
+ * Strava only accepts these activity tags: WithPet, Recovery, Competition,
+ * ForACause, Commute. Any other tag is rejected.
+ */
+function toStravaTags(tags: string[] | undefined): string[] {
+  const stravaTags: string[] = [];
+  if (tags?.includes("Race")) stravaTags.push("Competition");
+  return stravaTags;
 }
 
 Deno.serve(async (req) => {
@@ -296,12 +306,13 @@ Deno.serve(async (req) => {
 
     const elapsedSeconds = Math.round(totalDurationMs / 1000);
     const startDate = new Date(completedAt - totalDurationMs).toISOString();
-    const description = buildDescription(notes, tags);
+    const description = buildDescription(notes);
     const trainer = tags?.includes("Treadmill") ?? false;
+    const stravaTags = toStravaTags(tags);
 
     if (gpx) {
       // Upload with GPS route
-      const result = await uploadGpx(accessToken, gpx, workoutName, description, trainer);
+      const result = await uploadGpx(accessToken, gpx, workoutName, description, trainer, stravaTags);
       return jsonResponse({
         success: true,
         uploadId: result.uploadId,
@@ -317,6 +328,7 @@ Deno.serve(async (req) => {
         totalDistanceMeters,
         description,
         trainer,
+        stravaTags,
       );
       return jsonResponse({
         success: true,

@@ -83,6 +83,15 @@ export const SEGMENT_LABEL_OPTIONS: Record<SegmentType, readonly string[]> = {
 
 // ── Flattened interval (engine execution shape) ──────────────────────
 
+/** One segment of a block, as spoken in the block's summary. */
+export interface BlockSegmentSummary {
+  label: string;
+  durationSeconds: number;
+  distanceMeters?: number;
+  /** Omitted for easy segments, which the summary doesn't qualify. */
+  intensity?: Intensity;
+}
+
 /** A flattened interval ready for the engine to execute sequentially. */
 export interface FlatInterval {
   type: IntervalType;
@@ -98,7 +107,7 @@ export interface FlatInterval {
   totalSets: number;
   isFirstInSet: boolean;
   isFirstInBlock: boolean;
-  blockSummary: string;
+  blockSegments: BlockSegmentSummary[];
   blockIntervalCount: number;
   /** New: the segment type from the block model. */
   segmentType: SegmentType;
@@ -428,18 +437,14 @@ export function formatDistanceShort(meters: number, unit: 'minPerMile' | 'minPer
 
 // ── Flatten ──────────────────────────────────────────────────────────
 
-/** Describe a segment for block summaries (speech). */
-function describeSegment(seg: Segment): string {
-  const label = seg.label || defaultSegmentLabel(seg.segmentType);
-  const dist = segmentDistance(seg);
-  if (dist && dist > 0) {
-    return `${formatDistanceForSpeech(dist)} ${label}`;
-  }
-  const dur = segmentDuration(seg);
-  if (dur > 0) {
-    return `${formatDurationForSpeech(dur)} ${label}`;
-  }
-  return label;
+/** Summarize a segment for spoken block summaries. */
+function summarizeSegment(seg: Segment, withIntensity: boolean): BlockSegmentSummary {
+  return {
+    label: seg.label || defaultSegmentLabel(seg.segmentType),
+    durationSeconds: segmentDuration(seg),
+    distanceMeters: segmentDistance(seg),
+    intensity: withIntensity && seg.intensity !== 'easy' ? seg.intensity : undefined,
+  };
 }
 
 /**
@@ -472,7 +477,7 @@ function flattenBlockTree(
         totalSets: 1,
         isFirstInSet: true,
         isFirstInBlock: true,
-        blockSummary: describeSegment(seg),
+        blockSegments: [summarizeSegment(seg, false)],
         blockIntervalCount: 1,
         segmentType: seg.segmentType,
         intensity: seg.intensity,
@@ -481,14 +486,7 @@ function flattenBlockTree(
     } else {
       const rg = block;
       const innerSegments = collectSegments(rg.blocks);
-      const summary = innerSegments
-        .map((s) => {
-          const desc = describeSegment(s);
-          return s.intensity && s.intensity !== 'easy'
-            ? `${desc} at ${s.intensity}`
-            : desc;
-        })
-        .join(', ');
+      const summary = innerSegments.map((s) => summarizeSegment(s, true));
 
       for (let r = 0; r < rg.repetitions; r++) {
         let innerIdx = 0;
@@ -509,7 +507,7 @@ function flattenBlockTree(
               totalSets: rg.repetitions,
               isFirstInSet: innerIdx === 0,
               isFirstInBlock: innerIdx === 0 && r === 0,
-              blockSummary: summary,
+              blockSegments: summary,
               blockIntervalCount: innerSegments.length,
               segmentType: seg.segmentType,
               intensity: seg.intensity,

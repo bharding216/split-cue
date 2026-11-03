@@ -17,9 +17,9 @@ import type { AudioCueMode } from '../workout/workoutTypes';
 import {
   type CueContext,
   type CuePhrase,
-  intervalStartText,
-  warningText,
-  warningSecondsText,
+  intervalStartCue,
+  warningCue,
+  warningSecondsCue,
   WORKOUT_COMPLETE_TEXT,
 } from './cuePhrases';
 import { type Clip, getClipSource, loadVoiceIndex } from './premiumVoice';
@@ -383,14 +383,22 @@ export function speak(text: string): void {
   say([text], text, 'transition');
 }
 
+/** Speak a stitched cue phrase, interrupting anything currently playing. */
+function speakPhrase(phrase: CuePhrase): void {
+  say(phrase.clips, phrase.text, 'transition');
+}
+
 /** Speak the announcement for an interval transition, warning, or completion. */
 function announceInterval(cue: CueType, ctx: CueContext = {}): void {
-  const text =
-    cue === 'intervalStart' ? intervalStartText(ctx)
-    : cue === 'warning' ? warningText(ctx)
-    : cue === 'workoutComplete' ? WORKOUT_COMPLETE_TEXT
+  if (cue === 'workoutComplete') {
+    speak(WORKOUT_COMPLETE_TEXT);
+    return;
+  }
+  const phrase =
+    cue === 'intervalStart' ? intervalStartCue(ctx)
+    : cue === 'warning' ? warningCue(ctx)
     : null;
-  if (text) speak(text);
+  if (phrase) speakPhrase(phrase);
 }
 
 /**
@@ -449,7 +457,7 @@ export async function playCue(
   // can tell which countdown triggered (e.g. "30 seconds" vs "10 seconds").
   if (mode === 'beeps' && cue === 'warning' && context?.warningSeconds) {
     setTimeout(() => {
-      speak(warningSecondsText(context.warningSeconds!));
+      speakPhrase(warningSecondsCue(context.warningSeconds!));
     }, 300);
   }
 

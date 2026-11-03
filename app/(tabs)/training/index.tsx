@@ -19,7 +19,15 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  useWindowDimensions,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useFocusEffect, type ErrorBoundaryProps } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -51,6 +59,14 @@ function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+function shiftDateKey(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const DAY_SWIPE_THRESHOLD = 50;
 
 function daysUntil(dateStr: string): number {
   const now = new Date();
@@ -187,6 +203,50 @@ export default function TrainingScreen() {
 
   // Selected day entry
   const selectedDayEntry = dayEntries[selectedDate];
+
+  // ── Swipe day detail left/right to change the selected day ──
+  const { width: screenWidth } = useWindowDimensions();
+  const dayTranslateX = useSharedValue(0);
+
+  const goToNextDay = useCallback(() => {
+    setSelectedDate((prev) => shiftDateKey(prev, 1));
+  }, []);
+
+  const goToPrevDay = useCallback(() => {
+    setSelectedDate((prev) => shiftDateKey(prev, -1));
+  }, []);
+
+  const daySwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-20, 20])
+        .failOffsetY([-15, 15])
+        .onUpdate((e) => {
+          dayTranslateX.value = e.translationX * 0.4;
+        })
+        .onEnd((e) => {
+          if (e.translationX < -DAY_SWIPE_THRESHOLD) {
+            dayTranslateX.value = withTiming(-screenWidth, { duration: 150 }, () => {
+              runOnJS(goToNextDay)();
+              dayTranslateX.value = screenWidth;
+              dayTranslateX.value = withTiming(0, { duration: 200 });
+            });
+          } else if (e.translationX > DAY_SWIPE_THRESHOLD) {
+            dayTranslateX.value = withTiming(screenWidth, { duration: 150 }, () => {
+              runOnJS(goToPrevDay)();
+              dayTranslateX.value = -screenWidth;
+              dayTranslateX.value = withTiming(0, { duration: 200 });
+            });
+          } else {
+            dayTranslateX.value = withTiming(0, { duration: 150 });
+          }
+        }),
+    [dayTranslateX, screenWidth, goToNextDay, goToPrevDay],
+  );
+
+  const dayDetailAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dayTranslateX.value }],
+  }));
 
 
   const handleStartWorkout = useCallback((workoutData: WorkoutDefinition, planWorkoutId?: string) => {
@@ -548,20 +608,22 @@ export default function TrainingScreen() {
           />
 
           {/* ─── Selected day detail ─── */}
-          <View style={styles.dayDetailSection}>
-            <DayDetail
-              entry={selectedDayEntry}
-              selectedDate={selectedDate}
-              onStartWorkout={handleStartWorkout}
-              onRemoveWorkout={handleRemoveWorkout}
-              onMoveWorkout={handleMoveWorkoutFromDay}
-              onEditWorkout={handleEditWorkout}
-              onVoiceEdit={user ? handleVoiceEdit : undefined}
-              onViewRun={handleViewRun}
-              onRunAgain={handleRunAgain}
-              onAddWorkout={handleAddWorkout}
-            />
-          </View>
+          <GestureDetector gesture={daySwipeGesture}>
+            <Animated.View style={[styles.dayDetailSection, dayDetailAnimatedStyle]}>
+              <DayDetail
+                entry={selectedDayEntry}
+                selectedDate={selectedDate}
+                onStartWorkout={handleStartWorkout}
+                onRemoveWorkout={handleRemoveWorkout}
+                onMoveWorkout={handleMoveWorkoutFromDay}
+                onEditWorkout={handleEditWorkout}
+                onVoiceEdit={user ? handleVoiceEdit : undefined}
+                onViewRun={handleViewRun}
+                onRunAgain={handleRunAgain}
+                onAddWorkout={handleAddWorkout}
+              />
+            </Animated.View>
+          </GestureDetector>
 
 
         </ScrollView>

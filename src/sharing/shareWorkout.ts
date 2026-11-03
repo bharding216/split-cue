@@ -186,10 +186,16 @@ export function encodeWorkoutLink(def: WorkoutDefinition): string {
 }
 
 /**
+ * Result of decoding a shared workout. `'needs-update'` means the payload was
+ * written by a newer app version with a format this build doesn't understand.
+ */
+export type SharedWorkoutResult = WorkoutDefinition | 'needs-update' | null;
+
+/**
  * Decode a deep link URL back into a WorkoutDefinition.
  * Handles both old v1 format ({ n, w, b, c }) and new v2 format ({ v:2, n, b }).
  */
-export function decodeWorkoutLink(url: string): WorkoutDefinition | null {
+export function decodeWorkoutLink(url: string): SharedWorkoutResult {
   try {
     const match = url.match(/[?&]d=([^&]+)/);
     if (!match) return null;
@@ -205,8 +211,11 @@ export function decodeWorkoutLink(url: string): WorkoutDefinition | null {
 }
 
 /** Decode a share payload (either v1 or v2) into a WorkoutDefinition. */
-function decodeSharePayload(parsed: any): WorkoutDefinition | null {
+function decodeSharePayload(parsed: any): SharedWorkoutResult {
   if (!parsed || typeof parsed !== 'object') return null;
+
+  // v1 payloads have no `v`; any version other than 2 comes from a newer app.
+  if (parsed.v !== undefined && parsed.v !== 2) return 'needs-update';
 
   // New v2 format
   if (parsed.v === 2 && parsed.n && Array.isArray(parsed.b)) {
@@ -289,7 +298,7 @@ export async function createShareLink(
   return encodeWorkoutLink(def);
 }
 
-export async function resolveShareCode(code: string): Promise<WorkoutDefinition | null> {
+export async function resolveShareCode(code: string): Promise<SharedWorkoutResult> {
   try {
     const { data, error } = await supabase
       .from('shared_workouts')
