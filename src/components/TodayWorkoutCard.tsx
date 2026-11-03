@@ -10,6 +10,7 @@ import type { PlanWorkout } from '../types/database';
 import type { WorkoutDefinition } from '../workout/workoutTypes';
 import { totalWorkoutSeconds, formatTime } from '../workout/workoutTypes';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 
 interface TodayWorkoutCardProps {
   planWorkout: PlanWorkout;
@@ -37,6 +38,7 @@ function getIntensityTag(label: string | null): { text: string; color: string } 
 }
 
 export function TodayWorkoutCard({ planWorkout, onView }: TodayWorkoutCardProps) {
+  const large = useLargeText();
   const isRest = planWorkout.day_label?.toLowerCase().includes('rest');
   const isCompleted = planWorkout.status === 'completed';
   const workoutData = planWorkout.workout_data as WorkoutDefinition | null;
@@ -96,7 +98,7 @@ export function TodayWorkoutCard({ planWorkout, onView }: TodayWorkoutCardProps)
       </View>
 
       {planWorkout.description && (
-        <Text style={styles.description} numberOfLines={2}>{planWorkout.description}</Text>
+        <Text style={styles.description} numberOfLines={large ? 5 : 2}>{planWorkout.description}</Text>
       )}
 
       {!workoutData && (
@@ -131,8 +133,10 @@ const styles = StyleSheet.create({
   },
   labelRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.xs,
     marginBottom: Spacing.sm,
   },
   labelBadge: {
@@ -154,7 +158,9 @@ const styles = StyleSheet.create({
   },
   metaRow: {
     flexDirection: 'row',
-    gap: Spacing.md,
+    flexWrap: 'wrap',
+    columnGap: Spacing.md,
+    rowGap: Spacing.xs,
     marginBottom: Spacing.sm,
   },
   metaItem: {

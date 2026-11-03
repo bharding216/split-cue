@@ -49,9 +49,11 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
         style={styles.summaryRow}
         onPress={() => setExpanded(!expanded)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
       >
-        <Text style={styles.summaryTitle}>Run Settings</Text>
-        <View style={styles.summaryChips}>
+        <View style={styles.summaryMain}>
+          <Text style={styles.summaryTitle}>Run Settings</Text>
           <View style={[styles.chip, settings.paceTrackingEnabled && styles.chipActive]}>
             <Ionicons
               name="navigate"
@@ -185,15 +187,20 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: Spacing.md,
   },
+  summaryMain: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: Spacing.sm,
+    rowGap: Spacing.xs,
+  },
   summaryTitle: {
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textSecondary,
-    marginRight: 'auto' as any,
-  },
-  summaryChips: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
+    marginRight: 'auto',
   },
   chip: {
     flexDirection: 'row',
@@ -223,11 +230,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   settingInfo: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    marginRight: Spacing.sm,
   },
   settingLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
     fontWeight: '500',

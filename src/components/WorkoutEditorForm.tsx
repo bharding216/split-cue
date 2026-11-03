@@ -50,10 +50,12 @@ import {
   Spacing,
   FontSize,
   BorderRadius,
+  MaxFontScale,
   intervalColor,
 } from '../constants/theme';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { hapticTap } from '../audio/haptics';
+import { useLargeText, useScaledSize } from '../hooks/useLargeText';
 import { DraggableList } from './DraggableList';
 
 interface Props {
@@ -515,7 +517,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           totalWorkoutDistanceMeters(current) != null && (
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Target Distance</Text>
-              <Text style={[styles.totalValue, { color: Colors.accent }]}>
+              <Text style={[styles.totalValue, { color: Colors.accent }]} maxFontSizeMultiplier={MaxFontScale.display}>
                 {formatDistanceShort(totalWorkoutDistanceMeters(current)!, paceUnit)}
               </Text>
             </View>
@@ -524,12 +526,14 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           <>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Duration</Text>
-              <Text style={styles.totalValue}>{formatTime(totalWorkoutSeconds(current))}</Text>
+              <Text style={styles.totalValue} maxFontSizeMultiplier={MaxFontScale.display}>
+                {formatTime(totalWorkoutSeconds(current))}
+              </Text>
             </View>
             {totalWorkoutDistanceMeters(current) != null && (
               <View style={[styles.totalRow, { marginTop: Spacing.sm }]}>
                 <Text style={styles.totalLabel}>Target Distance</Text>
-                <Text style={[styles.totalValue, { color: Colors.accent }]}>
+                <Text style={[styles.totalValue, { color: Colors.accent }]} maxFontSizeMultiplier={MaxFontScale.display}>
                   {formatDistanceShort(totalWorkoutDistanceMeters(current)!, paceUnit)}
                 </Text>
               </View>
@@ -651,16 +655,23 @@ function SegmentSummaryRow({
   onPress: () => void;
   handle?: React.ReactNode;
 }) {
+  const lines = useLargeText() ? undefined : 1;
   return (
     <View style={sumStyles.row}>
       {handle}
-      <TouchableOpacity style={sumStyles.pressArea} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={sumStyles.pressArea}
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
         <View style={[sumStyles.dot, { backgroundColor: segmentColor(segment) }]} />
         <View style={sumStyles.textCol}>
-          <Text style={sumStyles.title} numberOfLines={1}>
+          <Text style={sumStyles.title} numberOfLines={lines}>
             {segment.label || defaultSegmentLabel(segment.segmentType)}
           </Text>
-          <Text style={sumStyles.detail} numberOfLines={1}>{summarizeSegment(segment, paceUnit)}</Text>
+          <Text style={sumStyles.detail} numberOfLines={lines}>{summarizeSegment(segment, paceUnit)}</Text>
         </View>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-forward'} size={18} color={Colors.textMuted} />
       </TouchableOpacity>
@@ -681,14 +692,21 @@ function RepeatSummaryRow({
   onPress: () => void;
   handle?: React.ReactNode;
 }) {
+  const lines = useLargeText() ? undefined : 1;
   return (
     <View style={sumStyles.row}>
       {handle}
-      <TouchableOpacity style={sumStyles.pressColumn} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={sumStyles.pressColumn}
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
         <View style={sumStyles.pressArea}>
           <Ionicons name="repeat-outline" size={16} color={Colors.primary} />
           <View style={sumStyles.textCol}>
-            <Text style={[sumStyles.title, { color: Colors.primary }]} numberOfLines={1}>
+            <Text style={[sumStyles.title, { color: Colors.primary }]} numberOfLines={lines}>
               Repeat {group.repetitions}×{group.name ? ` · ${group.name}` : ''}
             </Text>
           </View>
@@ -698,7 +716,7 @@ function RepeatSummaryRow({
           inner.blockType === 'segment' ? (
             <View key={inner.id} style={sumStyles.innerLine}>
               <View style={[sumStyles.smallDot, { backgroundColor: segmentColor(inner) }]} />
-              <Text style={sumStyles.innerText} numberOfLines={1}>
+              <Text style={sumStyles.innerText} numberOfLines={lines}>
                 {inner.label || defaultSegmentLabel(inner.segmentType)}
                 <Text style={sumStyles.detail}>  {summarizeSegment(inner, paceUnit)}</Text>
               </Text>
@@ -754,6 +772,7 @@ function SegmentEditor({
     segment.targetPace != null || !!segment.label || hasCustomEffort,
   );
   const [showLabel, setShowLabel] = useState(!!segment.label);
+  const large = useLargeText();
 
   const update = (partial: Partial<Segment>) => onChange({ ...segment, ...partial });
 
@@ -851,7 +870,7 @@ function SegmentEditor({
         <View style={segStyles.moreBox}>
           <Text style={segStyles.sectionLabel}>CUSTOM RPE</Text>
           <Text style={segStyles.sectionHint}>Override the intensity's default effort (1–10)</Text>
-          <View style={segStyles.effortNumberRow}>
+          <View style={[segStyles.effortNumberRow, large && segStyles.effortNumberRowLarge]}>
             {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const).map((n) => {
               const currentEffort = usesPace ? undefined : segment.effort ?? autoEffort;
               const isActive = currentEffort === n;
@@ -859,12 +878,19 @@ function SegmentEditor({
               return (
                 <TouchableOpacity
                   key={n}
-                  style={[segStyles.effortNumBtn, isActive && { backgroundColor: effortColor + '22', borderColor: effortColor }]}
+                  style={[
+                    segStyles.effortNumBtn,
+                    large && segStyles.effortNumBtnLarge,
+                    isActive && { backgroundColor: effortColor + '22', borderColor: effortColor },
+                  ]}
                   onPress={() => {
                     hapticTap();
                     update({ effort: n, intensity: effortToIntensity(n), targetPace: undefined });
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`RPE ${n}`}
+                  accessibilityState={{ selected: isActive }}
                 >
                   <Text style={[segStyles.effortNumText, isActive && { color: effortColor, fontWeight: '800' }]}>{n}</Text>
                 </TouchableOpacity>
@@ -1058,12 +1084,24 @@ function RepeatGroupEditor({
       <View style={rgStyles.header}>
         <Text style={segStyles.sectionLabel}>REPETITIONS</Text>
         <View style={styles.repeatRow}>
-          <TouchableOpacity onPress={() => { hapticTap(); onChangeReps(group.repetitions - 1); }} style={styles.stepBtn}>
-            <Text style={styles.stepBtnText}>−</Text>
+          <TouchableOpacity
+            onPress={() => { hapticTap(); onChangeReps(group.repetitions - 1); }}
+            style={styles.stepBtn}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Fewer repetitions"
+          >
+            <Ionicons name="remove" size={18} color={Colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={styles.repeatCount}>{group.repetitions}×</Text>
-          <TouchableOpacity onPress={() => { hapticTap(); onChangeReps(group.repetitions + 1); }} style={styles.stepBtn}>
-            <Text style={styles.stepBtnText}>+</Text>
+          <Text style={styles.repeatCount} maxFontSizeMultiplier={MaxFontScale.display}>{group.repetitions}×</Text>
+          <TouchableOpacity
+            onPress={() => { hapticTap(); onChangeReps(group.repetitions + 1); }}
+            style={styles.stepBtn}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="More repetitions"
+          >
+            <Ionicons name="add" size={18} color={Colors.textPrimary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1146,6 +1184,7 @@ function PacePicker({
   const [editing, setEditing] = useState(false);
   const [editMins, setEditMins] = useState('');
   const [editSecs, setEditSecs] = useState('');
+  const inputSize = useScaledSize(36, MaxFontScale.display);
 
   const startEdit = () => {
     if (targetPace != null) {
@@ -1172,7 +1211,7 @@ function PacePicker({
 
   return (
     <View style={styles.toggleGroupBox}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={styles.toggleGroupLabel}>TARGET PACE</Text>
         {targetPace == null && !editing && (
           <TouchableOpacity onPress={startEdit} activeOpacity={0.7}>
@@ -1183,7 +1222,8 @@ function PacePicker({
       {editing ? (
         <View style={ipStyles.paceEditRow}>
           <TextInput
-            style={ipStyles.paceInput}
+            style={[ipStyles.paceInput, { width: inputSize, height: inputSize }]}
+            maxFontSizeMultiplier={MaxFontScale.display}
             value={editMins}
             onChangeText={setEditMins}
             keyboardType="number-pad"
@@ -1192,10 +1232,12 @@ function PacePicker({
             autoFocus
             placeholder="M"
             placeholderTextColor={Colors.textMuted}
+            accessibilityLabel="Pace minutes"
           />
-          <Text style={ipStyles.paceColon}>:</Text>
+          <Text style={ipStyles.paceColon} maxFontSizeMultiplier={MaxFontScale.display}>:</Text>
           <TextInput
-            style={ipStyles.paceInput}
+            style={[ipStyles.paceInput, { width: inputSize, height: inputSize }]}
+            maxFontSizeMultiplier={MaxFontScale.display}
             value={editSecs}
             onChangeText={setEditSecs}
             keyboardType="number-pad"
@@ -1203,9 +1245,16 @@ function PacePicker({
             selectTextOnFocus
             placeholder="SS"
             placeholderTextColor={Colors.textMuted}
+            accessibilityLabel="Pace seconds"
           />
           <Text style={ipStyles.paceUnit}>{paceSuffix(paceUnit)}</Text>
-          <TouchableOpacity onPress={confirm} style={ipStyles.paceDoneBtn}>
+          <TouchableOpacity
+            onPress={confirm}
+            style={ipStyles.paceDoneBtn}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Set pace"
+          >
             <Ionicons name="checkmark" size={18} color={Colors.primary} />
           </TouchableOpacity>
         </View>
@@ -1245,6 +1294,7 @@ function WorkoutOptions({
   onChangeCategory: (c: WorkoutCategory | undefined) => void;
   paceUnit: PaceUnit;
 }) {
+  const large = useLargeText();
   const effective = category ?? inferredCategory;
   const catLabel = CATEGORY_OPTIONS.find((o) => o.value === effective)?.label ?? effective;
   const isAuto = category == null || category === inferredCategory;
@@ -1257,7 +1307,7 @@ function WorkoutOptions({
       <TouchableOpacity style={optStyles.header} onPress={onToggle} activeOpacity={0.7}>
         <View style={{ flex: 1 }}>
           <Text style={optStyles.title}>Workout options</Text>
-          <Text style={optStyles.summary} numberOfLines={1}>
+          <Text style={optStyles.summary} numberOfLines={large ? undefined : 1}>
             Category: {catLabel}{isAuto ? ' (auto)' : ''} · {distLabel}
           </Text>
         </View>
@@ -1361,6 +1411,8 @@ function TargetDistancePicker({ meters, onChange, paceUnit }: { meters: number; 
   const [editValue, setEditValue] = useState('');
   const divisor = paceUnit === 'minPerMile' ? METERS_PER_MILE : METERS_PER_KM;
   const unitLabel = paceUnit === 'minPerMile' ? 'mi' : 'km';
+  const inputWidth = useScaledSize(72, MaxFontScale.display);
+  const inputHeight = useScaledSize(36, MaxFontScale.display);
 
   const startEdit = () => { setEditValue(meters > 0 ? (meters / divisor).toFixed(1) : ''); setEditing(true); };
   const confirmEdit = () => {
@@ -1389,9 +1441,9 @@ function TargetDistancePicker({ meters, onChange, paceUnit }: { meters: number; 
       </View>
       {editing && (
         <View style={tdStyles.editRow}>
-          <TextInput style={tdStyles.editInput} value={editValue} onChangeText={setEditValue} keyboardType="decimal-pad" maxLength={6} autoFocus placeholder="0.0" placeholderTextColor={Colors.textMuted} />
+          <TextInput style={[tdStyles.editInput, { width: inputWidth, height: inputHeight }]} maxFontSizeMultiplier={MaxFontScale.display} value={editValue} onChangeText={setEditValue} keyboardType="decimal-pad" maxLength={6} autoFocus placeholder="0.0" placeholderTextColor={Colors.textMuted} accessibilityLabel={`Target distance in ${unitLabel}`} />
           <Text style={tdStyles.editUnit}>{unitLabel}</Text>
-          <TouchableOpacity onPress={confirmEdit} style={tdStyles.doneBtn}><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
+          <TouchableOpacity onPress={confirmEdit} style={tdStyles.doneBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Set distance"><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
         </View>
       )}
       {meters > 0 && !editing && (
@@ -1412,6 +1464,7 @@ function DurationPicker({ seconds, onChange, color }: { seconds: number; onChang
   const [editSecs, setEditSecs] = useState('');
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
+  const inputSize = useScaledSize(36, MaxFontScale.display);
 
   const startEdit = () => { setEditMins(mins.toString()); setEditSecs(secs.toString().padStart(2, '0')); setEditing(true); };
   const confirmEdit = () => {
@@ -1424,17 +1477,17 @@ function DurationPicker({ seconds, onChange, color }: { seconds: number; onChang
   if (editing) {
     return (
       <View style={dpStyles.editContainer}>
-        <TextInput style={dpStyles.editInput} value={editMins} onChangeText={setEditMins} keyboardType="number-pad" maxLength={2} selectTextOnFocus autoFocus placeholder="M" placeholderTextColor={Colors.textMuted} />
-        <Text style={dpStyles.editColon}>:</Text>
-        <TextInput style={dpStyles.editInput} value={editSecs} onChangeText={setEditSecs} keyboardType="number-pad" maxLength={2} selectTextOnFocus placeholder="SS" placeholderTextColor={Colors.textMuted} />
-        <TouchableOpacity onPress={confirmEdit} style={dpStyles.doneBtn}><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
+        <TextInput style={[dpStyles.editInput, { width: inputSize, height: inputSize }]} maxFontSizeMultiplier={MaxFontScale.display} value={editMins} onChangeText={setEditMins} keyboardType="number-pad" maxLength={2} selectTextOnFocus autoFocus placeholder="M" placeholderTextColor={Colors.textMuted} accessibilityLabel="Minutes" />
+        <Text style={dpStyles.editColon} maxFontSizeMultiplier={MaxFontScale.display}>:</Text>
+        <TextInput style={[dpStyles.editInput, { width: inputSize, height: inputSize }]} maxFontSizeMultiplier={MaxFontScale.display} value={editSecs} onChangeText={setEditSecs} keyboardType="number-pad" maxLength={2} selectTextOnFocus placeholder="SS" placeholderTextColor={Colors.textMuted} accessibilityLabel="Seconds" />
+        <TouchableOpacity onPress={confirmEdit} style={dpStyles.doneBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Set duration"><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <TouchableOpacity onPress={startEdit} activeOpacity={0.7} style={dpStyles.tapToEdit}>
-      <Text style={[dpStyles.value, { color }]}>{mins}:{secs.toString().padStart(2, '0')}</Text>
+    <TouchableOpacity onPress={startEdit} activeOpacity={0.7} style={dpStyles.tapToEdit} accessibilityRole="button" accessibilityHint="Edit duration">
+      <Text style={[dpStyles.value, { color }]} maxFontSizeMultiplier={MaxFontScale.display}>{mins}:{secs.toString().padStart(2, '0')}</Text>
       <View style={dpStyles.editIconCircle}><Ionicons name="pencil" size={14} color={Colors.textSecondary} /></View>
     </TouchableOpacity>
   );
@@ -1447,6 +1500,8 @@ function DistancePicker({ meters, onChange, color, paceUnit }: { meters: number;
   const [editValue, setEditValue] = useState('');
   const divisor = paceUnit === 'minPerMile' ? METERS_PER_MILE : METERS_PER_KM;
   const unitLabel = paceUnit === 'minPerMile' ? 'mi' : 'km';
+  const inputWidth = useScaledSize(72, MaxFontScale.display);
+  const inputHeight = useScaledSize(36, MaxFontScale.display);
 
   const startEdit = () => { setEditValue(meters > 0 ? (meters / divisor).toFixed(2) : ''); setEditing(true); };
   const confirmEdit = () => {
@@ -1458,16 +1513,16 @@ function DistancePicker({ meters, onChange, color, paceUnit }: { meters: number;
   if (editing) {
     return (
       <View style={dpStyles.editContainer}>
-        <TextInput style={[dpStyles.editInput, { width: 72 }]} value={editValue} onChangeText={setEditValue} keyboardType="decimal-pad" maxLength={5} selectTextOnFocus autoFocus placeholder="0.0" placeholderTextColor={Colors.textMuted} />
+        <TextInput style={[dpStyles.editInput, { width: inputWidth, height: inputHeight }]} maxFontSizeMultiplier={MaxFontScale.display} value={editValue} onChangeText={setEditValue} keyboardType="decimal-pad" maxLength={5} selectTextOnFocus autoFocus placeholder="0.0" placeholderTextColor={Colors.textMuted} accessibilityLabel={`Distance in ${unitLabel}`} />
         <Text style={{ fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600' }}>{unitLabel}</Text>
-        <TouchableOpacity onPress={confirmEdit} style={dpStyles.doneBtn}><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
+        <TouchableOpacity onPress={confirmEdit} style={dpStyles.doneBtn} hitSlop={8} accessibilityRole="button" accessibilityLabel="Set distance"><Ionicons name="checkmark" size={18} color={Colors.primary} /></TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <TouchableOpacity onPress={startEdit} activeOpacity={0.7} style={dpStyles.tapToEdit}>
-      <Text style={[dpStyles.value, { color }]}>{formatDistanceShort(meters, paceUnit)}</Text>
+    <TouchableOpacity onPress={startEdit} activeOpacity={0.7} style={dpStyles.tapToEdit} accessibilityRole="button" accessibilityHint="Edit distance">
+      <Text style={[dpStyles.value, { color }]} maxFontSizeMultiplier={MaxFontScale.display}>{formatDistanceShort(meters, paceUnit)}</Text>
       <View style={dpStyles.editIconCircle}><Ionicons name="pencil" size={14} color={Colors.textSecondary} /></View>
     </TouchableOpacity>
   );
@@ -1486,7 +1541,9 @@ const segStyles = StyleSheet.create({
   intensityChip: { paddingVertical: 3, paddingHorizontal: 8, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.surfaceLight, backgroundColor: Colors.surfaceLight },
   intensityText: { fontSize: FontSize.xs - 1, fontWeight: '700', color: Colors.textMuted },
   effortNumberRow: { flexDirection: 'row', gap: 3, marginTop: Spacing.sm },
+  effortNumberRowLarge: { flexWrap: 'wrap', gap: Spacing.sm },
   effortNumBtn: { flex: 1, aspectRatio: 1, maxWidth: 32, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.surfaceLight, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
+  effortNumBtnLarge: { flex: 0, aspectRatio: undefined, maxWidth: undefined, minWidth: 48, minHeight: 48, paddingHorizontal: Spacing.xs },
   effortNumText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textMuted },
   labelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   labelInput: { flex: 1, backgroundColor: Colors.surfaceLight, color: Colors.textPrimary, fontSize: FontSize.sm, paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.sm },
@@ -1494,7 +1551,7 @@ const segStyles = StyleSheet.create({
   addLabelText: { fontSize: FontSize.xs - 1, color: Colors.textMuted, fontWeight: '600' },
   paceSwitchBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.md, paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.accent + '55', backgroundColor: Colors.accent + '14' },
   paceSwitchText: { flex: 1, fontSize: FontSize.sm, fontWeight: '700', color: Colors.accent },
-  intensityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md },
+  intensityHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: Spacing.sm, marginTop: Spacing.md },
   rpeHint: { fontSize: FontSize.xs - 1, color: Colors.textMuted, fontWeight: '600' },
   moreToggle: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.md, paddingVertical: 2, alignSelf: 'flex-start' },
   moreToggleText: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '700' },
@@ -1518,7 +1575,7 @@ const sumStyles = StyleSheet.create({
 
 const targetStyles = StyleSheet.create({
   container: { marginTop: Spacing.xs },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   manualPill: { flex: 1, backgroundColor: Colors.surfaceLight, paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.md },
   manualHint: { fontSize: FontSize.xs, color: Colors.textSecondary, fontStyle: 'italic' },
   typePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm + 2, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.primary + '55', backgroundColor: Colors.primary + '14' },
@@ -1559,7 +1616,7 @@ const ipStyles = StyleSheet.create({
 
 const catStyles = StyleSheet.create({
   container: { marginTop: Spacing.sm, marginBottom: Spacing.md },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.xs },
   headerLabel: { fontSize: FontSize.xs - 1, fontWeight: '800', color: Colors.textMuted, letterSpacing: 1.2 },
   suggestedChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1 },
   suggestedText: { fontSize: FontSize.xs, fontWeight: '700' },
@@ -1598,13 +1655,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   scrollView: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl * 2 },
-  autoSaveHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: Colors.surfaceLight, backgroundColor: Colors.background },
+  autoSaveHeader: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: Colors.surfaceLight, backgroundColor: Colors.background },
   autoSaveStatus: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   autoSaveText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.primary },
   autoSaveTextIdle: { fontSize: FontSize.xs, color: Colors.textMuted },
   saveAsNewHeaderBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surface, paddingVertical: Spacing.xs + 2, paddingHorizontal: Spacing.sm + 2, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.accent + '40' },
   saveAsNewHeaderText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.accent },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
   revertHeaderBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surface, paddingVertical: Spacing.xs + 2, paddingHorizontal: Spacing.sm + 2, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.surfaceLight },
   revertHeaderText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textSecondary },
   planWorkoutHeader: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: Colors.accent + '20', backgroundColor: Colors.accent + '08' },
@@ -1616,7 +1673,7 @@ const styles = StyleSheet.create({
   editHintText: { fontSize: FontSize.xs, color: Colors.textSecondary, flex: 1 },
   label: { fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: '600', marginBottom: Spacing.xs, textTransform: 'uppercase', letterSpacing: 1 },
   input: { backgroundColor: Colors.surface, color: Colors.textPrimary, fontSize: FontSize.lg, padding: Spacing.md, borderRadius: BorderRadius.md, marginBottom: Spacing.lg, borderWidth: 1, borderColor: Colors.surfaceLight },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.md, marginBottom: Spacing.sm },
+  sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.xs, marginTop: Spacing.md, marginBottom: Spacing.sm },
   sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
   reorderHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   reorderHintText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600' },
@@ -1624,17 +1681,16 @@ const styles = StyleSheet.create({
   blockCardOpen: { borderColor: Colors.surfaceLight },
   blockBody: { marginTop: Spacing.md, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.surfaceLight },
   blockToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: Spacing.md, paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: Colors.surfaceLight },
-  blockToolbarRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  blockToolbarRight: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', columnGap: Spacing.lg, rowGap: Spacing.sm },
   toolbarBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   toolbarBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textMuted },
-  addRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg },
+  addRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: Spacing.md, marginBottom: Spacing.lg },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, padding: Spacing.sm },
   addBtnText: { color: Colors.accent, fontSize: FontSize.sm, fontWeight: '600' },
   repeatRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   repeatCount: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.primary, minWidth: 36, textAlign: 'center' },
   stepBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
-  stepBtnText: { color: Colors.textPrimary, fontSize: 18, fontWeight: '600', lineHeight: 20 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing.lg, padding: Spacing.md, backgroundColor: Colors.surface, borderRadius: BorderRadius.md },
+  totalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, justifyContent: 'space-between', alignItems: 'center', marginTop: Spacing.lg, padding: Spacing.md, backgroundColor: Colors.surface, borderRadius: BorderRadius.md },
   totalLabel: { fontSize: FontSize.md, color: Colors.textSecondary, fontWeight: '600' },
   totalValue: { fontSize: FontSize.xl, color: Colors.primary, fontWeight: '800', fontVariant: ['tabular-nums'] },
   actions: { marginTop: Spacing.xl, gap: Spacing.md },

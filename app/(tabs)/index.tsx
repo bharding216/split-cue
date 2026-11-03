@@ -46,8 +46,10 @@ import { hapticTap } from '../../src/audio/haptics';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../src/contexts/TrainingPlanContext';
 import { TodayWorkoutCard } from '../../src/components/TodayWorkoutCard';
+import { RecentRunsSheet, formatRelativeDate } from '../../src/components/RecentRunsSheet';
 import { onSyncStatusChange } from '../../src/sync/cloudSync';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
+import { useLargeText } from '../../src/hooks/useLargeText';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -511,16 +513,8 @@ const CATEGORIES: CategoryConfig[] = [
   },
 ];
 
-function formatRelativeDate(epoch: number): string {
-  const diff = Date.now() - epoch;
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  return new Date(epoch).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
+const RECENT_INLINE_LIMIT = 5;
+const RECENT_SHEET_LIMIT = 50;
 
 /** Build a structural fingerprint for deduplication — ignores name, id, timestamps. */
 function structureKey(w: WorkoutDefinition): string {
@@ -537,8 +531,8 @@ function structureKey(w: WorkoutDefinition): string {
   });
 }
 
-/** Return up to 5 unique recent configurations from history. */
-function getRecentWorkouts(history: CompletedWorkout[]): CompletedWorkout[] {
+/** Return up to `limit` unique recent configurations from history. */
+function getRecentWorkouts(history: CompletedWorkout[], limit: number): CompletedWorkout[] {
   const seen = new Set<string>();
   const result: CompletedWorkout[] = [];
   for (const run of history) {
@@ -547,7 +541,7 @@ function getRecentWorkouts(history: CompletedWorkout[]): CompletedWorkout[] {
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(run);
-    if (result.length >= 5) break;
+    if (result.length >= limit) break;
   }
   return result;
 }
@@ -559,10 +553,12 @@ function todayDateKey(): string {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const large = useLargeText();
   const { user } = useAuth();
   const { dayEntries } = useTrainingPlan();
   const [workouts, setWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
+  const [showRecentSheet, setShowRecentSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   // Cards that mount after the screen's first paint animate in instead of popping.
   const [revealTodayCard, setRevealTodayCard] = useState(false);
@@ -591,9 +587,21 @@ export default function HomeScreen() {
   const reload = useCallback(async () => {
     const [data, history] = await Promise.all([loadWorkouts(), loadHistory()]);
     setWorkouts(data);
-    setRecentRuns(getRecentWorkouts(history));
+    setRecentRuns(getRecentWorkouts(history, RECENT_SHEET_LIMIT));
     setLoading(false);
   }, []);
+
+  const openRecentRun = (run: CompletedWorkout) => {
+    const draft = { ...run.configuration!, id: generateId(), updatedAt: Date.now() };
+    setTempWorkout(draft, { templateId: run.templateId });
+    router.push({ pathname: '/workout/configure' as any, params: { id: draft.id } });
+  };
+
+  const repeatRecentRun = (run: CompletedWorkout) => {
+    const draft = { ...run.configuration!, id: generateId(), updatedAt: Date.now() };
+    setTempWorkout(draft, { templateId: run.templateId });
+    router.push(`/workout/run/${draft.id}`);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -681,8 +689,8 @@ export default function HomeScreen() {
             source={require('../../assets/icon.png')}
             style={styles.heroLogo}
           />
-          <View>
-            <Text style={styles.heroTitle}>SplitCue</Text>
+          <View style={styles.heroText}>
+            <Text style={styles.heroTitle} maxFontSizeMultiplier={MaxFontScale.display}>SplitCue</Text>
             <Text style={styles.heroSub}>Run hard. We'll call the splits.</Text>
           </View>
         </View>
@@ -713,9 +721,10 @@ export default function HomeScreen() {
             {QUICK_START_TILES.map((tile) => (
               <TouchableOpacity
                 key={tile.type}
-                style={styles.quickStartTile}
+                style={[styles.quickStartTile, large && styles.quickStartTileLarge]}
                 onPress={() => router.push({ pathname: '/workout/configure' as any, params: { quickStart: tile.type } })}
                 activeOpacity={0.7}
+                accessibilityRole="button"
               >
                 <View style={[styles.quickStartIcon, { backgroundColor: tile.color + '22' }]}>
                   <Ionicons name={tile.icon as any} size={22} color={tile.color} />
@@ -729,24 +738,31 @@ export default function HomeScreen() {
         {/* Recently Used */}
         {recentRuns.length > 0 && (
           <View style={styles.recentSection}>
-            <Text style={styles.sectionLabel}>RECENTLY USED</Text>
-            {recentRuns.map((run) => {
+            <View style={styles.recentHeader}>
+              <Text style={[styles.sectionLabel, styles.recentHeaderLabel]}>RECENTLY USED</Text>
+              {recentRuns.length > RECENT_INLINE_LIMIT && (
+                <TouchableOpacity
+                  onPress={() => setShowRecentSheet(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.seeMoreText}>See more</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {recentRuns.slice(0, RECENT_INLINE_LIMIT).map((run) => {
               const config = run.configuration!;
               const secs = totalWorkoutSeconds(config);
               const ago = formatRelativeDate(run.completedAt);
               return (
                 <TouchableOpacity
                   key={run.id}
-                  style={styles.recentCard}
-                  onPress={() => {
-                    const draft = { ...config, id: generateId(), updatedAt: Date.now() };
-                    setTempWorkout(draft, { templateId: run.templateId });
-                    router.push({ pathname: '/workout/configure' as any, params: { id: draft.id } });
-                  }}
+                  style={[styles.recentCard, large && styles.recentCardLarge]}
+                  onPress={() => openRecentRun(run)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.recentCardMain}>
-                    <Text style={styles.recentName} numberOfLines={1}>
+                  <View style={[styles.recentCardMain, large && styles.recentCardMainLarge]}>
+                    <Text style={styles.recentName} numberOfLines={large ? 3 : 1}>
                       {config.name || run.workoutName}
                     </Text>
                     <Text style={styles.recentMeta}>
@@ -755,12 +771,10 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.recentRepeatBtn}
-                    onPress={() => {
-                      const draft = { ...config, id: generateId(), updatedAt: Date.now() };
-                      setTempWorkout(draft, { templateId: run.templateId });
-                      router.push(`/workout/run/${draft.id}`);
-                    }}
+                    style={[styles.recentRepeatBtn, large && styles.recentRepeatBtnLarge]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Repeat ${config.name || run.workoutName}`}
+                    onPress={() => repeatRecentRun(run)}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="play" size={14} color={Colors.black} />
@@ -834,6 +848,20 @@ export default function HomeScreen() {
           </Text>
         )}
       </ScrollView>
+
+      <RecentRunsSheet
+        visible={showRecentSheet}
+        runs={recentRuns}
+        onOpen={(run) => {
+          setShowRecentSheet(false);
+          openRecentRun(run);
+        }}
+        onRepeat={(run) => {
+          setShowRecentSheet(false);
+          repeatRecentRun(run);
+        }}
+        onClose={() => setShowRecentSheet(false)}
+      />
     </View>
   );
 }
@@ -864,6 +892,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
+  },
+  heroText: {
+    flex: 1,
   },
   heroTitle: {
     fontSize: FontSize.xl,
@@ -916,6 +947,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+    paddingHorizontal: Spacing.xs,
+  },
+  quickStartTileLarge: {
+    flexBasis: '45%',
   },
   quickStartIcon: {
     width: 44,
@@ -929,12 +964,27 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.textPrimary,
+    textAlign: 'center',
   },
 
   // ── Recent section ──
   recentSection: {
     marginTop: Spacing.lg,
     marginBottom: Spacing.md,
+  },
+  recentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
+  recentHeaderLabel: {
+    marginBottom: 0,
+  },
+  seeMoreText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.primary,
   },
   recentCard: {
     flexDirection: 'row',
@@ -946,9 +996,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
+  recentCardLarge: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
   recentCardMain: {
     flex: 1,
     marginRight: Spacing.sm,
+  },
+  recentCardMainLarge: {
+    flex: 0,
+    marginRight: 0,
+    marginBottom: Spacing.sm,
   },
   recentName: {
     fontSize: FontSize.sm,
@@ -968,6 +1027,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm + 2,
     borderRadius: BorderRadius.md,
     gap: 4,
+  },
+  recentRepeatBtnLarge: {
+    alignSelf: 'flex-start',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   recentRepeatText: {
     fontSize: FontSize.xs,
@@ -1033,7 +1097,7 @@ const styles = StyleSheet.create({
   },
   countBadge: {
     minWidth: 28,
-    height: 28,
+    minHeight: 28,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',

@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   Alert,
   Dimensions,
-  FlatList,
   Modal,
   ScrollView,
   Switch,
@@ -1952,6 +1951,7 @@ const styles = StyleSheet.create({
   },
   feelRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
   },
   feelOption: {
@@ -1963,6 +1963,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     backgroundColor: Colors.surface,
     minHeight: 44,
+  },
+  feelOptionLarge: {
+    flexBasis: '45%',
+    paddingVertical: Spacing.sm,
   },
   feelOptionActive: {
     borderColor: Colors.primary,
@@ -2035,4 +2039,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.primary,
     paddingVertical: Spacing.md,
-    borderRadius: BorderRa
+    borderRadius: BorderRadius.lg,
+    marginTop: Spacing.xs,
+  },
+  doneBtnText: {
+    color: Colors.black,
+    fontSize: FontSize.lg,
+    fontWeight: '800',
+  },
+  detailsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: Spacing.md,
+    minHeight: 44,
+  },
+  detailsLinkText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+});

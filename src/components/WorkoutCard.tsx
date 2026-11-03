@@ -125,6 +125,8 @@ export function WorkoutCard({
             style={styles.iconButton}
             hitSlop={8}
             activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${workout.name}`}
           >
             <Ionicons name="share-outline" size={22} color={Colors.textSecondary} />
           </TouchableOpacity>
@@ -133,6 +135,8 @@ export function WorkoutCard({
             style={styles.iconButton}
             hitSlop={8}
             activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${workout.name}`}
           >
             <Ionicons name="pencil-outline" size={22} color={Colors.textSecondary} />
           </TouchableOpacity>
@@ -141,6 +145,8 @@ export function WorkoutCard({
             style={styles.iconButton}
             hitSlop={8}
             activeOpacity={0.6}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${workout.name}`}
           >
             <Ionicons name="trash-outline" size={22} color={Colors.danger} />
           </TouchableOpacity>
@@ -168,6 +174,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   name: {
@@ -211,11 +218,14 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
   },
   startButton: {
     flexDirection: 'row',
+    flexShrink: 1,
     alignItems: 'center',
     gap: Spacing.sm,
     backgroundColor: Colors.primary,
@@ -225,6 +235,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
   },
   startText: {
+    flexShrink: 1,
     color: Colors.black,
     fontWeight: '800',
     fontSize: FontSize.md,

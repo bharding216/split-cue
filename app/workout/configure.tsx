@@ -38,7 +38,7 @@ import {
 import type { TempWorkoutMeta } from '../../src/workout/tempWorkoutCache';
 import { WorkoutEditorForm } from '../../src/components/WorkoutEditorForm';
 import { quickStartFactory, loadQuickStartDefault, saveQuickStartDefault } from '../../src/workout/quickStartDefaults';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
 import { track } from '../../src/analytics/track';
 import { prepareWorkoutAudio } from '../../src/audio/prepareVoice';
 import { hapticSuccess, hapticTap, hapticWarning } from '../../src/audio/haptics';
@@ -222,17 +222,64 @@ export default function ConfigureWorkoutScreen() {
             <Text style={styles.modifiedText}>Modified for this run</Text>
           )}
 
-          <TouchableOpacity
-            style={styles.startBtn}
-            onPress={handleStartWorkout}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="play" size={18} color={Colors.black} />
-            <Text style={styles.startBtnText}>Start Workout</Text>
-          </TouchableOpacity>
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.startBtn]}
+              onPress={handleStartWorkout}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="play" size={18} color={Colors.black} />
+              <Text
+                style={[styles.actionBtnText, styles.startBtnText]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                maxFontSizeMultiplier={MaxFontScale.display}
+              >
+                Start Workout
+              </Text>
+            </TouchableOpacity>
 
-          <View style={styles.secondaryRow}>
-            {isModified && original && (
+            {isSaved ? (
+              <View
+                style={[styles.actionBtn, styles.saveBtn, styles.saveBtnSaved]}
+                accessible
+                accessibilityLabel="Saved in My Workouts"
+              >
+                <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />
+                <Text
+                  style={[styles.actionBtnText, styles.saveBtnText]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  maxFontSizeMultiplier={MaxFontScale.display}
+                >
+                  Saved
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.saveBtn]}
+                onPress={handleSaveChanges}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  original ? 'Save changes to My Workouts' : 'Save to My Workouts'
+                }
+              >
+                <Ionicons name="bookmark" size={18} color={Colors.primary} />
+                <Text
+                  style={[styles.actionBtnText, styles.saveBtnText]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  maxFontSizeMultiplier={MaxFontScale.display}
+                >
+                  {original ? 'Save Changes' : 'Save Workout'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {isModified && original && (
+            <View style={styles.secondaryRow}>
               <TouchableOpacity
                 style={styles.secondaryBtn}
                 onPress={handleResetToSaved}
@@ -241,27 +288,8 @@ export default function ConfigureWorkoutScreen() {
                 <Ionicons name="arrow-undo-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.secondaryBtnText}>Reset</Text>
               </TouchableOpacity>
-            )}
-            {isSaved ? (
-              <View style={styles.secondaryBtn}>
-                <Ionicons name="checkmark-circle" size={16} color={Colors.primary} />
-                <Text style={[styles.secondaryBtnText, styles.savedText]}>
-                  Saved in My Workouts
-                </Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={handleSaveChanges}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="bookmark-outline" size={16} color={Colors.textSecondary} />
-                <Text style={styles.secondaryBtnText}>
-                  {original ? 'Save Changes to My Workouts' : 'Save to My Workouts'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          )}
         </View>
       </View>
     </>
@@ -309,40 +337,61 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.sm,
   },
-  startBtn: {
+  actionRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    borderWidth: 2,
+    paddingVertical: Spacing.md - 2,
+    paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: Spacing.xs + 2,
+  },
+  actionBtnText: {
+    flexShrink: 1,
+    fontSize: FontSize.md,
+    fontWeight: '800',
+  },
+  startBtn: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   startBtnText: {
     color: Colors.black,
-    fontSize: FontSize.lg,
-    fontWeight: '800',
+  },
+  saveBtn: {
+    borderColor: Colors.primary,
+  },
+  saveBtnSaved: {
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.surface,
+  },
+  saveBtnText: {
+    color: Colors.primary,
   },
   secondaryRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.lg,
+    marginTop: Spacing.xs,
   },
   secondaryBtn: {
     flexDirection: 'row',
+    flexShrink: 1,
     alignItems: 'center',
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
   },
   secondaryBtnText: {
+    flexShrink: 1,
     color: Colors.textSecondary,
     fontSize: FontSize.sm,
     fontWeight: '600',
-  },
-  savedText: {
-    color: Colors.primary,
   },
 });
