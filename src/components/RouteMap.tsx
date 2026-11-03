@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo, useRef, useState, type RefObject } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -54,6 +54,35 @@ type MapOverlay = 'route' | 'pace' | 'records';
 
 function toCoord(pt: RoutePoint): Coord {
   return { latitude: pt.lat, longitude: pt.lng };
+}
+
+/** Region enclosing all coordinates, padded so the route doesn't touch the edges. */
+function boundingRegion(coords: Coord[]): Region | undefined {
+  if (coords.length === 0) return undefined;
+  let minLat = coords[0].latitude;
+  let maxLat = minLat;
+  let minLng = coords[0].longitude;
+  let maxLng = minLng;
+  for (const c of coords) {
+    if (c.latitude < minLat) minLat = c.latitude;
+    if (c.latitude > maxLat) maxLat = c.latitude;
+    if (c.longitude < minLng) minLng = c.longitude;
+    if (c.longitude > maxLng) maxLng = c.longitude;
+  }
+  return {
+    latitude: (minLat + maxLat) / 2,
+    longitude: (minLng + maxLng) / 2,
+    latitudeDelta: Math.max((maxLat - minLat) * 1.4, 0.005),
+    longitudeDelta: Math.max((maxLng - minLng) * 1.4, 0.005),
+  };
+}
+
+/**
+ * Apple Maps never emits onMapLoaded, and Android's fitToCoordinates throws if the
+ * native map hasn't been sized yet (still possible in onLayout / onMapReady).
+ */
+function fitEventProps(fit: () => void) {
+  return Platform.OS === 'android' ? { onMapLoaded: fit } : { onMapReady: fit };
 }
 
 /**
@@ -255,6 +284,8 @@ export function RouteMap({
     () => route.map(toCoord),
     [route],
   );
+
+  const initialRegion = useMemo(() => boundingRegion(coordinates), [coordinates]);
 
   const paceSegments = useMemo(
     () => (overlay === 'pace' ? buildPaceSegments(route, paceUnit) : []),
@@ -551,9 +582,8 @@ export function RouteMap({
         <MapView
           ref={mapRef}
           style={styles.map}
-          // Android's fitToCoordinates throws if the native map hasn't been sized yet,
-          // which can still be the case in onLayout / onMapReady.
-          onMapLoaded={() => fitMap(mapRef, false)}
+          initialRegion={initialRegion}
+          {...fitEventProps(() => fitMap(mapRef, false))}
           showsScale={false}
           {...sharedMapProps}
         >
@@ -584,7 +614,8 @@ export function RouteMap({
           <MapView
             ref={fullscreenMapRef}
             style={StyleSheet.absoluteFill}
-            onMapLoaded={() => fitFullscreenMap(false)}
+            initialRegion={initialRegion}
+            {...fitEventProps(() => fitFullscreenMap(false))}
             showsScale
             {...sharedMapProps}
           >

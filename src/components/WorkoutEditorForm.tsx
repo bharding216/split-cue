@@ -630,7 +630,7 @@ function targetSummary(seg: Segment, paceUnit: PaceUnit): string {
   }
 }
 
-/** One-line description of a segment, e.g. "10:00 · Easy" or "1.00 mi · Tempo · RPE 8". */
+/** One-line description of a segment, e.g. "10:00 · Easy" or "1.00 mi · Tempo · Effort 8/10". */
 function summarizeSegment(seg: Segment, paceUnit: PaceUnit): string {
   const parts = [targetSummary(seg, paceUnit)];
   if (seg.targetPace != null) {
@@ -638,7 +638,7 @@ function summarizeSegment(seg: Segment, paceUnit: PaceUnit): string {
     return parts.join(' · ');
   }
   if (seg.intensity) parts.push(intensityLabel(seg.intensity));
-  if (seg.effort != null && seg.effort !== intensityToEffort(seg.intensity)) parts.push(`RPE ${seg.effort}`);
+  if (seg.effort != null && seg.effort !== intensityToEffort(seg.intensity)) parts.push(`Effort ${seg.effort}/10`);
   return parts.join(' · ');
 }
 
@@ -824,9 +824,7 @@ function SegmentEditor({
         {usesPace ? (
           <Text style={segStyles.rpeHint}>Using target pace</Text>
         ) : segment.effort != null || autoEffort != null ? (
-          <Text style={segStyles.rpeHint}>
-            RPE {segment.effort ?? autoEffort} {hasCustomEffort ? '(custom)' : '(auto)'}
-          </Text>
+          <Text style={segStyles.rpeHint}>Effort {segment.effort ?? autoEffort}/10</Text>
         ) : null}
       </View>
       <View style={segStyles.intensityRow}>
@@ -852,7 +850,7 @@ function SegmentEditor({
         })}
       </View>
 
-      {/* More options — RPE override, target pace, custom label */}
+      {/* More options — exact effort, target pace, custom label */}
       <TouchableOpacity
         style={segStyles.moreToggle}
         onPress={() => {
@@ -868,8 +866,7 @@ function SegmentEditor({
 
       {showMore && (
         <View style={segStyles.moreBox}>
-          <Text style={segStyles.sectionLabel}>CUSTOM RPE</Text>
-          <Text style={segStyles.sectionHint}>Override the intensity's default effort (1–10)</Text>
+          <Text style={segStyles.sectionLabel}>EXACT EFFORT</Text>
           <View style={[segStyles.effortNumberRow, large && segStyles.effortNumberRowLarge]}>
             {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const).map((n) => {
               const currentEffort = usesPace ? undefined : segment.effort ?? autoEffort;
@@ -889,13 +886,17 @@ function SegmentEditor({
                   }}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={`RPE ${n}`}
+                  accessibilityLabel={`Effort ${n} out of 10`}
                   accessibilityState={{ selected: isActive }}
                 >
                   <Text style={[segStyles.effortNumText, isActive && { color: effortColor, fontWeight: '800' }]}>{n}</Text>
                 </TouchableOpacity>
               );
             })}
+          </View>
+          <View style={[segStyles.effortScaleRow, large && segStyles.effortScaleRowLarge]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+            <Text style={segStyles.effortScaleText}>{large ? '1 = Easy' : 'Easy'}</Text>
+            <Text style={segStyles.effortScaleText}>{large ? '10 = All-out' : 'All-out'}</Text>
           </View>
 
           {/* Pace — alternative to named intensity */}
@@ -1533,7 +1534,6 @@ function DistancePicker({ meters, onChange, color, paceUnit }: { meters: number;
 const segStyles = StyleSheet.create({
   container: {},
   sectionLabel: { fontSize: FontSize.xs - 1, fontWeight: '800', color: Colors.textMuted, letterSpacing: 1.2, marginBottom: 2 },
-  sectionHint: { fontSize: FontSize.xs - 1, color: Colors.textMuted, marginBottom: Spacing.xs },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: Spacing.sm },
   typeChip: { paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.surfaceLight, backgroundColor: Colors.surfaceLight },
   typeChipText: { fontSize: FontSize.xs, fontWeight: '800', letterSpacing: 0.5, color: Colors.textMuted },
@@ -1545,6 +1545,10 @@ const segStyles = StyleSheet.create({
   effortNumBtn: { flex: 1, aspectRatio: 1, maxWidth: 32, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.surfaceLight, backgroundColor: Colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
   effortNumBtnLarge: { flex: 0, aspectRatio: undefined, maxWidth: undefined, minWidth: 48, minHeight: 48, paddingHorizontal: Spacing.xs },
   effortNumText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textMuted },
+  // maxWidth matches 10 effortNumBtns (32 each) plus 9 gaps (3 each) so labels sit under 1 and 10
+  effortScaleRow: { flexDirection: 'row', justifyContent: 'space-between', maxWidth: 10 * 32 + 9 * 3, marginTop: 2 },
+  effortScaleRowLarge: { maxWidth: undefined, marginTop: Spacing.xs },
+  effortScaleText: { fontSize: FontSize.xs - 1, color: Colors.textMuted, fontWeight: '600' },
   labelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   labelInput: { flex: 1, backgroundColor: Colors.surfaceLight, color: Colors.textPrimary, fontSize: FontSize.sm, paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.sm },
   addLabelBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: Spacing.xs, paddingVertical: 2 },
