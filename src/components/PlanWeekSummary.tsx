@@ -7,6 +7,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { PlanWorkout, TrainingPlan } from '../types/database';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { useUnits } from '../hooks/useUnits';
+import { formatPace } from '../units/format';
 
 interface PlanWeekSummaryProps {
   plan: TrainingPlan;
@@ -15,6 +17,7 @@ interface PlanWeekSummaryProps {
 }
 
 export function PlanWeekSummary({ plan, weekWorkouts, weekNumber }: PlanWeekSummaryProps) {
+  const unit = useUnits();
   const trainingDays = weekWorkouts.filter((w) => w.day_label !== 'Rest Day');
   const completedCount = trainingDays.filter((w) => w.status === 'completed').length;
   const totalCount = trainingDays.length;
@@ -49,9 +52,7 @@ export function PlanWeekSummary({ plan, weekWorkouts, weekNumber }: PlanWeekSumm
       ? 'Race'
       : plan.race_type.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const paceStr = isPaceTarget && plan.goal_pace
-    ? `${Math.floor(plan.goal_pace)}:${String(Math.round((plan.goal_pace - Math.floor(plan.goal_pace)) * 60)).padStart(2, '0')}/mi`
-    : null;
+  const paceStr = isPaceTarget && plan.goal_pace ? formatPace(plan.goal_pace, unit) : null;
 
   return (
     <View style={styles.container}>

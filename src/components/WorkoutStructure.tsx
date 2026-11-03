@@ -6,8 +6,11 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import type { WorkoutDefinition, WorkoutBlock, Segment, RepeatGroup } from '../workout/workoutTypes';
-import { formatTime, defaultSegmentLabel, segmentToIntervalType, formatDistanceForSpeech } from '../workout/workoutTypes';
+import { formatTime, defaultSegmentLabel, segmentToIntervalType } from '../workout/workoutTypes';
 import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../constants/theme';
+import type { PaceUnit } from '../pace/paceTypes';
+import { useUnits } from '../hooks/useUnits';
+import { formatSegmentDistance } from '../units/format';
 
 interface WorkoutStructureProps {
   workout: WorkoutDefinition;
@@ -20,12 +23,12 @@ interface StructureRow {
   indent?: boolean;
 }
 
-function getRows(blocks: WorkoutBlock[]): StructureRow[] {
+function getRows(blocks: WorkoutBlock[], unit: PaceUnit): StructureRow[] {
   const rows: StructureRow[] = [];
 
   for (const block of blocks) {
     if (block.blockType === 'segment') {
-      rows.push(segmentRow(block));
+      rows.push(segmentRow(block, unit));
     } else {
       // RepeatGroup
       const rg = block;
@@ -36,7 +39,7 @@ function getRows(blocks: WorkoutBlock[]): StructureRow[] {
           ? `${rg.repetitions}× ${seg.label || defaultSegmentLabel(seg.segmentType)}`
           : seg.label || defaultSegmentLabel(seg.segmentType);
         rows.push({
-          label: appendTarget(label, seg),
+          label: appendTarget(label, seg, unit),
           detail: seg.intensity ? seg.intensity.charAt(0).toUpperCase() + seg.intensity.slice(1) : '',
           color: intervalColor(segmentToIntervalType(seg.segmentType, seg.intensity)),
         });
@@ -56,7 +59,7 @@ function getRows(blocks: WorkoutBlock[]): StructureRow[] {
 
         let label = `${rg.repetitions}× `;
         if (firstSeg) {
-          label += targetString(firstSeg);
+          label += targetString(firstSeg, unit);
         }
 
         rows.push({
@@ -71,9 +74,9 @@ function getRows(blocks: WorkoutBlock[]): StructureRow[] {
   return rows;
 }
 
-function targetString(seg: Segment): string {
+function targetString(seg: Segment, unit: PaceUnit): string {
   if (seg.target.type === 'distance' && seg.target.distanceMeters) {
-    return formatDistanceForSpeech(seg.target.distanceMeters);
+    return formatSegmentDistance(seg.target.distanceMeters, unit);
   }
   if (seg.target.type === 'time' && seg.target.durationSeconds) {
     return formatTime(seg.target.durationSeconds);
@@ -81,22 +84,23 @@ function targetString(seg: Segment): string {
   return 'open-ended';
 }
 
-function appendTarget(label: string, seg: Segment): string {
-  const tgt = targetString(seg);
+function appendTarget(label: string, seg: Segment, unit: PaceUnit): string {
+  const tgt = targetString(seg, unit);
   return tgt ? `${label} · ${tgt}` : label;
 }
 
-function segmentRow(seg: Segment): StructureRow {
+function segmentRow(seg: Segment, unit: PaceUnit): StructureRow {
   const label = seg.label || defaultSegmentLabel(seg.segmentType);
   return {
-    label: appendTarget(label, seg),
+    label: appendTarget(label, seg, unit),
     detail: seg.intensity ? seg.intensity.charAt(0).toUpperCase() + seg.intensity.slice(1) : '',
     color: intervalColor(segmentToIntervalType(seg.segmentType, seg.intensity)),
   };
 }
 
 export function WorkoutStructure({ workout }: WorkoutStructureProps) {
-  const rows = getRows(workout.blocks);
+  const unit = useUnits();
+  const rows = getRows(workout.blocks, unit);
 
   if (rows.length === 0) return null;
 

@@ -1,5 +1,6 @@
 /**
- * Pace tracking settings — GPS pace, cue frequency, window size, units.
+ * Pace tracking settings — GPS pace, cue frequency, window size.
+ * Units (miles / kilometers) live on the settings hub.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -20,7 +21,6 @@ import {
 import type {
   PaceCueFrequency,
   PaceWindowSize,
-  PaceUnit,
 } from '../../../src/pace/paceTypes';
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import {
@@ -47,11 +47,6 @@ const WINDOW_OPTIONS: { value: PaceWindowSize; label: string; desc: string }[] =
   { value: 10, label: '10s', desc: 'Responsive but noisy — best for track sprints' },
   { value: 30, label: '30s', desc: 'Balanced — good for most runs' },
   { value: 60, label: '60s', desc: 'Smooth and stable — best for tempo & long runs' },
-];
-
-const UNIT_OPTIONS: { value: PaceUnit; label: string }[] = [
-  { value: 'minPerMile', label: 'min/mile' },
-  { value: 'minPerKm', label: 'min/km' },
 ];
 
 export default function PaceSettingsScreen() {
@@ -92,34 +87,6 @@ export default function PaceSettingsScreen() {
 
       {settings.paceTrackingEnabled && (
         <>
-          {/* Units */}
-          <Text style={styles.sectionTitle}>Pace Units</Text>
-          <View style={styles.row}>
-            {UNIT_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.chip,
-                  settings.paceUnit === opt.value && styles.chipActive,
-                ]}
-                onPress={() => {
-                  hapticTap();
-                  update({ paceUnit: opt.value });
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.chipLabel,
-                    settings.paceUnit === opt.value && styles.chipLabelActive,
-                  ]}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {/* Cue Frequency */}
           <Text style={styles.sectionTitle}>Pace Cue Frequency</Text>
           <Text style={styles.sectionSub}>

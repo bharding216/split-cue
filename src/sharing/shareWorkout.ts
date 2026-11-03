@@ -28,15 +28,22 @@ import {
   generateId,
   defaultSegmentLabel,
 } from '../workout/workoutTypes';
-import { migrateToBlockModel } from '../workout/workoutStorage';
+import { loadSettings, migrateToBlockModel } from '../workout/workoutStorage';
 import { track } from '../analytics/track';
 import { supabase } from '../analytics/supabaseClient';
 import { formatDistance as formatUnitDistance } from '../pace/paceTracker';
 import type { PaceUnit } from '../pace/paceTypes';
+import { formatDistance, formatPace as formatUnitPace, metersPerUnit, paceSuffix } from '../units/format';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const METERS_PER_MILE = 1609.344;
+async function loadPaceUnit(): Promise<PaceUnit> {
+  try {
+    return (await loadSettings()).paceUnit;
+  } catch {
+    return 'minPerMile';
+  }
+}
 
 function getScheme(): string {
   const variant = Constants.expoConfig?.extra?.appVariant as string | undefined;
@@ -56,12 +63,6 @@ function fmtDur(seconds: number): string {
   return formatTime(seconds);
 }
 
-function formatDistance(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  if (miles >= 0.1) return `${miles.toFixed(2)} mi`;
-  return `${(meters / 1000).toFixed(2)} km`;
-}
-
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -69,17 +70,17 @@ function cap(s: string): string {
 // ── Text Formatting ──────────────────────────────────────────────────
 
 /** Describe a single workout block for text sharing. */
-function describeBlock(block: WorkoutBlock): string {
+function describeBlock(block: WorkoutBlock, unit: PaceUnit): string {
   if (block.blockType === 'segment') {
     const label = block.label || defaultSegmentLabel(block.segmentType);
     if (block.target.type === 'distance' && block.target.distanceMeters) {
-      return `${formatDistance(block.target.distanceMeters)} ${label}`;
+      return `${formatDistance(block.target.distanceMeters, unit)} ${label}`;
     }
     return `${fmtDur(block.target.durationSeconds ?? 0)} ${label}`;
   }
 
   // RepeatGroup
-  const inner = block.blocks.map(describeBlock).join(' → ');
+  const inner = block.blocks.map((b) => describeBlock(b, unit)).join(' → ');
   if (block.repetitions > 1) {
     return `${block.repetitions}× (${inner})`;
   }
@@ -89,7 +90,7 @@ function describeBlock(block: WorkoutBlock): string {
 /**
  * Generate a human-readable text summary of a workout definition.
  */
-export function formatWorkoutText(def: WorkoutDefinition): string {
+export function formatWorkoutText(def: WorkoutDefinition, unit: PaceUnit = 'minPerMile'): string {
   const intervals = flattenWorkout(def);
   const totalSecs = intervals.reduce((s, i) => s + i.durationSeconds, 0);
 
@@ -101,7 +102,7 @@ export function formatWorkoutText(def: WorkoutDefinition): string {
   ];
 
   for (const block of def.blocks) {
-    lines.push(describeBlock(block));
+    lines.push(describeBlock(block, unit));
   }
 
   return lines.join('\n');
@@ -113,6 +114,7 @@ export function formatWorkoutText(def: WorkoutDefinition): string {
 export function formatResultsText(
   completed: CompletedWorkout,
   splits?: IntervalSplit[],
+  unit: PaceUnit = 'minPerMile',
 ): string {
   const date = new Date(completed.completedAt);
   const dateStr = date.toLocaleDateString(undefined, {
@@ -130,7 +132,7 @@ export function formatResultsText(
 
   const summaryParts = [`${fmtDur(totalSec)} total`];
   if (completed.totalDistanceMeters && completed.totalDistanceMeters > 0) {
-    summaryParts.push(formatDistance(completed.totalDistanceMeters));
+    summaryParts.push(formatDistance(completed.totalDistanceMeters, unit));
   }
   lines.push(summaryParts.join(' · '));
 
@@ -144,7 +146,7 @@ export function formatResultsText(
       const label = s.label.padEnd(10);
       let line = ` ${String(i + 1).padStart(2)}. ${label} ${fmtDur(actualSec)}`;
       if (s.avgPaceMinPerMile != null && isFinite(s.avgPaceMinPerMile)) {
-        line += `  ${formatPace(s.avgPaceMinPerMile)}/mi`;
+        line += `  ${formatUnitPace(s.avgPaceMinPerMile, unit)}`;
       }
       lines.push(line);
     }
@@ -309,7 +311,7 @@ export async function resolveShareCode(code: string): Promise<WorkoutDefinition 
 export async function shareWorkoutStructure(
   def: WorkoutDefinition,
 ): Promise<void> {
-  const text = formatWorkoutText(def);
+  const text = formatWorkoutText(def, await loadPaceUnit());
   const link = await createShareLink(def, 'structure');
 
   try {
@@ -333,13 +335,14 @@ export async function shareWorkoutResults(
   completed: CompletedWorkout,
 ): Promise<void> {
   const parts: string[] = [];
+  const unit = await loadPaceUnit();
 
   if (def) {
-    parts.push(formatWorkoutText(def));
+    parts.push(formatWorkoutText(def, unit));
     parts.push('');
   }
 
-  parts.push(formatResultsText(completed));
+  parts.push(formatResultsText(completed, undefined, unit));
 
   let link: string | undefined;
   if (def) {
@@ -385,10 +388,9 @@ export function formatChallengeMark(result: ChallengeResult): string | null {
 
     if (meters >= 100) {
       const minutes = result.totalDurationMs / 60000;
-      const pace =
-        unit === 'minPerKm' ? minutes / (meters / 1000) : minutes / (meters / METERS_PER_MILE);
+      const pace = minutes / (meters / metersPerUnit(unit));
       if (isFinite(pace) && pace > 0 && pace < 30) {
-        parts.push(`${formatPace(pace)}${unit === 'minPerKm' ? '/km' : '/mi'}`);
+        parts.push(`${formatPace(pace)}${paceSuffix(unit)}`);
       }
     }
   }
@@ -412,7 +414,7 @@ export async function shareWorkoutChallenge(
   lines.push('');
   lines.push('Here\'s the workout if you want to give it a shot.');
   lines.push('');
-  lines.push(formatWorkoutText(def));
+  lines.push(formatWorkoutText(def, result?.paceUnit ?? (await loadPaceUnit())));
 
   const link = await createShareLink(def, 'challenge');
   const textBody = lines.join('\n');

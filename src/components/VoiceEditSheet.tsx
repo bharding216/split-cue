@@ -51,6 +51,8 @@ import {
 } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import { hapticTap } from '../audio/haptics';
+import { useUnits } from '../hooks/useUnits';
+import { formatDistance, formatPace, metersPerUnit } from '../units/format';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -169,19 +171,14 @@ const barStyles = StyleSheet.create({
 
 // ── Workout Detail Preview ───────────────────────────────────
 
-function formatPace(paceMinPerMile: number): string {
-  const mins = Math.floor(paceMinPerMile);
-  const secs = Math.round((paceMinPerMile - mins) * 60);
-  return `${mins}:${String(secs).padStart(2, '0')}/mi`;
-}
-
 function SegmentDetail({ seg }: { seg: Segment }) {
+  const unit = useUnits();
   const extras: string[] = [];
-  if (seg.targetPace) extras.push(formatPace(seg.targetPace));
+  if (seg.targetPace) extras.push(formatPace(seg.targetPace, unit));
   if (seg.intensity) extras.push(seg.intensity);
   if (seg.target.type === 'distance' && seg.target.distanceMeters) {
     const meters = seg.target.distanceMeters;
-    extras.push(meters >= 1609 ? `${(meters / 1609.344).toFixed(2)} mi` : `${Math.round(meters)}m`);
+    extras.push(meters >= metersPerUnit(unit) ? formatDistance(meters, unit) : `${Math.round(meters)}m`);
   }
   const dur = seg.target.type === 'time' ? (seg.target.durationSeconds ?? 0) : 0;
 

@@ -18,6 +18,9 @@ import type { DayEntry } from '../contexts/TrainingPlanContext';
 import type { WorkoutDefinition, WorkoutBlock, Segment, RepeatGroup, CompletedWorkout } from '../workout/workoutTypes';
 import { formatTime, totalWorkoutSeconds, totalWorkoutDistanceMeters, isDistanceInterval, defaultSegmentLabel, segmentToIntervalType } from '../workout/workoutTypes';
 import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../constants/theme';
+import type { PaceUnit } from '../pace/paceTypes';
+import { useUnits } from '../hooks/useUnits';
+import { formatDistance, formatDistanceCompact } from '../units/format';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -48,13 +51,6 @@ function formatDateDisplay(dateStr: string): string {
 
 function formatDuration(ms: number): string {
   return formatTime(Math.floor(ms / 1000));
-}
-
-const METERS_PER_MILE = 1609.344;
-
-function formatDistance(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  return `${miles.toFixed(2)} mi`;
 }
 
 function statusBadgeColor(status: string): string {
@@ -116,36 +112,28 @@ function buildPreviewRows(workout: WorkoutDefinition): PreviewRow[] {
   return rows;
 }
 
-/** Format a compact distance string for the preview (e.g. "2 mi", "0.50 mi"). */
-function formatDistanceCompact(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  // Drop decimals for clean whole numbers
-  if (Math.abs(miles - Math.round(miles)) < 0.005) return `${Math.round(miles)} mi`;
-  return `${miles.toFixed(2)} mi`;
-}
-
 /** Show distance for distance-based intervals, time for time-based. */
-function formatIntervalAmount(iv: { durationSeconds: number; distanceMeters?: number }): string {
+function formatIntervalAmount(iv: { durationSeconds: number; distanceMeters?: number }, unit: PaceUnit): string {
   if (isDistanceInterval(iv)) {
-    return formatDistanceCompact(iv.distanceMeters!);
+    return formatDistanceCompact(iv.distanceMeters!, unit);
   }
   return formatTime(iv.durationSeconds);
 }
 
 /** Build the total summary line (handles mixed time + distance workouts). */
-function formatWorkoutTotal(workout: WorkoutDefinition): string {
+function formatWorkoutTotal(workout: WorkoutDefinition, unit: PaceUnit): string {
   const totalSec = totalWorkoutSeconds(workout);
   const totalDist = totalWorkoutDistanceMeters(workout);
   if (totalSec > 0 && totalDist) {
-    return `${formatTime(totalSec)} + ${formatDistanceCompact(totalDist)}`;
+    return `${formatTime(totalSec)} + ${formatDistanceCompact(totalDist, unit)}`;
   }
   if (totalDist) {
-    return `${formatDistanceCompact(totalDist)} total`;
+    return `${formatDistanceCompact(totalDist, unit)} total`;
   }
   return `${formatTime(totalSec)} total`;
 }
 
-function WorkoutPreview({ workoutData }: { workoutData: unknown }) {
+function WorkoutPreview({ workoutData, unit }: { workoutData: unknown; unit: PaceUnit }) {
   const workout = workoutData as WorkoutDefinition;
   if (!workout || !workout.blocks) return null;
 
@@ -155,7 +143,7 @@ function WorkoutPreview({ workoutData }: { workoutData: unknown }) {
     <View style={styles.workoutPreview}>
       <Text style={styles.workoutName}>{workout.name}</Text>
       <Text style={styles.workoutDuration}>
-        {formatWorkoutTotal(workout)}
+        {formatWorkoutTotal(workout, unit)}
       </Text>
       <View style={styles.intervalList}>
         {rows.slice(0, 6).map((row) => (
@@ -163,7 +151,7 @@ function WorkoutPreview({ workoutData }: { workoutData: unknown }) {
             <View style={[styles.intervalDot, { backgroundColor: intervalColor(row.intervals[0]?.type ?? 'easy') }]} />
             <Text style={styles.intervalLabel} numberOfLines={1}>
               {row.repeatCount > 1 ? `${row.repeatCount}\u00D7 ` : ''}
-              {row.intervals.map((iv) => `${iv.label} ${formatIntervalAmount(iv)}`).join(', ')}
+              {row.intervals.map((iv) => `${iv.label} ${formatIntervalAmount(iv, unit)}`).join(', ')}
             </Text>
           </View>
         ))}
@@ -192,6 +180,7 @@ export function DayDetail({
   onAddWorkout,
 }: DayDetailProps) {
   const dateDisplay = formatDateDisplay(selectedDate);
+  const unit = useUnits();
 
   const handleRemove = (workoutId: string) => {
     Alert.alert(
@@ -280,7 +269,7 @@ export function DayDetail({
             )}
 
             {hasWorkoutData && !isCompleted && (
-              <WorkoutPreview workoutData={pw.workout_data} />
+              <WorkoutPreview workoutData={pw.workout_data} unit={unit} />
             )}
 
             {/* Rest day */}
@@ -385,7 +374,7 @@ export function DayDetail({
             </View>
             {run.totalDistanceMeters != null && run.totalDistanceMeters > 0 && (
               <View style={styles.runStat}>
-                <Text style={styles.runStatValue}>{formatDistance(run.totalDistanceMeters)}</Text>
+                <Text style={styles.runStatValue}>{formatDistance(run.totalDistanceMeters, unit)}</Text>
                 <Text style={styles.runStatLabel}>Distance</Text>
               </View>
             )}

@@ -7,24 +7,33 @@ import type { StatsSnapshot } from '../../../src/stats/personalRecords';
 import { RecordsGrid, AwardsList, LifetimeStats } from '../../../src/components/PersonalBests';
 import { ProgressChart } from '../../../src/components/ProgressChart';
 import { Colors, Spacing, FontSize } from '../../../src/constants/theme';
+import { useUnits } from '../../../src/hooks/useUnits';
+import { METERS_PER_MILE } from '../../../src/workout/workoutTypes';
+import {
+  distanceUnitLabel,
+  distanceUnitName,
+  formatPaceValue,
+  paceUnitLabel,
+  toDisplayDistance,
+} from '../../../src/units/format';
 
 export default function StatsScreen() {
   const { history } = useTrainingPlan();
+  const paceUnit = useUnits();
 
   const stats = useMemo<StatsSnapshot | null>(() => {
     if (history.length === 0) return null;
-    return computeStats(history);
-  }, [history]);
+    return computeStats(history, paceUnit);
+  }, [history, paceUnit]);
 
   const chartWidth = 320;
 
-  const formatPaceForChart = useCallback((v: number) => {
-    const mins = Math.floor(v);
-    const secs = Math.round((v - mins) * 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }, []);
-
-  const formatDistForChart = useCallback((v: number) => `${v.toFixed(1)} mi`, []);
+  const formatPaceForChart = useCallback((v: number) => formatPaceValue(v, paceUnit), [paceUnit]);
+  const formatDistForChart = useCallback(
+    (miles: number) =>
+      `${toDisplayDistance(miles * METERS_PER_MILE, paceUnit).toFixed(1)} ${distanceUnitLabel(paceUnit)}`,
+    [paceUnit],
+  );
   const formatDurForChart = useCallback((v: number) => `${Math.round(v)} min`, []);
 
   if (!stats) {
@@ -56,7 +65,7 @@ export default function StatsScreen() {
         <Text style={styles.chartsSectionTitle}>Progress Over Time</Text>
         <ProgressChart
           data={stats.paceTrend}
-          title="Pace (min/mi)"
+          title={`Pace (${paceUnitLabel(paceUnit)})`}
           formatValue={formatPaceForChart}
           lowerIsBetter
           width={chartWidth}
@@ -64,7 +73,7 @@ export default function StatsScreen() {
         />
         <ProgressChart
           data={stats.distanceTrend}
-          title="Distance (miles)"
+          title={`Distance (${distanceUnitName(paceUnit).toLowerCase()})`}
           formatValue={formatDistForChart}
           width={chartWidth}
           color={Colors.accent}

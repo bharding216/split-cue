@@ -43,7 +43,8 @@ import {
 } from '../workout/workoutTypes';
 import { loadSettings } from '../workout/workoutStorage';
 import type { PaceUnit } from '../pace/paceTypes';
-import { formatPaceDisplay } from '../pace/paceTracker';
+import { formatPace, metersPerUnit, paceSuffix, paceToUnit } from '../units/format';
+import { paceFromUnit, splitPace } from '../workout/goalPaceSuggestions';
 import {
   Colors,
   Spacing,
@@ -630,7 +631,7 @@ function summarizeSegment(seg: Segment, paceUnit: PaceUnit): string {
   const parts = [targetSummary(seg, paceUnit)];
   if (seg.intensity) parts.push(intensityLabel(seg.intensity));
   if (seg.effort != null && seg.effort !== intensityToEffort(seg.intensity)) parts.push(`RPE ${seg.effort}`);
-  if (seg.targetPace != null) parts.push(`${formatPaceDisplay(seg.targetPace)}/mi`);
+  if (seg.targetPace != null) parts.push(formatPace(seg.targetPace, paceUnit));
   return parts.join(' · ');
 }
 
@@ -872,6 +873,7 @@ function SegmentEditor({
             <PacePicker
               targetPace={segment.targetPace}
               onChange={(p) => update({ targetPace: p })}
+              paceUnit={paceUnit}
             />
           )}
           {(segment.intensity || segment.effort) && segment.targetPace == null && (
@@ -938,7 +940,7 @@ function TargetEditor({
     if (tt === 'time') {
       onChange({ ...segment, target: { type: 'time', durationSeconds: segment.target.durationSeconds ?? SEGMENT_DEFAULTS[segment.segmentType].durationSeconds } });
     } else if (tt === 'distance') {
-      onChange({ ...segment, target: { type: 'distance', distanceMeters: segment.target.distanceMeters ?? 1609 } });
+      onChange({ ...segment, target: { type: 'distance', distanceMeters: segment.target.distanceMeters ?? metersPerUnit(paceUnit) } });
     } else {
       onChange({ ...segment, target: { type: 'manual' } });
     }
@@ -956,7 +958,7 @@ function TargetEditor({
         )}
         {current === 'distance' && (
           <DistancePicker
-            meters={segment.target.distanceMeters ?? 1609}
+            meters={segment.target.distanceMeters ?? metersPerUnit(paceUnit)}
             onChange={(m) => onChange({ ...segment, target: { type: 'distance', distanceMeters: m } })}
             color={color}
             paceUnit={paceUnit}
@@ -1130,9 +1132,12 @@ function RepeatGroupEditor({
 function PacePicker({
   targetPace,
   onChange,
+  paceUnit,
 }: {
+  /** Stored in min/mile; shown and edited in `paceUnit`. */
   targetPace?: number;
   onChange: (p: number | undefined) => void;
+  paceUnit: PaceUnit;
 }) {
   const [editing, setEditing] = useState(false);
   const [editMins, setEditMins] = useState('');
@@ -1140,12 +1145,11 @@ function PacePicker({
 
   const startEdit = () => {
     if (targetPace != null) {
-      const mins = Math.floor(targetPace);
-      const secs = Math.round((targetPace - mins) * 60);
-      setEditMins(mins.toString());
-      setEditSecs(secs.toString().padStart(2, '0'));
+      const { min, sec } = splitPace(paceToUnit(targetPace, paceUnit));
+      setEditMins(min.toString());
+      setEditSecs(sec.toString().padStart(2, '0'));
     } else {
-      setEditMins('8');
+      setEditMins(paceUnit === 'minPerKm' ? '5' : '8');
       setEditSecs('00');
     }
     setEditing(true);
@@ -1157,7 +1161,7 @@ function PacePicker({
     if (m === 0 && s === 0) {
       onChange(undefined);
     } else {
-      onChange(m + Math.min(59, s) / 60);
+      onChange(paceFromUnit(m + Math.min(59, s) / 60, paceUnit));
     }
     setEditing(false);
   };
@@ -1196,7 +1200,7 @@ function PacePicker({
             placeholder="SS"
             placeholderTextColor={Colors.textMuted}
           />
-          <Text style={ipStyles.paceUnit}>/mi</Text>
+          <Text style={ipStyles.paceUnit}>{paceSuffix(paceUnit)}</Text>
           <TouchableOpacity onPress={confirm} style={ipStyles.paceDoneBtn}>
             <Ionicons name="checkmark" size={18} color={Colors.primary} />
           </TouchableOpacity>
@@ -1205,7 +1209,7 @@ function PacePicker({
         <View style={ipStyles.paceDisplayRow}>
           <Ionicons name="speedometer-outline" size={14} color={Colors.accent} />
           <TouchableOpacity onPress={startEdit} activeOpacity={0.7}>
-            <Text style={ipStyles.paceValue}>{formatPaceDisplay(targetPace)}/mi</Text>
+            <Text style={ipStyles.paceValue}>{formatPace(targetPace, paceUnit)}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => onChange(undefined)} hitSlop={8}>
             <Ionicons name="close-circle" size={16} color={Colors.textMuted} />

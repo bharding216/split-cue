@@ -10,6 +10,14 @@ import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
+import { useUnits } from '../../../src/hooks/useUnits';
+import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
+import type { PaceUnit } from '../../../src/pace/paceTypes';
+
+const UNIT_OPTIONS: { value: PaceUnit; label: string; short: string }[] = [
+  { value: 'minPerMile', label: 'Miles', short: 'mi' },
+  { value: 'minPerKm', label: 'Kilometers', short: 'km' },
+];
 
 interface SettingsCard {
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -40,7 +48,7 @@ const CARDS: SettingsCard[] = [
   {
     icon: 'speedometer-outline',
     title: 'Pace Tracking',
-    description: 'GPS pace, cue frequency, pace window, units',
+    description: 'GPS pace, cue frequency, pace window',
     route: '/(tabs)/settings/pace',
   },
   {
@@ -60,9 +68,37 @@ const CARDS: SettingsCard[] = [
 export default function SettingsHubScreen() {
   const router = useRouter();
   const { tier, devOverrideTier, setDevOverrideTier } = useSubscription();
+  const unit = useUnits();
+
+  const setUnit = async (paceUnit: PaceUnit) => {
+    hapticTap();
+    const current = await loadSettings();
+    await saveSettings({ ...current, paceUnit });
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.unitCard}>
+        <Text style={styles.unitTitle}>Units</Text>
+        <View style={styles.unitToggle}>
+          {UNIT_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.unitSegment, unit === opt.value && styles.unitSegmentActive]}
+              onPress={() => setUnit(opt.value)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ selected: unit === opt.value }}
+              accessibilityLabel={opt.label}
+            >
+              <Text style={[styles.unitSegmentLabel, unit === opt.value && styles.unitSegmentLabelActive]}>
+                {opt.short}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {CARDS.map((card) => (
         <TouchableOpacity
           key={card.route}
@@ -148,6 +184,42 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 2,
   },
+  unitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
+  },
+  unitTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: 2,
+  },
+  unitSegment: {
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md - 2,
+  },
+  unitSegmentActive: {
+    backgroundColor: Colors.primary + '22',
+  },
+  unitSegmentLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    fontWeight: '600',
+  },
+  unitSegmentLabelActive: { color: Colors.primary },
   devSection: {
     marginTop: Spacing.lg,
     borderTopWidth: 1,

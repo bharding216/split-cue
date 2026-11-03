@@ -8,9 +8,10 @@
 
 import type { CompletedWorkout, RoutePoint } from '../workout/workoutTypes';
 import { analyzeElevation, aggregateByTerrain } from '../pace/elevationAnalysis';
+import type { PaceUnit } from '../pace/paceTypes';
+import { formatDistance, formatPaceValue, paceSuffix } from '../units/format';
 
 const METERS_PER_MILE = 1_609.344;
-const METERS_PER_KM = 1_000;
 
 // ── Record types ─────────────────────────────────────────────────────
 
@@ -109,12 +110,6 @@ function avgPaceMinPerMile(w: CompletedWorkout): number | null {
 
 // ── Format helpers ───────────────────────────────────────────────────
 
-function formatPace(minutes: number): string {
-  const mins = Math.floor(minutes);
-  const secs = Math.round((minutes - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const hrs = Math.floor(totalSec / 3600);
@@ -124,12 +119,6 @@ function formatDuration(ms: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function formatDistance(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  if (miles >= 0.5) return `${miles.toFixed(2)} mi`;
-  return `${(meters / METERS_PER_KM).toFixed(2)} km`;
-}
-
 function formatElevation(meters: number): string {
   const feet = Math.round(meters * 3.28084);
   return `${feet.toLocaleString()} ft`;
@@ -137,8 +126,8 @@ function formatElevation(meters: number): string {
 
 // ── Core computation ─────────────────────────────────────────────────
 
-/** Build the full records list from workout history. */
-function computeRecords(history: CompletedWorkout[]): PersonalRecord[] {
+/** Build the full records list from workout history. Display strings use `unit`. */
+function computeRecords(history: CompletedWorkout[], unit: PaceUnit): PersonalRecord[] {
   const records: PersonalRecord[] = [];
 
   // ── Fastest split times for standard distances ──
@@ -199,7 +188,7 @@ function computeRecords(history: CompletedWorkout[]): PersonalRecord[] {
       label: 'Longest Run',
       icon: 'map-outline',
       value: longestDist.totalDistanceMeters,
-      displayValue: formatDistance(longestDist.totalDistanceMeters),
+      displayValue: formatDistance(longestDist.totalDistanceMeters, unit),
       unit: '',
       workoutId: longestDist.workoutId,
       workoutName: longestDist.workoutName,
@@ -242,8 +231,8 @@ function computeRecords(history: CompletedWorkout[]): PersonalRecord[] {
       label: 'Best Average Pace',
       icon: 'speedometer-outline',
       value: bestPace.pace,
-      displayValue: formatPace(bestPace.pace),
-      unit: '/mi',
+      displayValue: formatPaceValue(bestPace.pace, unit),
+      unit: paceSuffix(unit),
       workoutId: bestPace.workout.workoutId,
       workoutName: bestPace.workout.workoutName,
       completedAt: bestPace.workout.completedAt,
@@ -272,8 +261,8 @@ function computeRecords(history: CompletedWorkout[]): PersonalRecord[] {
       label: 'Fastest Hills Pace',
       icon: 'trending-up',
       value: bestUphill.pace,
-      displayValue: formatPace(bestUphill.pace),
-      unit: '/mi',
+      displayValue: formatPaceValue(bestUphill.pace, unit),
+      unit: paceSuffix(unit),
       workoutId: bestUphill.workout.workoutId,
       workoutName: bestUphill.workout.workoutName,
       completedAt: bestUphill.workout.completedAt,
@@ -490,8 +479,14 @@ function computeDurationTrend(history: CompletedWorkout[]): TrendPoint[] {
 
 // ── Public API ───────────────────────────────────────────────────────
 
-/** Compute the full stats snapshot from workout history. */
-export function computeStats(history: CompletedWorkout[]): StatsSnapshot {
+/**
+ * Compute the full stats snapshot from workout history.
+ * Trend values stay in min/mile and miles; only record display strings use `unit`.
+ */
+export function computeStats(
+  history: CompletedWorkout[],
+  unit: PaceUnit = 'minPerMile',
+): StatsSnapshot {
   if (history.length === 0) {
     return {
       records: [],
@@ -515,7 +510,7 @@ export function computeStats(history: CompletedWorkout[]): StatsSnapshot {
   );
 
   return {
-    records: computeRecords(history),
+    records: computeRecords(history, unit),
     awards: computeAwards(history),
     totalDistanceMeters,
     totalDurationMs,
@@ -533,10 +528,11 @@ export function computeStats(history: CompletedWorkout[]): StatsSnapshot {
 export function detectNewRecords(
   history: CompletedWorkout[],
   workoutId: string,
+  unit: PaceUnit = 'minPerMile',
 ): PersonalRecord[] {
-  const allRecords = computeRecords(history);
+  const allRecords = computeRecords(history, unit);
   const withoutWorkout = history.filter((w) => w.id !== workoutId);
-  const oldRecords = computeRecords(withoutWorkout);
+  const oldRecords = computeRecords(withoutWorkout, unit);
 
   return allRecords.filter((record) => {
     if (record.workoutId !== history.find((w) => w.id === workoutId)?.workoutId) {

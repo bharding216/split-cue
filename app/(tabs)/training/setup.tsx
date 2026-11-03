@@ -56,15 +56,16 @@ import type { RaceType, GoalType, RunningProfile, RunningPreference } from '../.
 import { normalizeDayPreferences } from '../../../src/types/database';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { ProfileSheet } from '../../../src/components/ProfileSheet';
+import { formatPace as formatUnitPace } from '../../../src/units/format';
 
 const DRAFT_KEY = 'plan-setup-draft';
 
-const RACE_OPTIONS: { value: RaceType; label: string; distance: string }[] = [
-  { value: '5k', label: '5K', distance: '3.1 mi' },
-  { value: '10k', label: '10K', distance: '6.2 mi' },
-  { value: 'half_marathon', label: 'Half Marathon', distance: '13.1 mi' },
-  { value: 'marathon', label: 'Marathon', distance: '26.2 mi' },
-  { value: 'custom', label: 'Custom', distance: '' },
+const RACE_OPTIONS: { value: RaceType; label: string; distance: { mi: string; km: string } | null }[] = [
+  { value: '5k', label: '5K', distance: { mi: '3.1 mi', km: '5 km' } },
+  { value: '10k', label: '10K', distance: { mi: '6.2 mi', km: '10 km' } },
+  { value: 'half_marathon', label: 'Half Marathon', distance: { mi: '13.1 mi', km: '21.1 km' } },
+  { value: 'marathon', label: 'Marathon', distance: { mi: '26.2 mi', km: '42.2 km' } },
+  { value: 'custom', label: 'Custom', distance: null },
 ];
 
 const DAYS_PER_WEEK_OPTIONS = [3, 4, 5, 6, 7];
@@ -85,12 +86,6 @@ function formatDateShort(d: Date): string {
     day: 'numeric',
     year: 'numeric',
   });
-}
-
-function paceToMMSS(decimal: number): string {
-  const mins = Math.floor(decimal);
-  const secs = Math.round((decimal - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 type GenPhase = 'idle' | 'analyzing' | 'generating';
@@ -198,6 +193,7 @@ export default function PlanSetupScreen() {
         ]);
         const unit: PaceUnit = settings?.paceUnit ?? 'minPerMile';
         setPaceUnit(unit);
+        setCustomDistanceUnit(unit === 'minPerKm' ? 'km' : 'mi');
         if (!raw) { draftLoaded.current = true; return; }
         const draft = JSON.parse(raw);
         if (draft.goalType) setGoalType(draft.goalType);
@@ -842,7 +838,9 @@ export default function PlanSetupScreen() {
                       {opt.label}
                     </Text>
                     {opt.distance ? (
-                      <Text style={styles.raceChipDistance}>{opt.distance}</Text>
+                      <Text style={styles.raceChipDistance}>
+                        {paceUnit === 'minPerKm' ? opt.distance.km : opt.distance.mi}
+                      </Text>
                     ) : null}
                   </TouchableOpacity>
                 ))}
@@ -1363,9 +1361,9 @@ export default function PlanSetupScreen() {
                       : ''}
                   </Text>
                   <Text style={styles.profilePaces}>
-                    {profile.easy_pace ? `Easy: ${paceToMMSS(profile.easy_pace)}/mi` : ''}
+                    {profile.easy_pace ? `Easy: ${formatUnitPace(profile.easy_pace, paceUnit)}` : ''}
                     {profile.easy_pace && profile.fast_pace ? ' \u00B7 ' : ''}
-                    {profile.fast_pace ? `Fast: ${paceToMMSS(profile.fast_pace)}/mi` : ''}
+                    {profile.fast_pace ? `Fast: ${formatUnitPace(profile.fast_pace, paceUnit)}` : ''}
                   </Text>
                 </>
               ) : (

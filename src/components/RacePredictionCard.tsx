@@ -18,6 +18,8 @@ import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import type { RacePrediction } from '../ai/racePredictions';
+import { useUnits } from '../hooks/useUnits';
+import { formatPace, paceSuffix } from '../units/format';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -58,6 +60,7 @@ export function RacePredictionCard({
   isPro,
   onUpgrade,
 }: Props) {
+  const unit = useUnits();
   const targetPrediction = useMemo(
     () => currentPredictions.find((p) => p.raceType === targetRace),
     [currentPredictions, targetRace],
@@ -131,7 +134,7 @@ export function RacePredictionCard({
           </Text>
           <View style={styles.heroMeta}>
             <Text style={[styles.heroPace, !isPro && styles.blurred]}>
-              {isPro ? targetPrediction.paceFormatted : '??:??/mi'}
+              {isPro ? formatPace(targetPrediction.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
             </Text>
             <View
               style={[
@@ -236,7 +239,7 @@ export function RacePredictionCard({
               {isPro ? pred.predictedTimeFormatted : '??:??'}
             </Text>
             <Text style={[styles.predictionPace, !isPro && styles.blurred]}>
-              {isPro ? pred.paceFormatted : '??:??/mi'}
+              {isPro ? formatPace(pred.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
             </Text>
           </View>
         ))}

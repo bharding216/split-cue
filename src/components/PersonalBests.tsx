@@ -19,6 +19,8 @@ import Animated, {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import type { PersonalRecord, AwardBadge } from '../stats/personalRecords';
+import { useUnits } from '../hooks/useUnits';
+import { distanceUnitName, toDisplayDistance } from '../units/format';
 
 // ── Tier colors ──────────────────────────────────────────────────────
 
@@ -484,7 +486,8 @@ export function LifetimeStats({
   totalDistanceMeters,
   totalDurationMs,
 }: LifetimeStatsProps) {
-  const miles = totalDistanceMeters / 1609.344;
+  const unit = useUnits();
+  const distance = toDisplayDistance(totalDistanceMeters, unit);
   const hours = totalDurationMs / 3600000;
 
   return (
@@ -496,8 +499,8 @@ export function LifetimeStats({
       />
       <StatPill
         icon="map-outline"
-        label="Miles"
-        value={miles >= 100 ? Math.round(miles).toString() : miles.toFixed(1)}
+        label={distanceUnitName(unit)}
+        value={distance >= 100 ? Math.round(distance).toString() : distance.toFixed(1)}
       />
       <StatPill
         icon="time-outline"

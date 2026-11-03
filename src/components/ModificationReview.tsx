@@ -22,13 +22,14 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import type { PlanModification } from '../ai/planService';
 import {
   formatDurationForSpeech,
-  formatDistanceForSpeech,
   type WorkoutBlock,
   type Segment,
   type RepeatGroup,
   defaultSegmentLabel,
 } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
+import { useUnits } from '../hooks/useUnits';
+import { formatPace, formatSegmentDistance } from '../units/format';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -55,6 +56,7 @@ const UNDO_WINDOW_MS = 15_000;
 // ── Component ──────────────────────────────────────────────
 
 export function ModificationReview({ items, coachMessage, onApply, onKeepOriginal, onUndo }: Props) {
+  const unit = useUnits();
   const [status, setStatus] = useState<'reviewing' | 'applying' | 'applied' | 'undoing'>('reviewing');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [selectedCards, setSelectedCards] = useState<Set<number>>(
@@ -143,7 +145,7 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
     const label = seg.label || defaultSegmentLabel(seg.segmentType);
     let duration: string;
     if (seg.target.type === 'distance' && seg.target.distanceMeters) {
-      duration = formatDistanceForSpeech(seg.target.distanceMeters);
+      duration = formatSegmentDistance(seg.target.distanceMeters, unit);
     } else if (seg.target.type === 'time' && seg.target.durationSeconds) {
       duration = formatDurationForSpeech(seg.target.durationSeconds);
     } else {
@@ -151,11 +153,7 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
     }
     const parts = [`${duration} ${label}`];
     if (seg.intensity) parts.push(seg.intensity);
-    if (seg.targetPace) {
-      const mins = Math.floor(seg.targetPace);
-      const secs = Math.round((seg.targetPace - mins) * 60);
-      parts.push(`@ ${mins}:${secs.toString().padStart(2, '0')}/mi`);
-    }
+    if (seg.targetPace) parts.push(`@ ${formatPace(seg.targetPace, unit)}`);
     return parts.join('  ·  ');
   };
 

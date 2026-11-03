@@ -214,10 +214,10 @@ function ActiveWorkoutInner({
   useEffect(() => {
     if (state.phase !== 'finished' || !runner.completedEntryId) return;
     loadHistory().then((history) => {
-      setNewRecords(detectNewRecords(history, runner.completedEntryId!));
+      setNewRecords(detectNewRecords(history, runner.completedEntryId!, settings.paceUnit));
       setNewAwards(detectNewAwards(history, runner.completedEntryId!));
     }).catch(() => {});
-  }, [state.phase, runner.completedEntryId]);
+  }, [state.phase, runner.completedEntryId, settings.paceUnit]);
 
   // Mark the plan workout as completed when a plan run finishes
   useEffect(() => {
@@ -695,6 +695,7 @@ function ActiveWorkoutInner({
       <WorkoutTimeline
         intervals={state.intervals}
         currentIndex={state.currentIndex}
+        paceUnit={settings.paceUnit}
       />
 
       {/* Total remaining */}
@@ -997,7 +998,7 @@ function MidRunSettingsSheet({
 
             {settings.paceTrackingEnabled && (
               <>
-                {/* Pace unit */}
+                {/* Units */}
                 <View style={sheetStyles.chipRow}>
                   <TouchableOpacity
                     style={[
@@ -1016,7 +1017,7 @@ function MidRunSettingsSheet({
                         settings.paceUnit === 'minPerMile' && sheetStyles.chipLabelActive,
                       ]}
                     >
-                      min/mile
+                      Miles
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -1036,7 +1037,7 @@ function MidRunSettingsSheet({
                         settings.paceUnit === 'minPerKm' && sheetStyles.chipLabelActive,
                       ]}
                     >
-                      min/km
+                      Kilometers
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1370,9 +1371,11 @@ const paceStyles = StyleSheet.create({
 function WorkoutTimeline({
   intervals,
   currentIndex,
+  paceUnit,
 }: {
   intervals: FlatInterval[];
   currentIndex: number;
+  paceUnit: import('../../../src/pace/paceTypes').PaceUnit;
 }) {
   const flatListRef = useRef<FlatList<FlatInterval>>(null);
 
@@ -1450,14 +1453,14 @@ function WorkoutTimeline({
             ]}
           >
             {isDistanceInterval(item)
-              ? formatDistanceShort(item.distanceMeters!, 'minPerMile')
+              ? formatDistanceShort(item.distanceMeters!, paceUnit)
               : formatTime(item.durationSeconds)
             }
           </Text>
         </View>
       );
     },
-    [currentIndex],
+    [currentIndex, paceUnit],
   );
 
   return (

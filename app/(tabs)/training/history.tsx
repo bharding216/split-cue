@@ -21,7 +21,7 @@ import ReanimatedSwipeable, {
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { CompletedWorkout, WorkoutDefinition, IntervalSplit, formatTime, generateId } from '../../../src/workout/workoutTypes';
+import { CompletedWorkout, WorkoutDefinition, formatTime, generateId, METERS_PER_MILE } from '../../../src/workout/workoutTypes';
 import { loadHistory, clearHistory, deleteHistoryEntry, updateHistoryEntry, loadWorkouts, loadSettings } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { TagBadges, TagPicker } from '../../../src/components/TagPicker';
@@ -36,7 +36,16 @@ import { StravaPushButton } from '../../../src/strava/StravaPushButton';
 import { onStravaUploaded } from '../../../src/strava/stravaService';
 import { DEFAULT_SETTINGS } from '../../../src/workout/workoutTypes';
 import type { PaceUnit } from '../../../src/pace/paceTypes';
-import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { SplitsTable } from '../../../src/components/SplitsTable';
+import {
+  distanceUnitLabel,
+  distanceUnitName,
+  formatDistance,
+  formatPaceValue,
+  paceUnitLabel,
+  toDisplayDistance,
+} from '../../../src/units/format';
 import { computeStats } from '../../../src/stats/personalRecords';
 import type { StatsSnapshot } from '../../../src/stats/personalRecords';
 import { RecordsGrid, AwardsList, LifetimeStats } from '../../../src/components/PersonalBests';
@@ -58,192 +67,7 @@ function DeleteAction({ onPress }: { onPress: () => void }) {
   );
 }
 
-const METERS_PER_MILE = 1609.344;
 const STRAVA_ORANGE = '#FC5200';
-
-function formatDistanceDisplay(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  if (miles >= 0.1) return `${miles.toFixed(2)} mi`;
-  const km = meters / 1000;
-  return `${km.toFixed(2)} km`;
-}
-
-function formatPaceDisplay(paceMinutes: number | null): string {
-  if (paceMinutes == null || !isFinite(paceMinutes)) return '--:--';
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function SplitsTable({ splits }: { splits: IntervalSplit[] }) {
-  const hasPace = splits.some((s) => s.avgPaceMinPerMile != null);
-  const hasDist = splits.some((s) => s.distanceMeters != null);
-  const hasTarget = splits.some((s) => s.targetPace != null);
-
-  return (
-    <View style={splitStyles.container}>
-      <Text style={splitStyles.title}>Splits</Text>
-
-      {/* Header */}
-      <View style={splitStyles.headerRow}>
-        <Text style={[splitStyles.headerCell, splitStyles.labelCol]}>#</Text>
-        <Text style={[splitStyles.headerCell, splitStyles.labelCol, { flex: 1 }]}>Interval</Text>
-        <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Time</Text>
-        {hasTarget && (
-          <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Target</Text>
-        )}
-        {hasPace && (
-          <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Pace</Text>
-        )}
-        {hasDist && (
-          <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Dist</Text>
-        )}
-      </View>
-
-      {/* Rows */}
-      {splits.map((split, i) => {
-        const actualSec = Math.floor(split.actualDurationMs / 1000);
-        const paceStr = formatPaceDisplay(split.avgPaceMinPerMile);
-        const distStr =
-          split.distanceMeters != null
-            ? split.distanceMeters >= 160.9
-              ? `${(split.distanceMeters / METERS_PER_MILE).toFixed(2)}`
-              : `${Math.round(split.distanceMeters)}m`
-            : '—';
-
-        // Pace vs target indicator
-        let paceColor = Colors.textSecondary;
-        if (
-          split.targetPace != null &&
-          split.avgPaceMinPerMile != null &&
-          isFinite(split.avgPaceMinPerMile)
-        ) {
-          const diff = split.avgPaceMinPerMile - split.targetPace;
-          if (Math.abs(diff) < 0.15) paceColor = Colors.primary;
-          else if (diff > 0) paceColor = Colors.danger;
-          else paceColor = Colors.accent;
-        }
-
-        return (
-          <View
-            key={i}
-            style={[
-              splitStyles.row,
-              i % 2 === 0 && splitStyles.rowAlt,
-            ]}
-          >
-            <Text style={[splitStyles.cell, splitStyles.labelCol, { color: Colors.textMuted }]}>
-              {i + 1}
-            </Text>
-            <View style={[splitStyles.labelCol, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-              <View
-                style={[
-                  splitStyles.typeDot,
-                  { backgroundColor: intervalColor(split.type) },
-                ]}
-              />
-              <Text style={splitStyles.cell} numberOfLines={1}>
-                {split.label}
-              </Text>
-            </View>
-            <Text style={[splitStyles.cell, splitStyles.valueCol, { fontVariant: ['tabular-nums'] }]}>
-              {formatTime(actualSec)}
-            </Text>
-            {hasTarget && (
-              <Text
-                style={[
-                  splitStyles.cell,
-                  splitStyles.valueCol,
-                  { color: Colors.textMuted, fontVariant: ['tabular-nums'] },
-                ]}
-              >
-                {split.targetPace != null ? formatPaceDisplay(split.targetPace) : '—'}
-              </Text>
-            )}
-            {hasPace && (
-              <Text
-                style={[
-                  splitStyles.cell,
-                  splitStyles.valueCol,
-                  { color: paceColor, fontVariant: ['tabular-nums'] },
-                ]}
-              >
-                {paceStr}
-              </Text>
-            )}
-            {hasDist && (
-              <Text
-                style={[
-                  splitStyles.cell,
-                  splitStyles.valueCol,
-                  { fontVariant: ['tabular-nums'] },
-                ]}
-              >
-                {distStr}
-              </Text>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-const splitStyles = StyleSheet.create({
-  container: {
-    marginBottom: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    paddingHorizontal: Spacing.sm,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xs,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceLight,
-  },
-  headerCell: {
-    fontSize: FontSize.xs,
-    fontWeight: '800',
-    color: Colors.textMuted,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-  },
-  rowAlt: {
-    backgroundColor: Colors.surfaceLight + '44',
-  },
-  cell: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-  labelCol: {
-    minWidth: 24,
-  },
-  valueCol: {
-    minWidth: 48,
-    textAlign: 'right',
-  },
-  typeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-});
 
 function ElevationSection({
   item,
@@ -297,8 +121,8 @@ export default function HistoryScreen() {
 
   const stats = useMemo<StatsSnapshot | null>(() => {
     if (history.length === 0) return null;
-    return computeStats(history);
-  }, [history]);
+    return computeStats(history, paceUnit);
+  }, [history, paceUnit]);
 
   const { user } = useAuth();
 
@@ -422,13 +246,12 @@ export default function HistoryScreen() {
     return formatTime(totalSec);
   };
 
-  const formatPaceForChart = useCallback((v: number) => {
-    const mins = Math.floor(v);
-    const secs = Math.round((v - mins) * 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }, []);
-
-  const formatDistForChart = useCallback((v: number) => `${v.toFixed(1)} mi`, []);
+  const formatPaceForChart = useCallback((v: number) => formatPaceValue(v, paceUnit), [paceUnit]);
+  const formatDistForChart = useCallback(
+    (miles: number) =>
+      `${toDisplayDistance(miles * METERS_PER_MILE, paceUnit).toFixed(1)} ${distanceUnitLabel(paceUnit)}`,
+    [paceUnit],
+  );
   const formatDurForChart = useCallback((v: number) => `${Math.round(v)} min`, []);
 
   return (
@@ -491,7 +314,7 @@ export default function HistoryScreen() {
                 <Text style={styles.chartsSectionTitle}>Progress Over Time</Text>
                 <ProgressChart
                   data={stats.paceTrend}
-                  title="Pace (min/mi)"
+                  title={`Pace (${paceUnitLabel(paceUnit)})`}
                   formatValue={formatPaceForChart}
                   lowerIsBetter
                   width={chartWidth}
@@ -499,7 +322,7 @@ export default function HistoryScreen() {
                 />
                 <ProgressChart
                   data={stats.distanceTrend}
-                  title="Distance (miles)"
+                  title={`Distance (${distanceUnitName(paceUnit).toLowerCase()})`}
                   formatValue={formatDistForChart}
                   width={chartWidth}
                   color={Colors.accent}
@@ -605,7 +428,7 @@ export default function HistoryScreen() {
 
                     {item.totalDistanceMeters != null && item.totalDistanceMeters > 0 && (
                       <Text style={styles.totalDistance}>
-                        {formatDistanceDisplay(item.totalDistanceMeters)}
+                        {formatDistance(item.totalDistanceMeters, paceUnit)}
                       </Text>
                     )}
 
@@ -655,7 +478,7 @@ export default function HistoryScreen() {
                     )}
 
                     {item.splits && item.splits.length > 0 && (
-                      <SplitsTable splits={item.splits} />
+                      <SplitsTable splits={item.splits} paceUnit={paceUnit} style={{ marginBottom: Spacing.md }} />
                     )}
 
                     {item.route && item.route.length >= 2 && (

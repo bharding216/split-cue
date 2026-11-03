@@ -24,6 +24,7 @@ import {
   intervalColor,
 } from '../constants/theme';
 import { shareWorkoutStructure } from '../sharing/shareWorkout';
+import { useUnits } from '../hooks/useUnits';
 
 interface WorkoutCardProps {
   workout: WorkoutDefinition;
@@ -46,6 +47,7 @@ export function WorkoutCard({
   const intervals = flattenWorkout(workout);
   const distMeters = totalWorkoutDistanceMeters(workout);
   const isDistance = hasDistanceFeature(workout);
+  const unit = useUnits();
 
   const handleDelete = () => {
     Alert.alert(
@@ -72,7 +74,7 @@ export function WorkoutCard({
         <Text style={styles.name}>{workout.name}</Text>
         {isDistance && distMeters ? (
           <Text style={styles.distanceBadge}>
-            {formatDistanceShort(distMeters, 'minPerMile')}
+            {formatDistanceShort(distMeters, unit)}
           </Text>
         ) : (
           <Text style={styles.duration}>{formatTime(totalSecs)}</Text>

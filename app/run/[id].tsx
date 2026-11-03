@@ -19,7 +19,6 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   CompletedWorkout,
-  IntervalSplit,
   formatTime,
   generateId,
   WORKOUT_NOTES_MAX_LENGTH,
@@ -48,25 +47,12 @@ import {
 } from '../../src/stats/personalRecords';
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
 import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
+import { SplitsTable } from '../../src/components/SplitsTable';
+import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
 import { StravaPushButton } from '../../src/strava/StravaPushButton';
 import { shareWorkoutResults } from '../../src/sharing/shareWorkout';
-import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../../src/constants/theme';
-
-const METERS_PER_MILE = 1609.344;
-
-function formatDistanceDisplay(meters: number): string {
-  const miles = meters / METERS_PER_MILE;
-  if (miles >= 0.1) return `${miles.toFixed(2)} mi`;
-  return `${(meters / 1000).toFixed(2)} km`;
-}
-
-function formatPaceDisplay(paceMinutes: number | null): string {
-  if (paceMinutes == null || !isFinite(paceMinutes)) return '--:--';
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
 
 function formatDateFull(epoch: number): string {
   return new Date(epoch).toLocaleDateString(undefined, {
@@ -82,74 +68,6 @@ function formatTimeOfDay(epoch: number): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-// ── Splits Table ─────────────────────────────────────────────
-
-function SplitsTable({ splits }: { splits: IntervalSplit[] }) {
-  const hasPace = splits.some((s) => s.avgPaceMinPerMile != null);
-  const hasDist = splits.some((s) => s.distanceMeters != null);
-  const hasTarget = splits.some((s) => s.targetPace != null);
-
-  return (
-    <View style={splitStyles.container}>
-      <Text style={splitStyles.title}>Splits</Text>
-      <View style={splitStyles.headerRow}>
-        <Text style={[splitStyles.headerCell, splitStyles.labelCol]}>#</Text>
-        <Text style={[splitStyles.headerCell, splitStyles.labelCol, { flex: 1 }]}>Interval</Text>
-        <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Time</Text>
-        {hasTarget && <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Target</Text>}
-        {hasPace && <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Pace</Text>}
-        {hasDist && <Text style={[splitStyles.headerCell, splitStyles.valueCol]}>Dist</Text>}
-      </View>
-      {splits.map((split, i) => {
-        const actualSec = Math.floor(split.actualDurationMs / 1000);
-        const paceStr = formatPaceDisplay(split.avgPaceMinPerMile);
-        const distStr =
-          split.distanceMeters != null
-            ? split.distanceMeters >= 160.9
-              ? `${(split.distanceMeters / METERS_PER_MILE).toFixed(2)}`
-              : `${Math.round(split.distanceMeters)}m`
-            : '—';
-
-        let paceColor = Colors.textSecondary;
-        if (split.targetPace != null && split.avgPaceMinPerMile != null && isFinite(split.avgPaceMinPerMile)) {
-          const diff = split.avgPaceMinPerMile - split.targetPace;
-          if (Math.abs(diff) < 0.15) paceColor = Colors.primary;
-          else if (diff > 0) paceColor = Colors.danger;
-          else paceColor = Colors.accent;
-        }
-
-        return (
-          <View key={i} style={[splitStyles.row, i % 2 === 0 && splitStyles.rowAlt]}>
-            <Text style={[splitStyles.cell, splitStyles.labelCol, { color: Colors.textMuted }]}>{i + 1}</Text>
-            <View style={[splitStyles.labelCol, { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-              <View style={[splitStyles.typeDot, { backgroundColor: intervalColor(split.type) }]} />
-              <Text style={splitStyles.cell} numberOfLines={1}>{split.label}</Text>
-            </View>
-            <Text style={[splitStyles.cell, splitStyles.valueCol, { fontVariant: ['tabular-nums'] }]}>
-              {formatTime(actualSec)}
-            </Text>
-            {hasTarget && (
-              <Text style={[splitStyles.cell, splitStyles.valueCol, { color: Colors.textMuted, fontVariant: ['tabular-nums'] }]}>
-                {split.targetPace != null ? formatPaceDisplay(split.targetPace) : '—'}
-              </Text>
-            )}
-            {hasPace && (
-              <Text style={[splitStyles.cell, splitStyles.valueCol, { color: paceColor, fontVariant: ['tabular-nums'] }]}>
-                {paceStr}
-              </Text>
-            )}
-            {hasDist && (
-              <Text style={[splitStyles.cell, splitStyles.valueCol, { fontVariant: ['tabular-nums'] }]}>
-                {distStr}
-              </Text>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
 }
 
 // ── Reflection ───────────────────────────────────────────────
@@ -227,8 +145,8 @@ export default function RunDetailsScreen() {
       setPaceUnit(settings.paceUnit);
       if (found) {
         setAnnotations({ tags: found.tags ?? [], notes: found.notes ?? '' });
-        setStatsRecords(computeStats(history).records);
-        setRunRecords(detectNewRecords(history, found.id));
+        setStatsRecords(computeStats(history, settings.paceUnit).records);
+        setRunRecords(detectNewRecords(history, found.id, settings.paceUnit));
         setRunAwards(detectNewAwards(history, found.id));
       }
       setLoading(false);
@@ -318,7 +236,7 @@ export default function RunDetailsScreen() {
           {run.totalDistanceMeters != null && run.totalDistanceMeters > 0 && (
             <View style={styles.statCard}>
               <Text style={[styles.statValue, { color: Colors.accent }]}>
-                {formatDistanceDisplay(run.totalDistanceMeters)}
+                {formatDistance(run.totalDistanceMeters, paceUnit)}
               </Text>
               <Text style={styles.statLabel}>Distance</Text>
             </View>
@@ -363,7 +281,7 @@ export default function RunDetailsScreen() {
         {/* Splits */}
         {run.splits && run.splits.length > 0 && (
           <View style={styles.section}>
-            <SplitsTable splits={run.splits} />
+            <SplitsTable splits={run.splits} paceUnit={paceUnit} />
           </View>
         )}
 
@@ -445,61 +363,6 @@ export default function RunDetailsScreen() {
 }
 
 // ── Styles ───────────────────────────────────────────────────
-
-const splitStyles = StyleSheet.create({
-  container: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-  },
-  title: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    paddingHorizontal: Spacing.sm,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.xs,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceLight,
-  },
-  headerCell: {
-    fontSize: FontSize.xs,
-    fontWeight: '800',
-    color: Colors.textMuted,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-  },
-  rowAlt: {
-    backgroundColor: Colors.surfaceLight + '44',
-  },
-  cell: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-  labelCol: {
-    minWidth: 24,
-  },
-  valueCol: {
-    minWidth: 48,
-    textAlign: 'right',
-  },
-  typeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-});
 
 const styles = StyleSheet.create({
   container: {
