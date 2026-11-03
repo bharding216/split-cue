@@ -8,7 +8,7 @@
  * The map can be expanded into a full-screen modal.
  */
 
-import React, { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import React, { useMemo, useRef, useState, type RefObject } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -299,12 +299,6 @@ export function RouteMap({
   const fitFullscreenMap = (animated: boolean) =>
     fitMap(fullscreenMapRef, animated, fullscreenPadding);
 
-  useEffect(() => {
-    // Small delay to ensure the map is rendered before fitting
-    const timeout = setTimeout(() => fitMap(mapRef, true), 300);
-    return () => clearTimeout(timeout);
-  }, [coordinates]);
-
   if (route.length < 2) return null;
 
   const startCoord = toCoord(route[0]);
@@ -557,7 +551,9 @@ export function RouteMap({
         <MapView
           ref={mapRef}
           style={styles.map}
-          onLayout={() => fitMap(mapRef, false)}
+          // Android's fitToCoordinates throws if the native map hasn't been sized yet,
+          // which can still be the case in onLayout / onMapReady.
+          onMapLoaded={() => fitMap(mapRef, false)}
           showsScale={false}
           {...sharedMapProps}
         >
@@ -588,7 +584,7 @@ export function RouteMap({
           <MapView
             ref={fullscreenMapRef}
             style={StyleSheet.absoluteFill}
-            onMapReady={() => fitFullscreenMap(false)}
+            onMapLoaded={() => fitFullscreenMap(false)}
             showsScale
             {...sharedMapProps}
           >

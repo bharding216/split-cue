@@ -12,6 +12,7 @@ import {
   PaceWindowSize,
   MAX_ACCURACY_METERS,
   MIN_SAMPLES_FOR_PACE,
+  MIN_PACE_SPAN_SECONDS,
   createPaceState,
 } from './paceTypes';
 
@@ -99,6 +100,21 @@ export function expireStalePace(
   };
 }
 
+/**
+ * Mean of the OS-reported (Doppler) speeds, which aren't affected by position
+ * jitter. Null when the device doesn't report speed: iOS uses negative values
+ * for invalid, and some Android providers report 0 for every fix.
+ */
+function averageReportedSpeed(samples: GpsSample[]): number | null {
+  const speeds = samples
+    .map((s) => s.speed)
+    .filter((v): v is number => v != null && v >= 0);
+  if (speeds.length < MIN_SAMPLES_FOR_PACE || !speeds.some((v) => v > 0)) {
+    return null;
+  }
+  return speeds.reduce((sum, v) => sum + v, 0) / speeds.length;
+}
+
 /** Compute pace over a rolling time window. */
 function computeRollingPace(
   samples: GpsSample[],
@@ -118,21 +134,28 @@ function computeRollingPace(
     return { paceMps: null, paceMinPerMile: null, paceMinPerKm: null };
   }
 
-  let distance = 0;
-  for (let i = 1; i < windowSamples.length; i++) {
-    distance += haversineMeters(windowSamples[i - 1], windowSamples[i]);
-  }
-
   const elapsed =
     (windowSamples[windowSamples.length - 1].timestamp -
       windowSamples[0].timestamp) /
     1000;
 
-  if (elapsed < 2 || distance < 1) {
+  // Position jitter is a fixed few meters per fix, so over a short span it
+  // dominates the distance and reads as a sprint until the window fills.
+  if (elapsed < Math.min(MIN_PACE_SPAN_SECONDS, windowSeconds / 2)) {
     return { paceMps: null, paceMinPerMile: null, paceMinPerKm: null };
   }
 
-  const mps = distance / elapsed;
+  let mps = averageReportedSpeed(windowSamples);
+  if (mps == null) {
+    let distance = 0;
+    for (let i = 1; i < windowSamples.length; i++) {
+      distance += haversineMeters(windowSamples[i - 1], windowSamples[i]);
+    }
+    if (distance < 1) {
+      return { paceMps: null, paceMinPerMile: null, paceMinPerKm: null };
+    }
+    mps = distance / elapsed;
+  }
 
   // Guard against unrealistically slow or fast readings
   if (mps < 0.3 || mps > 15) {

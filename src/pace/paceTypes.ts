@@ -50,6 +50,9 @@ export const MAX_ACCURACY_METERS = 20;
 /** Minimum samples required to compute pace. */
 export const MIN_SAMPLES_FOR_PACE = 3;
 
+/** Minimum time span (seconds) the window's samples must cover before a pace is reported. */
+export const MIN_PACE_SPAN_SECONDS = 10;
+
 export function createPaceState(): PaceState {
   return {
     samples: [],
