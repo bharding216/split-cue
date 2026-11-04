@@ -28,8 +28,9 @@ import type {
   DayPreference,
 } from '../types/database';
 import { normalizeDayPreferences } from '../types/database';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
+import { useLargeText } from '../hooks/useLargeText';
 
 // ── Props ────────────────────────────────────────────────────
 
@@ -184,7 +185,11 @@ function PreferenceSection({
       <View style={styles.prefHeader}>
         <Text style={styles.tabSectionTitle}>{title}</Text>
         {availablePresets.length > 0 && (
-          <TouchableOpacity onPress={() => setShowPresets((p) => !p)} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => setShowPresets((p) => !p)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={styles.suggestionsToggle}>
               {showPresets ? 'Hide' : 'Suggestions'}
             </Text>
@@ -213,6 +218,8 @@ function PreferenceSection({
           <TouchableOpacity
             onPress={() => removeItem(item.id)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${item.content}`}
           >
             <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -229,7 +236,12 @@ function PreferenceSection({
           returnKeyType="done"
           onSubmitEditing={() => addItem()}
         />
-        <TouchableOpacity style={styles.addButton} onPress={() => addItem()}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => addItem()}
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${title.toLowerCase().replace(/s$/, '')}`}
+        >
           <Ionicons name="add" size={20} color={Colors.black} />
         </TouchableOpacity>
       </View>
@@ -240,6 +252,7 @@ function PreferenceSection({
 // ── Main Component ───────────────────────────────────────────
 
 export function ProfileSheet({ visible, userId, onClose }: Props) {
+  const large = useLargeText();
   const [activeTab, setActiveTab] = useState<TabKey>('basics');
   const [profile, setProfile] = useState<RunningProfile | null>(null);
   const [preferences, setPreferences] = useState<RunningPreference[]>([]);
@@ -314,7 +327,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, large && styles.sheetLarge]}>
           {/* Drag handle */}
           <View style={styles.handleRow}>
             <View style={styles.handle} />
@@ -322,22 +335,29 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Running Profile</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>Running Profile</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Tab bar */}
-          <View style={styles.tabBar}>
+          <View style={[styles.tabBar, large && styles.tabBarLarge]}>
             {TABS.map((tab) => {
               const isActive = activeTab === tab.key;
               return (
                 <TouchableOpacity
                   key={tab.key}
-                  style={styles.tabItem}
+                  style={[styles.tabItem, large && styles.tabItemLarge]}
                   onPress={() => { hapticTap(); setActiveTab(tab.key); }}
                   activeOpacity={0.7}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isActive }}
                 >
                   <Ionicons
                     name={tab.icon}
@@ -346,7 +366,8 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                   />
                   <Text
                     style={[styles.tabLabel, isActive && styles.tabLabelActive]}
-                    numberOfLines={1}
+                    numberOfLines={large ? undefined : 1}
+                    maxFontSizeMultiplier={MaxFontScale.display}
                   >
                     {tab.label}
                   </Text>
@@ -395,7 +416,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
 
                   <View style={styles.tabSection}>
                     <Text style={styles.tabSectionTitle}>Current Fitness</Text>
-                    <View style={styles.fitnessRow}>
+                    <View style={[styles.fitnessRow, large && styles.stackLarge]}>
                       <View style={styles.fitnessInput}>
                         <Text style={styles.fieldLabel}>Weekly mileage</Text>
                         <View style={styles.fieldWithUnit}>
@@ -483,7 +504,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                     <Text style={styles.tabSectionSub}>
                       Enter as minutes:seconds — e.g. 9:30
                     </Text>
-                    <View style={styles.paceRow}>
+                    <View style={[styles.paceRow, large && styles.stackLarge]}>
                       <View style={styles.paceInput}>
                         <Text style={styles.fieldLabel}>Easy pace</Text>
                         <TextInput
@@ -526,7 +547,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                     <Text style={styles.tabSectionSub}>
                       Tap once for flexible, twice for locked in.
                     </Text>
-                    <View style={styles.dayChipsRow}>
+                    <View style={[styles.dayChipsRow, large && styles.dayChipsRowLarge]}>
                       {DAYS_OF_WEEK.map((day) => {
                         const days = normalizeDayPreferences(profile?.preferred_days);
                         const entry = days.find((d) => d.day === day.key);
@@ -536,6 +557,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                             key={day.key}
                             style={[
                               styles.dayChip,
+                              large && styles.dayChipLarge,
                               state === 'flexible' && styles.dayChipFlexible,
                               state === 'locked' && styles.dayChipLocked,
                             ]}
@@ -557,11 +579,14 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                             {state === 'locked' && (
                               <Ionicons name="lock-closed" size={10} color={Colors.primary} style={{ marginBottom: 1 }} />
                             )}
-                            <Text style={[
-                              styles.dayChipText,
-                              state === 'flexible' && styles.dayChipTextFlexible,
-                              state === 'locked' && styles.dayChipTextLocked,
-                            ]}>
+                            <Text
+                              style={[
+                                styles.dayChipText,
+                                state === 'flexible' && styles.dayChipTextFlexible,
+                                state === 'locked' && styles.dayChipTextLocked,
+                              ]}
+                              maxFontSizeMultiplier={MaxFontScale.display}
+                            >
                               {day.label}
                             </Text>
                           </TouchableOpacity>
@@ -701,6 +726,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
+  sheetLarge: {
+    height: '92%',
+  },
   handleRow: {
     alignItems: 'center',
     paddingTop: Spacing.sm,
@@ -718,8 +746,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: FontSize.xl,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -732,6 +762,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceLight,
   },
+  tabBarLarge: {
+    flexWrap: 'wrap',
+  },
   tabItem: {
     flex: 1,
     alignItems: 'center',
@@ -739,6 +772,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     gap: 3,
     position: 'relative',
+  },
+  tabItemLarge: {
+    flexBasis: '50%',
   },
   tabLabel: {
     fontSize: FontSize.xs,
@@ -778,6 +814,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   tabSectionTitle: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -816,6 +853,10 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+
+  stackLarge: {
+    flexDirection: 'column',
   },
 
   // Fitness / field helpers
@@ -859,6 +900,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   durationChip: {
+    flexShrink: 1,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.full,
     paddingVertical: Spacing.sm,
@@ -894,6 +936,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.xs,
   },
+  dayChipsRowLarge: {
+    flexWrap: 'wrap',
+  },
   dayChip: {
     flex: 1,
     alignItems: 'center',
@@ -903,6 +948,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 2,
     borderColor: Colors.surfaceLight,
+  },
+  dayChipLarge: {
+    flexBasis: '22%',
   },
   dayChipFlexible: {
     borderColor: Colors.primary,
@@ -925,6 +973,7 @@ const styles = StyleSheet.create({
   },
   dayLegend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.md,
     marginTop: Spacing.sm,
   },
@@ -953,6 +1002,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   crossChip: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
@@ -968,6 +1018,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '12',
   },
   crossChipText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -981,6 +1032,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   suggestionsToggle: {
@@ -989,6 +1041,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   presetChip: {
+    flexShrink: 1,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.full,
     paddingVertical: Spacing.xs + 2,

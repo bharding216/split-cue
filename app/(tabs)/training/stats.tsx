@@ -1,12 +1,12 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { computeStats } from '../../../src/stats/personalRecords';
 import type { StatsSnapshot } from '../../../src/stats/personalRecords';
 import { RecordsGrid, AwardsList, LifetimeStats } from '../../../src/components/PersonalBests';
 import { ProgressChart } from '../../../src/components/ProgressChart';
-import { Colors, Spacing, FontSize } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, MaxFontScale } from '../../../src/constants/theme';
 import { useUnits } from '../../../src/hooks/useUnits';
 import { METERS_PER_MILE } from '../../../src/workout/workoutTypes';
 import {
@@ -20,13 +20,14 @@ import {
 export default function StatsScreen() {
   const { history } = useTrainingPlan();
   const paceUnit = useUnits();
+  const { width: screenWidth } = useWindowDimensions();
 
   const stats = useMemo<StatsSnapshot | null>(() => {
     if (history.length === 0) return null;
     return computeStats(history, paceUnit);
   }, [history, paceUnit]);
 
-  const chartWidth = 320;
+  const chartWidth = Math.min(320, screenWidth - Spacing.md * 2);
 
   const formatPaceForChart = useCallback((v: number) => formatPaceValue(v, paceUnit), [paceUnit]);
   const formatDistForChart = useCallback(
@@ -38,13 +39,18 @@ export default function StatsScreen() {
 
   if (!stats) {
     return (
-      <View style={styles.emptyContainer}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.emptyContainer}
+      >
         <Ionicons name="stats-chart-outline" size={48} color={Colors.textMuted} />
-        <Text style={styles.emptyTitle}>No stats yet</Text>
+        <Text style={styles.emptyTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+          No stats yet
+        </Text>
         <Text style={styles.emptyText}>
           Complete some workouts to see your stats and progress.
         </Text>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -109,10 +115,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   emptyContainer: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.background,
+    paddingVertical: Spacing.lg,
   },
   emptyTitle: {
     fontSize: FontSize.xl,
@@ -120,6 +126,7 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginTop: Spacing.md,
     marginBottom: Spacing.sm,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: FontSize.md,

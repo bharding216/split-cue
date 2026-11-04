@@ -82,6 +82,7 @@ export default function PaceSettingsScreen() {
           }}
           trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
           thumbColor={Colors.white}
+          accessibilityLabel="GPS Pace Tracking"
         />
       </View>
 
@@ -150,6 +151,7 @@ export default function PaceSettingsScreen() {
                 }}
                 trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
                 thumbColor={Colors.white}
+                accessibilityLabel="Only With Target Pace"
               />
             </View>
           )}
@@ -173,6 +175,8 @@ export default function PaceSettingsScreen() {
                   update({ paceWindow: opt.value });
                 }}
                 activeOpacity={0.7}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: isActive }}
               >
                 <View style={styles.windowOptionHeader}>
                   <View
@@ -314,6 +318,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   windowLabel: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textSecondary,

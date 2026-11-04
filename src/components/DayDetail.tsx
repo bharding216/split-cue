@@ -20,6 +20,7 @@ import { formatTime, totalWorkoutSeconds, totalWorkoutDistanceMeters, isDistance
 import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../constants/theme';
 import type { PaceUnit } from '../pace/paceTypes';
 import { useUnits } from '../hooks/useUnits';
+import { useLargeText } from '../hooks/useLargeText';
 import { formatDistance, formatDistanceCompact } from '../units/format';
 
 // ── Types ────────────────────────────────────────────────────
@@ -133,7 +134,7 @@ function formatWorkoutTotal(workout: WorkoutDefinition, unit: PaceUnit): string 
   return `${formatTime(totalSec)} total`;
 }
 
-function WorkoutPreview({ workoutData, unit }: { workoutData: unknown; unit: PaceUnit }) {
+function WorkoutPreview({ workoutData, unit, large }: { workoutData: unknown; unit: PaceUnit; large: boolean }) {
   const workout = workoutData as WorkoutDefinition;
   if (!workout || !workout.blocks) return null;
 
@@ -149,7 +150,7 @@ function WorkoutPreview({ workoutData, unit }: { workoutData: unknown; unit: Pac
         {rows.slice(0, 6).map((row) => (
           <View key={row.key} style={styles.intervalRow}>
             <View style={[styles.intervalDot, { backgroundColor: intervalColor(row.intervals[0]?.type ?? 'easy') }]} />
-            <Text style={styles.intervalLabel} numberOfLines={1}>
+            <Text style={styles.intervalLabel} numberOfLines={large ? 3 : 1}>
               {row.repeatCount > 1 ? `${row.repeatCount}\u00D7 ` : ''}
               {row.intervals.map((iv) => `${iv.label} ${formatIntervalAmount(iv, unit)}`).join(', ')}
             </Text>
@@ -181,6 +182,7 @@ export function DayDetail({
 }: DayDetailProps) {
   const dateDisplay = formatDateDisplay(selectedDate);
   const unit = useUnits();
+  const large = useLargeText();
 
   const handleRemove = (workoutId: string) => {
     Alert.alert(
@@ -245,7 +247,7 @@ export function DayDetail({
             {/* AI edit button — top-right of card (only for detailed workouts in the 14-day window) */}
             {onVoiceEdit && isPlanned && !isRest && hasWorkoutData && (
               <TouchableOpacity
-                style={styles.aiEditBtn}
+                style={[styles.aiEditBtn, large && styles.aiEditBtnInline]}
                 onPress={() => onVoiceEdit(pw.id)}
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -269,7 +271,7 @@ export function DayDetail({
             )}
 
             {hasWorkoutData && !isCompleted && (
-              <WorkoutPreview workoutData={pw.workout_data} unit={unit} />
+              <WorkoutPreview workoutData={pw.workout_data} unit={unit} large={large} />
             )}
 
             {/* Rest day */}
@@ -284,9 +286,9 @@ export function DayDetail({
             {isPlanned && !isRest && (
               <>
                 {hasWorkoutData && (
-                  <View style={styles.actionRow}>
+                  <View style={[styles.actionRow, large && styles.actionRowWrap]}>
                     <TouchableOpacity
-                      style={styles.startBtn}
+                      style={[styles.startBtn, large && styles.fullRowBtn]}
                       onPress={() => onStartWorkout(pw.workout_data as WorkoutDefinition, pw.id)}
                       activeOpacity={0.8}
                     >
@@ -296,7 +298,7 @@ export function DayDetail({
 
                     {onEditWorkout && (
                       <TouchableOpacity
-                        style={styles.editBtn}
+                        style={[styles.editBtn, large && styles.editBtnGrow]}
                         onPress={() => onEditWorkout(pw.workout_data as WorkoutDefinition, pw.id)}
                         activeOpacity={0.7}
                       >
@@ -307,7 +309,7 @@ export function DayDetail({
 
                     {onMoveWorkout && (
                       <TouchableOpacity
-                        style={styles.editBtn}
+                        style={[styles.editBtn, large && styles.editBtnGrow]}
                         onPress={() => onMoveWorkout(pw.id)}
                         activeOpacity={0.7}
                       >
@@ -321,6 +323,8 @@ export function DayDetail({
                         style={styles.iconBtn}
                         onPress={() => handleRemove(pw.id)}
                         activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove workout"
                       >
                         <Ionicons name="trash-outline" size={16} color={Colors.danger} />
                       </TouchableOpacity>
@@ -386,9 +390,9 @@ export function DayDetail({
             )}
           </View>
 
-          <View style={styles.actionRow}>
+          <View style={[styles.actionRow, large && styles.actionRowWrap]}>
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[styles.primaryBtn, large && styles.fullRowBtn]}
               onPress={() => onViewRun(run.id)}
               activeOpacity={0.7}
             >
@@ -396,7 +400,7 @@ export function DayDetail({
               <Text style={styles.primaryBtnText}>Details</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.secondaryBtn}
+              style={[styles.secondaryBtn, large && styles.fullRowBtn]}
               onPress={() => onRunAgain(run)}
               activeOpacity={0.7}
             >
@@ -456,6 +460,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
     zIndex: 1,
+  },
+  aiEditBtnInline: {
+    position: 'relative' as const,
+    top: 0,
+    right: 0,
+    alignSelf: 'flex-end',
+    marginBottom: Spacing.sm,
   },
   aiEditBtnText: {
     fontSize: FontSize.xs - 1,
@@ -541,6 +552,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+  },
+  actionRowWrap: {
+    flexWrap: 'wrap',
+  },
+  fullRowBtn: {
+    flexBasis: '100%',
+  },
+  editBtnGrow: {
+    flexGrow: 1,
   },
   startBtn: {
     flex: 1,
@@ -644,7 +664,9 @@ const styles = StyleSheet.create({
   },
   runStats: {
     flexDirection: 'row',
-    gap: Spacing.lg,
+    flexWrap: 'wrap',
+    columnGap: Spacing.lg,
+    rowGap: Spacing.sm,
     marginBottom: Spacing.md,
   },
   runStat: {

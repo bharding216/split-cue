@@ -36,7 +36,8 @@ import { StravaPushButton } from '../../../src/strava/StravaPushButton';
 import { onStravaUploaded } from '../../../src/strava/stravaService';
 import { DEFAULT_SETTINGS } from '../../../src/workout/workoutTypes';
 import type { PaceUnit } from '../../../src/pace/paceTypes';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
+import { useLargeText } from '../../../src/hooks/useLargeText';
 import { SplitsTable } from '../../../src/components/SplitsTable';
 import {
   distanceUnitLabel,
@@ -61,6 +62,8 @@ function DeleteAction({ onPress }: { onPress: () => void }) {
       activeOpacity={0.7}
       onPress={onPress}
       style={styles.deleteAction}
+      accessibilityRole="button"
+      accessibilityLabel="Delete workout"
     >
       <Ionicons name="trash-outline" size={24} color={Colors.white} />
     </TouchableOpacity>
@@ -108,6 +111,7 @@ type HistoryTab = 'workouts' | 'stats';
 export default function HistoryScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
+  const large = useLargeText();
   const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
@@ -258,11 +262,13 @@ export default function HistoryScreen() {
     <View style={styles.container}>
       {/* Tab switcher — only show when there's history */}
       {history.length > 0 && (
-        <View style={styles.tabRow}>
+        <View style={[styles.tabRow, large && styles.tabRowLarge]}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'workouts' && styles.tabActive]}
+            style={[styles.tab, large && styles.tabLarge, activeTab === 'workouts' && styles.tabActive]}
             onPress={() => setActiveTab('workouts')}
             activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'workouts' }}
           >
             <Ionicons
               name="time-outline"
@@ -274,9 +280,11 @@ export default function HistoryScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'stats' && styles.tabActive]}
+            style={[styles.tab, large && styles.tabLarge, activeTab === 'stats' && styles.tabActive]}
             onPress={() => setActiveTab('stats')}
             activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'stats' }}
           >
             <Ionicons
               name="stats-chart-outline"
@@ -361,7 +369,7 @@ export default function HistoryScreen() {
                 <Text style={styles.count}>
                   {history.length} workout{history.length !== 1 ? 's' : ''} completed
                 </Text>
-                <TouchableOpacity onPress={handleClear}>
+                <TouchableOpacity onPress={handleClear} hitSlop={8} accessibilityRole="button">
                   <Text style={styles.clearText}>Clear All</Text>
                 </TouchableOpacity>
               </View>
@@ -391,12 +399,15 @@ export default function HistoryScreen() {
                     style={styles.cardHeader}
                     onPress={() => toggleExpand(item.id)}
                     activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: isExpanded }}
                   >
                   <View style={styles.cardRow}>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.cardTitle}>
                       <Text style={styles.workoutName}>{item.workoutName}</Text>
+                      {large && <Text style={styles.date}>{formatDate(item.completedAt)}</Text>}
                     </View>
-                    <Text style={styles.date}>{formatDate(item.completedAt)}</Text>
+                    {!large && <Text style={styles.date}>{formatDate(item.completedAt)}</Text>}
                     <Ionicons
                       name={isExpanded ? 'chevron-up' : 'chevron-forward'}
                       size={16}
@@ -440,6 +451,8 @@ export default function HistoryScreen() {
                           <TouchableOpacity
                             onPress={() => setEditingTagsId(null)}
                             hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Done editing tags"
                           >
                             <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
                           </TouchableOpacity>
@@ -455,7 +468,7 @@ export default function HistoryScreen() {
                           <TagBadges tags={item.tags} />
                         ) : null}
                         {item.notes ? (
-                          <Text style={styles.notesText} numberOfLines={4}>
+                          <Text style={styles.notesText} numberOfLines={large ? undefined : 4}>
                             {item.notes}
                           </Text>
                         ) : null}
@@ -499,9 +512,9 @@ export default function HistoryScreen() {
                       />
                     )}
 
-                    <View style={styles.expandedActions}>
+                    <View style={[styles.expandedActions, large && styles.expandedActionsLarge]}>
                       <TouchableOpacity
-                        style={styles.actionBtn}
+                        style={[styles.actionBtn, large && styles.actionBtnLarge]}
                         onPress={() => handleRunAgain(item)}
                         activeOpacity={0.7}
                       >
@@ -510,7 +523,7 @@ export default function HistoryScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.actionBtnSecondary]}
+                        style={[styles.actionBtn, large && styles.actionBtnLarge, styles.actionBtnSecondary]}
                         onPress={() => handleShare(item)}
                         activeOpacity={0.7}
                       >
@@ -519,7 +532,7 @@ export default function HistoryScreen() {
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.actionBtn, styles.actionBtnSecondary]}
+                        style={[styles.actionBtn, large && styles.actionBtnLarge, styles.actionBtnSecondary]}
                         onPress={() => router.push(`/workout/${item.workoutId}`)}
                         activeOpacity={0.7}
                       >
@@ -554,7 +567,9 @@ export default function HistoryScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="bar-chart-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyTitle}>No history yet</Text>
+            <Text style={styles.emptyTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+              No history yet
+            </Text>
             <Text style={styles.emptyText}>
               Complete a workout and it'll show up here.
             </Text>
@@ -580,6 +595,9 @@ const styles = StyleSheet.create({
     padding: 3,
     gap: 3,
   },
+  tabRowLarge: {
+    flexDirection: 'column',
+  },
   tab: {
     flex: 1,
     flexDirection: 'row',
@@ -589,10 +607,15 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md - 2,
     gap: Spacing.xs,
   },
+  tabLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+  },
   tabActive: {
     backgroundColor: Colors.surfaceLight,
   },
   tabLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textMuted,
@@ -623,16 +646,20 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
   },
   syncBannerText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
   count: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
@@ -678,6 +705,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  cardTitle: {
+    flex: 1,
+  },
   chevron: {
     marginLeft: Spacing.sm,
   },
@@ -692,6 +722,7 @@ const styles = StyleSheet.create({
   },
   cardMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.sm,
     marginTop: Spacing.xs,
@@ -770,6 +801,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   tagEditTitle: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -777,6 +809,9 @@ const styles = StyleSheet.create({
   expandedActions: {
     flexDirection: 'row',
     gap: Spacing.sm,
+  },
+  expandedActionsLarge: {
+    flexDirection: 'column',
   },
   stravaRow: {
     marginTop: Spacing.sm,
@@ -791,7 +826,13 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.xs,
   },
+  actionBtnLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+    paddingHorizontal: Spacing.md,
+  },
   actionBtnLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.black,
@@ -800,6 +841,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceLight,
   },
   actionBtnLabelSecondary: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textPrimary,

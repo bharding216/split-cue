@@ -34,7 +34,8 @@ import {
   setAudioModeAsync,
   useAudioRecorderState,
 } from 'expo-audio';
-import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale, intervalColor } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 import { transcribeAudio } from '../ai/transcriptionService';
 import {
   generateWorkout,
@@ -168,6 +169,7 @@ const barStyles = StyleSheet.create({
 // ── Workout Preview Card ─────────────────────────────────────
 
 function BlocksPreview({ blocks }: { blocks: WorkoutBlock[] }) {
+  const large = useLargeText();
   if (blocks.length === 0) return null;
 
   return (
@@ -179,7 +181,7 @@ function BlocksPreview({ blocks }: { blocks: WorkoutBlock[] }) {
           return (
             <View key={bi} style={prevStyles.intervalRow}>
               <View style={[prevStyles.dot, { backgroundColor: intervalColor(segmentToIntervalType(seg.segmentType, seg.intensity)) }]} />
-              <Text style={prevStyles.intervalName} numberOfLines={1}>
+              <Text style={prevStyles.intervalName} numberOfLines={large ? undefined : 1}>
                 {seg.label || defaultSegmentLabel(seg.segmentType)}
               </Text>
               <Text style={prevStyles.intervalDuration}>
@@ -192,7 +194,7 @@ function BlocksPreview({ blocks }: { blocks: WorkoutBlock[] }) {
         const rg = block;
         return (
           <View key={bi} style={prevStyles.block}>
-            <View style={prevStyles.blockHeader}>
+            <View style={[prevStyles.blockHeader, large && prevStyles.blockHeaderLarge]}>
               {rg.name && <Text style={prevStyles.blockName}>{rg.name}</Text>}
               {rg.repetitions > 1 && (
                 <View style={prevStyles.repeatBadge}>
@@ -207,7 +209,7 @@ function BlocksPreview({ blocks }: { blocks: WorkoutBlock[] }) {
               return (
                 <View key={ii} style={prevStyles.intervalRow}>
                   <View style={[prevStyles.dot, { backgroundColor: intervalColor(segmentToIntervalType(seg.segmentType, seg.intensity)) }]} />
-                  <Text style={prevStyles.intervalName} numberOfLines={1}>
+                  <Text style={prevStyles.intervalName} numberOfLines={large ? undefined : 1}>
                     {seg.label || defaultSegmentLabel(seg.segmentType)}
                   </Text>
                   <Text style={prevStyles.intervalDuration}>
@@ -244,7 +246,11 @@ const prevStyles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.xs,
   },
+  blockHeaderLarge: {
+    flexWrap: 'wrap',
+  },
   blockName: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.textSecondary,
@@ -329,6 +335,7 @@ function VoiceWorkoutSheetInner({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const large = useLargeText();
   const [phase, setPhase] = useState<Phase>('idle');
   const [transcription, setTranscription] = useState('');
   const [textInput, setTextInput] = useState('');
@@ -509,6 +516,8 @@ function VoiceWorkoutSheetInner({
             <TouchableOpacity
               onPress={() => setPhase('review')}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close editor"
             >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
@@ -535,21 +544,28 @@ function VoiceWorkoutSheetInner({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, large && styles.sheetLarge]}>
           <View style={styles.handleRow}>
             <View style={styles.handle} />
           </View>
 
           {/* Header */}
           <View style={styles.header}>
-            <View>
+            <View style={styles.headerInfo}>
               <View style={styles.headerTitleRow}>
                 <Ionicons name="sparkles" size={18} color={Colors.accent} />
-                <Text style={styles.headerTitle}>Voice Workout Builder</Text>
+                <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+                  Voice Workout Builder
+                </Text>
               </View>
               <Text style={styles.headerDate}>{dateLabel}</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={handleClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -570,6 +586,8 @@ function VoiceWorkoutSheetInner({
                   ]}
                   onPress={handleMicPress}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={phase === 'recording' ? 'Stop recording' : 'Start recording'}
                 >
                   {phase === 'recording' ? (
                     <View style={styles.recordingContent}>
@@ -644,7 +662,7 @@ function VoiceWorkoutSheetInner({
                 </View>
 
                 {/* Action buttons */}
-                <View style={styles.actionRow}>
+                <View style={[styles.actionRow, large && styles.actionRowLarge]}>
                   <TouchableOpacity
                     style={styles.editButton}
                     onPress={handleEdit}
@@ -655,7 +673,7 @@ function VoiceWorkoutSheetInner({
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.acceptButton}
+                    style={[styles.acceptButton, large && styles.acceptButtonLarge]}
                     onPress={handleAccept}
                     activeOpacity={0.8}
                   >
@@ -681,7 +699,7 @@ function VoiceWorkoutSheetInner({
           {(phase === 'idle' || phase === 'review') && (
             <View style={[styles.inputBar, { paddingBottom: Math.max(Spacing.sm, insets.bottom) }]}>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, large && styles.textInputLarge]}
                 value={textInput}
                 onChangeText={setTextInput}
                 placeholder="Or type your workout…"
@@ -695,6 +713,9 @@ function VoiceWorkoutSheetInner({
                 onPress={handleTextSend}
                 disabled={!textInput.trim()}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+                accessibilityState={{ disabled: !textInput.trim() }}
               >
                 <Ionicons name="send" size={16} color={Colors.black} />
               </TouchableOpacity>
@@ -730,6 +751,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
+  sheetLarge: {
+    maxHeight: '92%',
+  },
   handleRow: {
     alignItems: 'center',
     paddingTop: Spacing.sm,
@@ -749,6 +773,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  headerInfo: {
+    flexShrink: 1,
   },
   headerTitleRow: {
     flexDirection: 'row',
@@ -756,6 +784,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: FontSize.xl,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -902,6 +931,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
+  actionRowLarge: {
+    flexDirection: 'column-reverse',
+  },
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -915,6 +947,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.accent + '40',
   },
   editButtonText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.accent,
@@ -929,7 +962,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.xs,
   },
+  acceptButtonLarge: {
+    flex: 0,
+  },
   acceptButtonText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.black,
@@ -944,6 +981,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   retryButtonText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -988,6 +1026,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
     maxHeight: 80,
+  },
+  textInputLarge: {
+    maxHeight: undefined,
   },
   sendBtn: {
     width: 36,

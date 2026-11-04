@@ -27,6 +27,7 @@ import { supabase } from '../../../src/analytics/supabaseClient';
 import { ContextualProPrompt } from '../../../src/components/ContextualProPrompt';
 import { ModificationReview, type ModificationItem } from '../../../src/components/ModificationReview';
 import { VoiceInput } from '../../../src/components/VoiceInput';
+import { useLargeText, useScaledSize } from '../../../src/hooks/useLargeText';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 
 // ── Types ────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ function MessageBubble({ message, planWorkouts, onApply, onKeep }: {
   onKeep: (messageId: string) => void;
 }) {
   const isUser = message.role === 'user';
+  const large = useLargeText();
 
   const modificationItems: ModificationItem[] | null = useMemo(() => {
     if (!message.pendingModifications || message.pendingModifications.length === 0) return null;
@@ -240,7 +242,7 @@ function MessageBubble({ message, planWorkouts, onApply, onKeep }: {
 
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+      <View style={[styles.bubble, large && styles.bubbleLarge, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
         <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
           {message.content}
         </Text>
@@ -278,6 +280,8 @@ export default function PlanChatScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const large = useLargeText();
+  const inputMaxHeight = useScaledSize(100, 2);
 
   // Build contextual quick chips based on current plan state
   const quickChips = useMemo(() => {
@@ -432,15 +436,22 @@ export default function PlanChatScreen() {
 
   if (!plan) {
     return (
-      <View style={styles.centered}>
+      <ScrollView style={styles.emptyScroll} contentContainerStyle={styles.centered}>
         <Ionicons name="calendar-outline" size={48} color={Colors.textMuted} />
         <Text style={styles.emptyTitle}>No Active Plan</Text>
         <Text style={styles.emptyText}>
           Create a training plan first, then come back to adjust it.
         </Text>
-      </View>
+      </ScrollView>
     );
   }
+
+  const proPrompt = messages.length >= 3 ? (
+    <ContextualProPrompt
+      momentId="plan_adjustment_limit"
+      onUpgrade={() => router.push('/paywall' as any)}
+    />
+  ) : null;
 
   return (
     <KeyboardAvoidingView
@@ -467,21 +478,17 @@ export default function PlanChatScreen() {
         onContentSizeChange={() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }}
+        ListFooterComponent={large ? proPrompt : null}
       />
 
-      {/* Plan adjustment Pro prompt */}
-      {messages.length >= 3 && (
-        <ContextualProPrompt
-          momentId="plan_adjustment_limit"
-          onUpgrade={() => router.push('/paywall' as any)}
-        />
-      )}
+      {/* Plan adjustment Pro prompt — scrolls with the messages when large so the composer keeps its room */}
+      {!large && proPrompt}
 
       {/* Loading indicator */}
       {loading && <BreathingDot />}
 
       {/* Quick-action chips */}
-      {!loading && quickChips.length > 0 && (
+      {!loading && quickChips.length > 0 && !(large && input.length > 0) && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -495,6 +502,7 @@ export default function PlanChatScreen() {
               style={styles.chip}
               onPress={() => handleChipPress(chip.prompt)}
               activeOpacity={0.7}
+              accessibilityRole="button"
             >
               <Ionicons name={chip.icon} size={12} color={Colors.accent} />
               <Text style={styles.chipLabel}>{chip.label}</Text>
@@ -510,7 +518,7 @@ export default function PlanChatScreen() {
           compact
         />
         <TextInput
-          style={styles.input}
+          style={[styles.input, { maxHeight: inputMaxHeight }]}
           value={input}
           onChangeText={setInput}
           placeholder="Ask to adjust your plan..."
@@ -526,6 +534,9 @@ export default function PlanChatScreen() {
           onPress={handleSend}
           disabled={!input.trim() || loading}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Send message"
+          accessibilityState={{ disabled: !input.trim() || loading }}
         >
           <Ionicons name="send" size={18} color={Colors.black} />
         </TouchableOpacity>
@@ -541,8 +552,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  centered: {
+  emptyScroll: {
     flex: 1,
+    backgroundColor: Colors.background,
+  },
+  centered: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.background,
@@ -579,6 +594,9 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
   },
+  bubbleLarge: {
+    maxWidth: '95%',
+  },
   bubbleUser: {
     backgroundColor: Colors.primary + '20',
     borderBottomRightRadius: 4,
@@ -605,6 +623,7 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.surfaceLight,
   },
   appliedText: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     color: Colors.primary,
     fontWeight: '600',
@@ -669,7 +688,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
-    maxHeight: 100,
   },
   sendBtn: {
     width: 40,

@@ -78,6 +78,8 @@ export function TagPicker({ selected, onChange, compact }: TagPickerProps) {
                 ]}
                 onPress={() => toggle(tag)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
               >
                 <Text
                   style={[
@@ -117,6 +119,7 @@ export function TagPicker({ selected, onChange, compact }: TagPickerProps) {
                     key={tag}
                     style={[
                       styles.chip,
+                      styles.chipWrapped,
                       isActive && {
                         borderColor: color,
                         backgroundColor: color + '22',
@@ -124,6 +127,8 @@ export function TagPicker({ selected, onChange, compact }: TagPickerProps) {
                     ]}
                     onPress={() => toggle(tag)}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
                   >
                     {isActive && (
                       <Ionicons name="checkmark" size={12} color={color} />
@@ -185,6 +190,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   groupLabel: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -206,7 +212,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     backgroundColor: Colors.surfaceLight,
   },
+  chipWrapped: {
+    maxWidth: '100%',
+  },
   chipText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -225,6 +235,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   badge: {
+    maxWidth: '100%',
     paddingVertical: 2,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.sm,

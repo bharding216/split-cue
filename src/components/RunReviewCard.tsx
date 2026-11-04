@@ -51,7 +51,12 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
         <Ionicons name="sparkles" size={18} color={Colors.accent} />
         <Text style={styles.title}>Coach review</Text>
         {placement === 'training' && (
-          <TouchableOpacity onPress={dismissRunReview} hitSlop={12} accessibilityLabel="Dismiss coach review">
+          <TouchableOpacity
+            onPress={dismissRunReview}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss coach review"
+          >
             <Ionicons name="close" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
         )}
@@ -123,6 +128,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   loadingText: {
+    flex: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },

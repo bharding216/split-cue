@@ -52,7 +52,8 @@ import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
 import { StravaPushButton } from '../../src/strava/StravaPushButton';
 import { shareWorkoutResults } from '../../src/sharing/shareWorkout';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
+import { useLargeText } from '../../src/hooks/useLargeText';
 
 function formatDateFull(epoch: number): string {
   return new Date(epoch).toLocaleDateString(undefined, {
@@ -125,6 +126,7 @@ export default function RunDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
+  const large = useLargeText();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
   const [loading, setLoading] = useState(true);
@@ -226,24 +228,29 @@ export default function RunDetailsScreen() {
         </View>
 
         <Text style={[styles.groupTitle, styles.groupTitleFirst]}>Performance</Text>
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>
+        <View style={[styles.statsRow, large && styles.statsRowLarge]}>
+          <View style={[styles.statCard, large && styles.statCardLarge]}>
+            <Text style={styles.statValue} maxFontSizeMultiplier={MaxFontScale.display}>
               {formatTime(Math.floor(run.totalDurationMs / 1000))}
             </Text>
             <Text style={styles.statLabel}>Duration</Text>
           </View>
           {run.totalDistanceMeters != null && run.totalDistanceMeters > 0 && (
-            <View style={styles.statCard}>
-              <Text style={[styles.statValue, { color: Colors.accent }]}>
+            <View style={[styles.statCard, large && styles.statCardLarge]}>
+              <Text
+                style={[styles.statValue, { color: Colors.accent }]}
+                maxFontSizeMultiplier={MaxFontScale.display}
+              >
                 {formatDistance(run.totalDistanceMeters, paceUnit)}
               </Text>
               <Text style={styles.statLabel}>Distance</Text>
             </View>
           )}
           {run.splits && run.splits.length > 0 && (
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{run.splits.length}</Text>
+            <View style={[styles.statCard, large && styles.statCardLarge]}>
+              <Text style={styles.statValue} maxFontSizeMultiplier={MaxFontScale.display}>
+                {run.splits.length}
+              </Text>
               <Text style={styles.statLabel}>Splits</Text>
             </View>
           )}
@@ -322,9 +329,9 @@ export default function RunDetailsScreen() {
           </View>
         )}
 
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, large && styles.actionRowLarge]}>
           <TouchableOpacity
-            style={styles.actionBtn}
+            style={[styles.actionBtn, large && styles.actionBtnLarge]}
             onPress={() => {
               if (run.configuration) {
                 const draft = { ...run.configuration, id: generateId(), updatedAt: Date.now() };
@@ -340,7 +347,7 @@ export default function RunDetailsScreen() {
             <Text style={styles.actionBtnText}>Run Again</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.actionBtnSecondary}
+            style={[styles.actionBtnSecondary, large && styles.actionBtnLarge]}
             onPress={handleShare}
             activeOpacity={0.7}
           >
@@ -409,6 +416,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
   },
+  statsRowLarge: {
+    flexDirection: 'column',
+  },
   statCard: {
     flex: 1,
     backgroundColor: Colors.surface,
@@ -417,6 +427,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  statCardLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
   },
   statValue: {
     fontSize: FontSize.xl,
@@ -476,6 +490,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
+  actionRowLarge: {
+    flexDirection: 'column',
+  },
   actionBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -486,7 +503,13 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.xs,
   },
+  actionBtnLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+    paddingHorizontal: Spacing.md,
+  },
   actionBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.black,
@@ -502,6 +525,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   actionBtnSecondaryText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -516,8 +540,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary + '44',
     borderStyle: 'dashed',
     gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
   },
   templateBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.primary,

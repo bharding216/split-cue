@@ -30,8 +30,9 @@ import {
   DayPreference,
   normalizeDayPreferences,
 } from '../../../src/types/database';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
+import { useLargeText } from '../../../src/hooks/useLargeText';
 
 // ── Tab definitions ──────────────────────────────────────────
 
@@ -213,6 +214,7 @@ function RaceTimeRow({
   entry: RaceTimeEntry;
   onChange: (tier: keyof RaceTimeEntry, seconds: number | null) => void;
 }) {
+  const large = useLargeText();
   const [expanded, setExpanded] = useState(false);
   const [texts, setTexts] = useState<Record<string, string>>({
     slow: entry.slow != null ? secondsToDisplay(entry.slow) : '',
@@ -260,7 +262,7 @@ function RaceTimeRow({
         />
       </TouchableOpacity>
       {expanded && (
-        <View style={styles.raceTimeFields}>
+        <View style={[styles.raceTimeFields, large && styles.stackLarge]}>
           {PACE_TIERS.map((tier) => (
             <View key={tier.key} style={styles.raceTimeFieldWrap}>
               <Text style={styles.raceTimeTierLabel}>{tier.label}</Text>
@@ -331,7 +333,11 @@ function PreferenceSection({
       <View style={styles.prefHeader}>
         <Text style={styles.tabSectionTitle}>{title}</Text>
         {availablePresets.length > 0 && (
-          <TouchableOpacity onPress={() => setShowPresets((p) => !p)} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => setShowPresets((p) => !p)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={styles.suggestionsToggle}>
               {showPresets ? 'Hide' : 'Suggestions'}
             </Text>
@@ -360,6 +366,8 @@ function PreferenceSection({
           <TouchableOpacity
             onPress={() => removeItem(item.id)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${item.content}`}
           >
             <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -376,7 +384,12 @@ function PreferenceSection({
           returnKeyType="done"
           onSubmitEditing={() => addItem()}
         />
-        <TouchableOpacity style={styles.addButton} onPress={() => addItem()}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => addItem()}
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${title.toLowerCase().replace(/s$/, '')}`}
+        >
           <Ionicons name="add" size={20} color={Colors.black} />
         </TouchableOpacity>
       </View>
@@ -389,6 +402,7 @@ function PreferenceSection({
 export default function RunningProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const large = useLargeText();
   const [activeTab, setActiveTab] = useState<TabKey>('basics');
   const [profile, setProfile] = useState<RunningProfile | null>(null);
   const [preferences, setPreferences] = useState<RunningPreference[]>([]);
@@ -555,15 +569,17 @@ export default function RunningProfileScreen() {
   return (
     <View style={styles.container}>
       {/* Tab bar */}
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, large && styles.tabBarLarge]}>
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           return (
             <TouchableOpacity
               key={tab.key}
-              style={styles.tabItem}
+              style={[styles.tabItem, large && styles.tabItemLarge]}
               onPress={() => { hapticTap(); setActiveTab(tab.key); }}
               activeOpacity={0.7}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
             >
               <Ionicons
                 name={tab.icon}
@@ -572,7 +588,8 @@ export default function RunningProfileScreen() {
               />
               <Text
                 style={[styles.tabLabel, isActive && styles.tabLabelActive]}
-                numberOfLines={1}
+                numberOfLines={large ? undefined : 1}
+                maxFontSizeMultiplier={MaxFontScale.display}
               >
                 {tab.label}
               </Text>
@@ -616,7 +633,7 @@ export default function RunningProfileScreen() {
 
             <View style={styles.tabSection}>
               <Text style={styles.tabSectionTitle}>Current Fitness</Text>
-              <View style={styles.fitnessRow}>
+              <View style={[styles.fitnessRow, large && styles.stackLarge]}>
                 <View style={styles.fitnessInput}>
                   <Text style={styles.fieldLabel}>Weekly mileage</Text>
                   <View style={styles.fieldWithUnit}>
@@ -704,7 +721,7 @@ export default function RunningProfileScreen() {
               <Text style={styles.tabSectionSub}>
                 Enter as minutes:seconds — e.g. 9:30
               </Text>
-              <View style={styles.paceRow}>
+              <View style={[styles.paceRow, large && styles.stackLarge]}>
                 <View style={styles.paceInput}>
                   <Text style={styles.fieldLabel}>Easy pace</Text>
                   <TextInput
@@ -764,7 +781,7 @@ export default function RunningProfileScreen() {
               <Text style={styles.tabSectionSub}>
                 Tap once for flexible, twice for locked in. Locked days always get a workout; flexible days can shift if life gets busy.
               </Text>
-              <View style={styles.dayChipsRow}>
+              <View style={[styles.dayChipsRow, large && styles.dayChipsRowLarge]}>
                 {DAYS_OF_WEEK.map((day) => {
                   const days = normalizeDayPreferences(profile?.preferred_days);
                   const entry = days.find((d) => d.day === day.key);
@@ -774,6 +791,7 @@ export default function RunningProfileScreen() {
                       key={day.key}
                       style={[
                         styles.dayChip,
+                        large && styles.dayChipLarge,
                         state === 'flexible' && styles.dayChipFlexible,
                         state === 'locked' && styles.dayChipLocked,
                       ]}
@@ -795,11 +813,14 @@ export default function RunningProfileScreen() {
                       {state === 'locked' && (
                         <Ionicons name="lock-closed" size={10} color={Colors.primary} style={{ marginBottom: 1 }} />
                       )}
-                      <Text style={[
-                        styles.dayChipText,
-                        state === 'flexible' && styles.dayChipTextFlexible,
-                        state === 'locked' && styles.dayChipTextLocked,
-                      ]}>
+                      <Text
+                        style={[
+                          styles.dayChipText,
+                          state === 'flexible' && styles.dayChipTextFlexible,
+                          state === 'locked' && styles.dayChipTextLocked,
+                        ]}
+                        maxFontSizeMultiplier={MaxFontScale.display}
+                      >
                         {day.label}
                       </Text>
                     </TouchableOpacity>
@@ -938,6 +959,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceLight,
   },
+  tabBarLarge: {
+    flexWrap: 'wrap',
+  },
   tabItem: {
     flex: 1,
     alignItems: 'center',
@@ -945,6 +969,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     gap: 3,
     position: 'relative',
+  },
+  tabItemLarge: {
+    flexBasis: '50%',
   },
   tabLabel: {
     fontSize: FontSize.xs,
@@ -980,6 +1007,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   tabSectionTitle: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -1018,6 +1046,10 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+
+  stackLarge: {
+    flexDirection: 'column',
   },
 
   // Fitness / field helpers
@@ -1061,6 +1093,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   durationChip: {
+    flexShrink: 1,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.full,
     paddingVertical: Spacing.sm,
@@ -1093,6 +1126,7 @@ const styles = StyleSheet.create({
   // Race times
   raceTimeTitleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.sm,
   },
@@ -1164,6 +1198,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.xs,
   },
+  dayChipsRowLarge: {
+    flexWrap: 'wrap',
+  },
   dayChip: {
     flex: 1,
     alignItems: 'center',
@@ -1173,6 +1210,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 2,
     borderColor: Colors.surfaceLight,
+  },
+  dayChipLarge: {
+    flexBasis: '22%',
   },
   dayChipFlexible: {
     borderColor: Colors.primary,
@@ -1195,6 +1235,7 @@ const styles = StyleSheet.create({
   },
   dayLegend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.md,
     marginTop: Spacing.sm,
   },
@@ -1223,6 +1264,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   crossChip: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
@@ -1238,6 +1280,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '12',
   },
   crossChipText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -1251,6 +1294,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   suggestionsToggle: {
@@ -1259,6 +1303,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   presetChip: {
+    flexShrink: 1,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.full,
     paddingVertical: Spacing.xs + 2,
@@ -1358,7 +1403,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl * 2,
+    paddingHorizontal: Spacing.lg,
     alignSelf: 'stretch',
   },
   signInButtonText: {

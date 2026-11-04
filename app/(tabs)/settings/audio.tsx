@@ -25,7 +25,7 @@ import {
   DEFAULT_SETTINGS,
 } from '../../../src/workout/workoutTypes';
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
 import { CueBasisToggle, CueDistanceChips } from '../../../src/components/CueScheduleControls';
 import {
@@ -170,6 +170,7 @@ export default function AudioSettingsScreen() {
             }}
             trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
             thumbColor={Colors.white}
+            accessibilityLabel="Lower music during cues"
           />
         </View>
       )}
@@ -185,6 +186,8 @@ export default function AudioSettingsScreen() {
               setVoicePickerVisible(true);
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityHint="Choose a voice"
           >
             <Ionicons
               name={premiumActive ? 'sparkles' : 'phone-portrait-outline'}
@@ -210,7 +213,7 @@ export default function AudioSettingsScreen() {
             {voicesLoading ? (
               <ActivityIndicator color={Colors.textSecondary} size="small" />
             ) : (
-              <Text style={styles.chevron}>›</Text>
+              <Text style={styles.chevron} maxFontSizeMultiplier={MaxFontScale.display}>›</Text>
             )}
           </TouchableOpacity>
 
@@ -269,7 +272,7 @@ export default function AudioSettingsScreen() {
                   Opens Settings › Accessibility › Read & Speak › Voices › English
                 </Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <Text style={styles.chevron} maxFontSizeMultiplier={MaxFontScale.display}>›</Text>
             </TouchableOpacity>
           )}
         </>

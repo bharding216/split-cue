@@ -183,6 +183,7 @@ export function StravaPushButton({
           <TouchableOpacity
             onPress={() => Linking.openURL(activityUrl)}
             activeOpacity={0.7}
+            accessibilityRole="link"
           >
             <Text style={styles.viewLink}>View on Strava</Text>
           </TouchableOpacity>
@@ -202,6 +203,8 @@ export function StravaPushButton({
           style={styles.retryBtn}
           onPress={handlePush}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Retry Strava upload"
         >
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
@@ -280,6 +283,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   pushBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: '#FFFFFF',
@@ -299,6 +304,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   signInText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -317,6 +324,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   successText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.primary,

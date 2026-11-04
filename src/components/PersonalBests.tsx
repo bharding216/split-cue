@@ -17,9 +17,10 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import type { PersonalRecord, AwardBadge } from '../stats/personalRecords';
 import { useUnits } from '../hooks/useUnits';
+import { useLargeText } from '../hooks/useLargeText';
 import { distanceUnitName, toDisplayDistance } from '../units/format';
 
 // ── Tier colors ──────────────────────────────────────────────────────
@@ -37,6 +38,8 @@ interface RecordsGridProps {
 }
 
 export function RecordsGrid({ records }: RecordsGridProps) {
+  const large = useLargeText();
+
   if (records.length === 0) return null;
 
   return (
@@ -47,25 +50,25 @@ export function RecordsGrid({ records }: RecordsGridProps) {
       </View>
       <View style={gridStyles.grid}>
         {records.map((record) => (
-          <View key={record.category} style={gridStyles.card}>
+          <View key={record.category} style={[gridStyles.card, large && gridStyles.cardLarge]}>
             <Ionicons
               name={record.icon as any}
               size={20}
               color={Colors.primary}
               style={gridStyles.cardIcon}
             />
-            <Text style={gridStyles.cardLabel} numberOfLines={1}>
+            <Text style={gridStyles.cardLabel} numberOfLines={large ? undefined : 1}>
               {record.label}
             </Text>
             <View style={gridStyles.cardValueRow}>
-              <Text style={gridStyles.cardValue}>
+              <Text style={gridStyles.cardValue} maxFontSizeMultiplier={MaxFontScale.display}>
                 {record.displayValue}
               </Text>
               {record.unit ? (
                 <Text style={gridStyles.cardUnit}>{record.unit}</Text>
               ) : null}
             </View>
-            <Text style={gridStyles.cardDate} numberOfLines={1}>
+            <Text style={gridStyles.cardDate} numberOfLines={large ? undefined : 1}>
               {record.workoutName}
             </Text>
           </View>
@@ -86,6 +89,7 @@ const gridStyles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   title: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -103,6 +107,9 @@ const gridStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
+  cardLarge: {
+    width: '100%',
+  },
   cardIcon: {
     marginBottom: Spacing.xs,
   },
@@ -116,6 +123,7 @@ const gridStyles = StyleSheet.create({
   },
   cardValueRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
     gap: 2,
   },
@@ -144,7 +152,45 @@ interface AwardsListProps {
 }
 
 export function AwardsList({ awards }: AwardsListProps) {
+  const large = useLargeText();
+
   if (awards.length === 0) return null;
+
+  const badges = awards.map((award) => (
+    <View
+      key={award.id}
+      style={[
+        awardStyles.badge,
+        large && awardStyles.badgeLarge,
+        { borderColor: TIER_COLORS[award.tier] + '66' },
+      ]}
+    >
+      <View
+        style={[
+          awardStyles.iconCircle,
+          { backgroundColor: TIER_COLORS[award.tier] + '22' },
+        ]}
+      >
+        <Ionicons
+          name={award.icon as any}
+          size={18}
+          color={TIER_COLORS[award.tier]}
+        />
+      </View>
+      <Text style={awardStyles.badgeLabel} numberOfLines={large ? undefined : 1}>
+        {award.label}
+      </Text>
+      <Text style={awardStyles.badgeDesc} numberOfLines={large ? undefined : 2}>
+        {award.description}
+      </Text>
+      <Text style={awardStyles.badgeDate}>
+        {new Date(award.earnedAt).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        })}
+      </Text>
+    </View>
+  ));
 
   return (
     <View style={awardStyles.container}>
@@ -153,46 +199,17 @@ export function AwardsList({ awards }: AwardsListProps) {
         <Text style={awardStyles.title}>Awards & Milestones</Text>
         <Text style={awardStyles.count}>{awards.length}</Text>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={awardStyles.scroll}
-      >
-        {awards.map((award) => (
-          <View
-            key={award.id}
-            style={[
-              awardStyles.badge,
-              { borderColor: TIER_COLORS[award.tier] + '66' },
-            ]}
-          >
-            <View
-              style={[
-                awardStyles.iconCircle,
-                { backgroundColor: TIER_COLORS[award.tier] + '22' },
-              ]}
-            >
-              <Ionicons
-                name={award.icon as any}
-                size={18}
-                color={TIER_COLORS[award.tier]}
-              />
-            </View>
-            <Text style={awardStyles.badgeLabel} numberOfLines={1}>
-              {award.label}
-            </Text>
-            <Text style={awardStyles.badgeDesc} numberOfLines={2}>
-              {award.description}
-            </Text>
-            <Text style={awardStyles.badgeDate}>
-              {new Date(award.earnedAt).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              })}
-            </Text>
-          </View>
-        ))}
-      </ScrollView>
+      {large ? (
+        <View style={awardStyles.list}>{badges}</View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={awardStyles.scroll}
+        >
+          {badges}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -226,12 +243,18 @@ const awardStyles = StyleSheet.create({
     gap: Spacing.sm,
     paddingRight: Spacing.md,
   },
+  list: {
+    gap: Spacing.sm,
+  },
   badge: {
     width: 140,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     borderWidth: 1.5,
+  },
+  badgeLarge: {
+    width: '100%',
   },
   iconCircle: {
     width: 36,
@@ -300,7 +323,7 @@ export function PrimaryAchievement({ records, awards }: PrimaryAchievementProps)
 
   return (
     <Animated.View style={[primaryStyles.container, animatedStyle]}>
-      <Text style={primaryStyles.headline}>
+      <Text style={primaryStyles.headline} maxFontSizeMultiplier={MaxFontScale.display}>
         {record ? '🏆 NEW PERSONAL BEST!' : '🎖️ AWARD EARNED!'}
       </Text>
       {record ? (
@@ -353,6 +376,8 @@ interface NewRecordsBannerProps {
 }
 
 export function NewRecordsBanner({ records, awards }: NewRecordsBannerProps) {
+  const large = useLargeText();
+
   if (records.length === 0 && awards.length === 0) return null;
 
   return (
@@ -361,14 +386,16 @@ export function NewRecordsBanner({ records, awards }: NewRecordsBannerProps) {
         <View style={bannerStyles.section}>
           <View style={bannerStyles.headerRow}>
             <Text style={bannerStyles.emoji}>🏆</Text>
-            <Text style={bannerStyles.headerText}>
+            <Text style={bannerStyles.headerText} maxFontSizeMultiplier={MaxFontScale.display}>
               New Personal {records.length === 1 ? 'Record' : 'Records'}!
             </Text>
           </View>
           {records.map((r) => (
-            <View key={r.category} style={bannerStyles.recordRow}>
+            <View key={r.category} style={[bannerStyles.recordRow, large && bannerStyles.recordRowLarge]}>
               <Ionicons name={r.icon as any} size={16} color={Colors.primary} />
-              <Text style={bannerStyles.recordLabel}>{r.label}</Text>
+              <Text style={[bannerStyles.recordLabel, large && bannerStyles.recordLabelLarge]}>
+                {r.label}
+              </Text>
               <Text style={bannerStyles.recordValue}>
                 {r.displayValue}
                 {r.unit ? r.unit : ''}
@@ -382,7 +409,7 @@ export function NewRecordsBanner({ records, awards }: NewRecordsBannerProps) {
         <View style={bannerStyles.section}>
           <View style={bannerStyles.headerRow}>
             <Text style={bannerStyles.emoji}>🎖️</Text>
-            <Text style={bannerStyles.headerText}>
+            <Text style={bannerStyles.headerText} maxFontSizeMultiplier={MaxFontScale.display}>
               {awards.length === 1 ? 'Award' : 'Awards'} Earned!
             </Text>
           </View>
@@ -429,6 +456,7 @@ const bannerStyles = StyleSheet.create({
     fontSize: 20,
   },
   headerText: {
+    flexShrink: 1,
     fontSize: FontSize.lg,
     fontWeight: '900',
     color: Colors.primary,
@@ -439,11 +467,17 @@ const bannerStyles = StyleSheet.create({
     gap: Spacing.sm,
     paddingVertical: Spacing.xs,
   },
+  recordRowLarge: {
+    flexWrap: 'wrap',
+  },
   recordLabel: {
     flex: 1,
     fontSize: FontSize.md,
     color: Colors.textPrimary,
     fontWeight: '600',
+  },
+  recordLabelLarge: {
+    flexBasis: 'auto',
   },
   recordValue: {
     fontSize: FontSize.md,
@@ -487,25 +521,29 @@ export function LifetimeStats({
   totalDurationMs,
 }: LifetimeStatsProps) {
   const unit = useUnits();
+  const large = useLargeText();
   const distance = toDisplayDistance(totalDistanceMeters, unit);
   const hours = totalDurationMs / 3600000;
 
   return (
-    <View style={lifeStyles.container}>
+    <View style={[lifeStyles.container, large && lifeStyles.containerLarge]}>
       <StatPill
         icon="footsteps-outline"
         label="Workouts"
         value={totalWorkouts.toString()}
+        large={large}
       />
       <StatPill
         icon="map-outline"
         label={distanceUnitName(unit)}
         value={distance >= 100 ? Math.round(distance).toString() : distance.toFixed(1)}
+        large={large}
       />
       <StatPill
         icon="time-outline"
         label="Hours"
         value={hours >= 10 ? Math.round(hours).toString() : hours.toFixed(1)}
+        large={large}
       />
     </View>
   );
@@ -515,15 +553,19 @@ function StatPill({
   icon,
   label,
   value,
+  large,
 }: {
   icon: string;
   label: string;
   value: string;
+  large: boolean;
 }) {
   return (
-    <View style={lifeStyles.pill}>
+    <View style={[lifeStyles.pill, large && lifeStyles.pillLarge]}>
       <Ionicons name={icon as any} size={16} color={Colors.accent} />
-      <Text style={lifeStyles.pillValue}>{value}</Text>
+      <Text style={lifeStyles.pillValue} maxFontSizeMultiplier={MaxFontScale.display}>
+        {value}
+      </Text>
       <Text style={lifeStyles.pillLabel}>{label}</Text>
     </View>
   );
@@ -535,6 +577,9 @@ const lifeStyles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.lg,
   },
+  containerLarge: {
+    flexDirection: 'column',
+  },
   pill: {
     flex: 1,
     alignItems: 'center',
@@ -545,6 +590,15 @@ const lifeStyles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     gap: 2,
   },
+  pillLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    columnGap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
   pillValue: {
     fontSize: FontSize.xl,
     fontWeight: '800',
@@ -552,6 +606,7 @@ const lifeStyles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   pillLabel: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     fontWeight: '600',

@@ -154,6 +154,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   actionBtnLabel: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '600',
     color: Colors.textPrimary,

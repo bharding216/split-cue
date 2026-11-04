@@ -108,6 +108,7 @@ export default function SettingsHubScreen() {
             router.push(card.route as any);
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
         >
           <Ionicons name={card.icon} size={26} color={Colors.textSecondary} />
           <View style={styles.cardBody}>
@@ -122,7 +123,7 @@ export default function SettingsHubScreen() {
         <View style={styles.devSection}>
           <Text style={styles.devHeader}>🛠 Dev Tools</Text>
           <View style={styles.devRow}>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, marginRight: Spacing.md }}>
               <Text style={styles.cardTitle}>Pro Override</Text>
               <Text style={styles.cardDescription}>
                 {devOverrideTier != null
@@ -134,6 +135,7 @@ export default function SettingsHubScreen() {
               value={devOverrideTier === 'pro'}
               onValueChange={(on) => setDevOverrideTier(on ? 'pro' : null)}
               trackColor={{ true: Colors.primary }}
+              accessibilityLabel="Pro Override"
             />
           </View>
         </View>
@@ -188,6 +190,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: Spacing.sm,
     backgroundColor: Colors.surface,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
@@ -196,6 +200,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   unitTitle: {
+    flexShrink: 1,
+    marginRight: Spacing.md,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,

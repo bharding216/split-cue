@@ -26,7 +26,8 @@ import { ContextualProPrompt } from '../../../src/components/ContextualProPrompt
 import { VoicePlanAdjustSheet } from '../../../src/components/VoicePlanAdjustSheet';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { DELETED_PLAN_RETENTION_DAYS } from '../../../src/ai/planService';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { useLargeText, useScaledSize } from '../../../src/hooks/useLargeText';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 
 function formatRaceLabel(raceType: string): string {
   switch (raceType) {
@@ -76,6 +77,8 @@ export default function PlanOverviewScreen() {
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [editingTitle, setEditingTitle] = useState('');
   const [showAdjustSheet, setShowAdjustSheet] = useState(false);
+  const large = useLargeText();
+  const dayOptionSize = useScaledSize(52, MaxFontScale.display);
 
   const primaryPlan = useMemo(
     () => plans.find((p) => p.race_type !== 'custom' || (p.outline && p.outline.length > 0)) ?? null,
@@ -226,7 +229,7 @@ export default function PlanOverviewScreen() {
   const archivedRows = archivedRacePlans.map((p) => (
     <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
       <View style={styles.planRowInfo}>
-        <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
+        <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={large ? undefined : 1}>
           {p.title || formatRaceLabel(p.race_type)}
         </Text>
         <Text style={styles.planRowMeta}>
@@ -238,7 +241,9 @@ export default function PlanOverviewScreen() {
         onPress={() => handleRestorePlan(p.id)}
         disabled={restoring === p.id || deleting === p.id}
         activeOpacity={0.7}
+        accessibilityRole="button"
         accessibilityLabel="Restore plan"
+        hitSlop={4}
       >
         <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
       </TouchableOpacity>
@@ -247,7 +252,9 @@ export default function PlanOverviewScreen() {
         onPress={() => handleDeletePlan(p.id, p.title || formatRaceLabel(p.race_type))}
         disabled={restoring === p.id || deleting === p.id}
         activeOpacity={0.7}
+        accessibilityRole="button"
         accessibilityLabel="Delete plan"
+        hitSlop={4}
       >
         <Ionicons name="trash-outline" size={16} color={Colors.danger} />
       </TouchableOpacity>
@@ -259,7 +266,7 @@ export default function PlanOverviewScreen() {
     return (
       <View key={p.id} style={[styles.planRow, styles.planRowArchived]}>
         <View style={styles.planRowInfo}>
-          <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={1}>
+          <Text style={[styles.planRowName, styles.archivedName]} numberOfLines={large ? undefined : 1}>
             {p.title || formatRaceLabel(p.race_type)}
           </Text>
           <Text style={styles.planRowMeta}>
@@ -271,7 +278,9 @@ export default function PlanOverviewScreen() {
           onPress={() => handleRecoverPlan(p.id)}
           disabled={recovering === p.id}
           activeOpacity={0.7}
+          accessibilityRole="button"
           accessibilityLabel="Recover plan"
+          hitSlop={4}
         >
           <Ionicons name="arrow-undo-outline" size={16} color={Colors.accent} />
         </TouchableOpacity>
@@ -295,7 +304,7 @@ export default function PlanOverviewScreen() {
             onPress={startPlanCreation}
             activeOpacity={0.8}
           >
-            <Text style={styles.createBtnText}>Create Plan</Text>
+            <Text style={styles.createBtnText} maxFontSizeMultiplier={MaxFontScale.display}>Create Plan</Text>
           </TouchableOpacity>
         </View>
 
@@ -328,8 +337,14 @@ export default function PlanOverviewScreen() {
           style={styles.titleRow}
           onPress={handleEditTitle}
           activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityHint="Edit plan name"
         >
-          <Text style={styles.planTitle} numberOfLines={1}>
+          <Text
+            style={styles.planTitle}
+            numberOfLines={large ? undefined : 1}
+            maxFontSizeMultiplier={MaxFontScale.display}
+          >
             {primaryPlan.title || formatRaceLabel(primaryPlan.race_type)}
           </Text>
           <Ionicons name="pencil" size={16} color={Colors.primary} />
@@ -340,24 +355,30 @@ export default function PlanOverviewScreen() {
       </View>
 
       {/* Stats row */}
-      <View style={styles.statsRow}>
-        <View style={styles.stat}>
+      <View style={[styles.statsRow, large && styles.statsRowLarge]}>
+        <View style={[styles.stat, large && styles.statLarge]}>
           <Text style={styles.statValue}>{currentWeekNumber} / {totalWeeks}</Text>
           <Text style={styles.statLabel}>Current week</Text>
         </View>
-        <View style={styles.statDivider} />
-        <TouchableOpacity style={styles.stat} onPress={() => setShowDaysPicker(true)} activeOpacity={0.6}>
+        <View style={[styles.statDivider, large && styles.statDividerLarge]} />
+        <TouchableOpacity
+          style={[styles.stat, large && styles.statLarge]}
+          onPress={() => setShowDaysPicker(true)}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+        >
           <View style={styles.editableValue}>
             <Text style={styles.statValue}>{primaryPlan.days_per_week}</Text>
             <Ionicons name="pencil" size={14} color={Colors.primary} />
           </View>
           <Text style={styles.statLabel}>Runs / week</Text>
         </TouchableOpacity>
-        <View style={styles.statDivider} />
+        <View style={[styles.statDivider, large && styles.statDividerLarge]} />
         <TouchableOpacity
-          style={styles.stat}
+          style={[styles.stat, large && styles.statLarge]}
           onPress={() => setShowDatePicker(true)}
           activeOpacity={0.6}
+          accessibilityRole="button"
         >
           <View style={styles.editableValue}>
             <Text style={styles.statValue}>
@@ -381,7 +402,7 @@ export default function PlanOverviewScreen() {
           activeOpacity={1}
           onPress={() => setShowDaysPicker(false)}
         >
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, large && styles.modalContentLarge]}>
             <Text style={styles.modalTitle}>Runs per week</Text>
             <View style={styles.daysGrid}>
               {[1, 2, 3, 4, 5, 6, 7].map((n) => (
@@ -389,16 +410,21 @@ export default function PlanOverviewScreen() {
                   key={n}
                   style={[
                     styles.dayOption,
+                    { width: dayOptionSize, height: dayOptionSize },
                     n === primaryPlan.days_per_week && styles.dayOptionActive,
                   ]}
                   onPress={() => handleUpdateDaysPerWeek(n)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${n} ${n === 1 ? 'run' : 'runs'} per week`}
+                  accessibilityState={{ selected: n === primaryPlan.days_per_week }}
                 >
                   <Text
                     style={[
                       styles.dayOptionText,
                       n === primaryPlan.days_per_week && styles.dayOptionTextActive,
                     ]}
+                    maxFontSizeMultiplier={MaxFontScale.display}
                   >
                     {n}
                   </Text>
@@ -470,7 +496,7 @@ export default function PlanOverviewScreen() {
           activeOpacity={1}
           onPress={() => setShowTitleEditor(false)}
         >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+          <View style={[styles.modalContent, large && styles.modalContentLarge]} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>Plan name</Text>
             <TextInput
               style={styles.titleInput}
@@ -518,7 +544,7 @@ export default function PlanOverviewScreen() {
         activeOpacity={0.8}
       >
         <Ionicons name="mic" size={18} color={Colors.black} />
-        <Text style={styles.adjustBtnText}>Adjust My Plan</Text>
+        <Text style={styles.adjustBtnText} maxFontSizeMultiplier={MaxFontScale.display}>Adjust My Plan</Text>
       </TouchableOpacity>
 
       <VoicePlanAdjustSheet
@@ -544,8 +570,13 @@ export default function PlanOverviewScreen() {
             return (
               <View key={p.id} style={styles.planRow}>
                 <View style={styles.planRowInfo}>
-                  <View style={styles.planRowHeader}>
-                    <Text style={styles.planRowName} numberOfLines={1}>{p.title || formatRaceLabel(p.race_type)}</Text>
+                  <View style={[styles.planRowHeader, large && styles.planRowHeaderLarge]}>
+                    <Text
+                      style={[styles.planRowName, large && styles.planRowNameLarge]}
+                      numberOfLines={large ? undefined : 1}
+                    >
+                      {p.title || formatRaceLabel(p.race_type)}
+                    </Text>
                     {isPrimary && allRacePlans.length > 1 && (
                       <View style={styles.primaryBadge}>
                         <Text style={styles.primaryBadgeText}>Active</Text>
@@ -561,6 +592,9 @@ export default function PlanOverviewScreen() {
                   onPress={() => handleArchivePlan(p.id, p.title || formatRaceLabel(p.race_type))}
                   disabled={archiving === p.id}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Archive plan"
+                  hitSlop={4}
                 >
                   <Ionicons name="archive-outline" size={16} color={Colors.textMuted} />
                 </TouchableOpacity>
@@ -661,10 +695,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
+  statsRowLarge: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
   stat: {
     flex: 1,
     alignItems: 'center',
     gap: 2,
+  },
+  statLarge: {
+    flex: 0,
   },
   statValue: {
     fontSize: FontSize.lg,
@@ -687,6 +728,11 @@ const styles = StyleSheet.create({
     height: 32,
     backgroundColor: Colors.surfaceLight,
   },
+  statDividerLarge: {
+    width: '100%',
+    height: 1,
+    marginVertical: Spacing.sm,
+  },
 
   // Modal
   modalOverlay: {
@@ -703,6 +749,10 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  modalContentLarge: {
+    width: '92%',
+    maxWidth: 480,
   },
   dateModalContent: {
     backgroundColor: Colors.surface,
@@ -785,6 +835,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   adjustBtnText: {
+    flexShrink: 1,
     color: Colors.black,
     fontSize: FontSize.md,
     fontWeight: '800',
@@ -821,11 +872,19 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: 2,
   },
+  planRowHeaderLarge: {
+    flexWrap: 'wrap',
+    rowGap: Spacing.xs,
+  },
   planRowName: {
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
     flex: 1,
+  },
+  planRowNameLarge: {
+    flex: 0,
+    flexShrink: 1,
   },
   primaryBadge: {
     backgroundColor: Colors.primary + '20',

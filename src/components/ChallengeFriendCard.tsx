@@ -16,6 +16,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
+import { useLargeText } from '../hooks/useLargeText';
 import type { WorkoutDefinition } from '../workout/workoutTypes';
 import type { PaceUnit } from '../pace/paceTypes';
 import {
@@ -38,6 +39,7 @@ export function ChallengeFriendCard({
 }: Props) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const large = useLargeText();
 
   const mark = formatChallengeMark({
     totalDurationMs,
@@ -63,11 +65,11 @@ export function ChallengeFriendCard({
 
   return (
     <View style={styles.card}>
-      <View style={styles.row}>
+      <View style={[styles.row, large && styles.rowLarge]}>
         <View style={styles.iconCircle}>
           <Ionicons name="people" size={22} color={Colors.primary} />
         </View>
-        <View style={styles.text}>
+        <View style={[styles.text, large && styles.textLarge]}>
           <Text style={styles.title}>Challenge a friend</Text>
           <Text style={styles.message}>
             {sent
@@ -120,6 +122,10 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     marginBottom: Spacing.md,
   },
+  rowLarge: {
+    flexDirection: 'column',
+    gap: Spacing.sm,
+  },
   iconCircle: {
     width: 44,
     height: 44,
@@ -130,6 +136,10 @@ const styles = StyleSheet.create({
   },
   text: {
     flex: 1,
+  },
+  textLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
   },
   title: {
     fontSize: FontSize.md,
@@ -156,10 +166,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.xs,
     minHeight: 40,
   },
   buttonText: {
+    flexShrink: 1,
+    textAlign: 'center',
     color: Colors.black,
     fontSize: FontSize.sm,
     fontWeight: '800',

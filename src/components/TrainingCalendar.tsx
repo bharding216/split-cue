@@ -21,8 +21,9 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import type { DayEntry } from '../contexts/TrainingPlanContext';
+import { useLargeText, useScaledSize } from '../hooks/useLargeText';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -49,6 +50,14 @@ interface TrainingCalendarProps {
 
 const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+/** Text inside the 7-column grid can't widen its cell, so it scales less than body text. */
+const CELL_FONT_SCALE = 1.3;
+
+function dayA11yLabel(day: Date, extras: (string | false | undefined)[]): string {
+  const date = day.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return [date, ...extras.filter(Boolean)].join(', ');
+}
 
 function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -135,6 +144,9 @@ export function TrainingCalendar({
   const raceDateSet = useMemo(() => new Set(raceDates ?? []), [raceDates]);
   const goalDateSet = useMemo(() => new Set(goalDates ?? []), [goalDates]);
   const today = todayKey();
+  const large = useLargeText();
+  const dayNumberSize = useScaledSize(28, CELL_FONT_SCALE);
+  const weekDayNumberSize = useScaledSize(24, CELL_FONT_SCALE);
 
   // Compute the 14-day AI coach window boundary
   const aiWindowEnd = useMemo(() => {
@@ -249,15 +261,38 @@ export function TrainingCalendar({
     <View style={styles.container}>
       {/* Header: navigation + view toggle */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={navigatePrev} hitSlop={12}>
+        <TouchableOpacity
+          onPress={navigatePrev}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={viewMode === 'month' ? 'Previous month' : 'Previous week'}
+        >
           <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={goToToday} activeOpacity={0.7}>
-          <Text style={styles.headerTitle}>{headerText}</Text>
+        <TouchableOpacity
+          style={styles.headerTitleBtn}
+          onPress={goToToday}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityHint="Jumps to today"
+        >
+          <Text
+            style={[styles.headerTitle, large && styles.headerTitleLarge]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            maxFontSizeMultiplier={MaxFontScale.display}
+          >
+            {headerText}
+          </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={navigateNext} hitSlop={12}>
+        <TouchableOpacity
+          onPress={navigateNext}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={viewMode === 'month' ? 'Next month' : 'Next week'}
+        >
           <Ionicons name="chevron-forward" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
 
@@ -265,14 +300,30 @@ export function TrainingCalendar({
           <TouchableOpacity
             style={[styles.viewBtn, viewMode === 'month' && styles.viewBtnActive]}
             onPress={() => onChangeViewMode('month')}
+            accessibilityRole="button"
+            accessibilityLabel="Month view"
+            accessibilityState={{ selected: viewMode === 'month' }}
           >
-            <Text style={[styles.viewBtnText, viewMode === 'month' && styles.viewBtnTextActive]}>M</Text>
+            <Text
+              style={[styles.viewBtnText, viewMode === 'month' && styles.viewBtnTextActive]}
+              maxFontSizeMultiplier={MaxFontScale.display}
+            >
+              M
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.viewBtn, viewMode === 'week' && styles.viewBtnActive]}
             onPress={() => onChangeViewMode('week')}
+            accessibilityRole="button"
+            accessibilityLabel="Week view"
+            accessibilityState={{ selected: viewMode === 'week' }}
           >
-            <Text style={[styles.viewBtnText, viewMode === 'week' && styles.viewBtnTextActive]}>W</Text>
+            <Text
+              style={[styles.viewBtnText, viewMode === 'week' && styles.viewBtnTextActive]}
+              maxFontSizeMultiplier={MaxFontScale.display}
+            >
+              W
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -284,7 +335,16 @@ export function TrainingCalendar({
           {viewMode === 'month' && (
             <View style={styles.weekdayRow}>
               {WEEKDAY_LABELS.map((label) => (
-                <Text key={label} style={styles.weekdayLabel}>{label}</Text>
+                <Text
+                  key={label}
+                  style={styles.weekdayLabel}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={CELL_FONT_SCALE}
+                  importantForAccessibility="no"
+                  accessibilityElementsHidden
+                >
+                  {label}
+                </Text>
               ))}
             </View>
           )}
@@ -314,8 +374,22 @@ export function TrainingCalendar({
                     ]}
                     onPress={() => onSelectDate(key)}
                     activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={dayA11yLabel(day, [
+                      isToday && 'Today',
+                      isRaceDay && 'Race day',
+                      isGoalDay && 'Goal day',
+                      dots.length > 0 && `${dots.length} workout${dots.length !== 1 ? 's' : ''}`,
+                    ])}
+                    accessibilityState={{ selected: isSelected }}
                   >
-                    <View style={[styles.dayNumber, isToday && styles.dayNumberToday]}>
+                    <View
+                      style={[
+                        styles.dayNumber,
+                        { width: dayNumberSize, height: dayNumberSize, borderRadius: dayNumberSize / 2 },
+                        isToday && styles.dayNumberToday,
+                      ]}
+                    >
                       <Text
                         style={[
                           styles.dayText,
@@ -323,6 +397,8 @@ export function TrainingCalendar({
                           isToday && styles.dayTextToday,
                           isSelected && styles.dayTextSelected,
                         ]}
+                        numberOfLines={1}
+                        maxFontSizeMultiplier={CELL_FONT_SCALE}
                       >
                         {day.getDate()}
                       </Text>
@@ -330,12 +406,26 @@ export function TrainingCalendar({
                     {isRaceDay ? (
                       <View style={styles.raceBadge}>
                         <Ionicons name="flag" size={9} color={Colors.warning} />
-                        <Text style={styles.raceBadgeText}>Race</Text>
+                        <Text
+                          style={styles.raceBadgeText}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          maxFontSizeMultiplier={CELL_FONT_SCALE}
+                        >
+                          Race
+                        </Text>
                       </View>
                     ) : isGoalDay ? (
                       <View style={styles.raceBadge}>
                         <Ionicons name="speedometer" size={9} color={Colors.warning} />
-                        <Text style={styles.raceBadgeText}>Goal</Text>
+                        <Text
+                          style={styles.raceBadgeText}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          maxFontSizeMultiplier={CELL_FONT_SCALE}
+                        >
+                          Goal
+                        </Text>
                       </View>
                     ) : (
                       <View style={styles.dotRow}>
@@ -375,15 +465,35 @@ export function TrainingCalendar({
                     ]}
                     onPress={() => onSelectDate(key)}
                     activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={dayA11yLabel(day, [
+                      isToday && 'Today',
+                      isRaceDay ? 'Race day' : isGoalDay ? 'Goal day' : dayLabel || entry?.completedRuns[0]?.workoutName || 'Rest',
+                    ])}
+                    accessibilityState={{ selected: isSelected }}
                   >
-                    <Text style={[styles.weekDayLabel, isToday && styles.weekDayLabelToday]}>
+                    <Text
+                      style={[styles.weekDayLabel, isToday && styles.weekDayLabelToday]}
+                      numberOfLines={1}
+                      maxFontSizeMultiplier={CELL_FONT_SCALE}
+                    >
                       {WEEKDAY_LABELS[day.getDay()]}
                     </Text>
-                    <View style={[styles.weekDayNumber, isToday && styles.dayNumberToday]}>
-                      <Text style={[
-                        styles.weekDayDateText,
-                        isToday && styles.dayTextToday,
-                      ]}>
+                    <View
+                      style={[
+                        styles.weekDayNumber,
+                        { width: weekDayNumberSize, height: weekDayNumberSize, borderRadius: weekDayNumberSize / 2 },
+                        isToday && styles.dayNumberToday,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.weekDayDateText,
+                          isToday && styles.dayTextToday,
+                        ]}
+                        numberOfLines={1}
+                        maxFontSizeMultiplier={CELL_FONT_SCALE}
+                      >
                         {day.getDate()}
                       </Text>
                     </View>
@@ -391,14 +501,26 @@ export function TrainingCalendar({
                       <View style={[styles.weekWorkoutChip, { borderLeftColor: Colors.warning }]}>
                         <View style={styles.weekRaceRow}>
                           <Ionicons name="flag" size={10} color={Colors.warning} />
-                          <Text style={styles.weekRaceText}>Race Day</Text>
+                          <Text
+                            style={styles.weekRaceText}
+                            numberOfLines={2}
+                            maxFontSizeMultiplier={CELL_FONT_SCALE}
+                          >
+                            Race Day
+                          </Text>
                         </View>
                       </View>
                     ) : isGoalDay ? (
                       <View style={[styles.weekWorkoutChip, { borderLeftColor: Colors.warning }]}>
                         <View style={styles.weekRaceRow}>
                           <Ionicons name="speedometer" size={10} color={Colors.warning} />
-                          <Text style={styles.weekRaceText}>Goal Day</Text>
+                          <Text
+                            style={styles.weekRaceText}
+                            numberOfLines={2}
+                            maxFontSizeMultiplier={CELL_FONT_SCALE}
+                          >
+                            Goal Day
+                          </Text>
                         </View>
                       </View>
                     ) : dayLabel ? (
@@ -410,18 +532,33 @@ export function TrainingCalendar({
                             : Colors.accent,
                         },
                       ]}>
-                        <Text style={styles.weekWorkoutType} numberOfLines={2}>
+                        <Text
+                          style={styles.weekWorkoutType}
+                          numberOfLines={large ? 4 : 2}
+                          maxFontSizeMultiplier={CELL_FONT_SCALE}
+                        >
                           {dayLabel}
                         </Text>
                       </View>
                     ) : entry?.completedRuns.length ? (
                       <View style={[styles.weekWorkoutChip, { borderLeftColor: Colors.primary }]}>
-                        <Text style={styles.weekWorkoutType} numberOfLines={2}>
+                        <Text
+                          style={styles.weekWorkoutType}
+                          numberOfLines={large ? 4 : 2}
+                          maxFontSizeMultiplier={CELL_FONT_SCALE}
+                        >
                           {entry.completedRuns[0].workoutName}
                         </Text>
                       </View>
                     ) : (
-                      <Text style={styles.weekRestLabel}>Rest</Text>
+                      <Text
+                        style={styles.weekRestLabel}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        maxFontSizeMultiplier={CELL_FONT_SCALE}
+                      >
+                        Rest
+                      </Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -469,12 +606,18 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xs,
   },
+  headerTitleBtn: {
+    flexShrink: 1,
+  },
   headerTitle: {
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
     minWidth: 160,
     textAlign: 'center',
+  },
+  headerTitleLarge: {
+    minWidth: 0,
   },
   viewToggle: {
     flexDirection: 'row',
@@ -517,7 +660,8 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     width: CELL_SIZE,
-    height: CELL_SIZE,
+    minHeight: CELL_SIZE,
+    paddingVertical: 2,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
@@ -537,11 +681,8 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   dayNumber: {
-    width: 28,
-    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
   },
   dayNumberToday: {
     borderWidth: 2,
@@ -577,9 +718,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    height: 12,
+    minHeight: 12,
+    maxWidth: '100%',
+    paddingHorizontal: 2,
   },
   raceBadgeText: {
+    flexShrink: 1,
     fontSize: 8,
     fontWeight: '800',
     color: Colors.warning,
@@ -621,11 +765,8 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   weekDayNumber: {
-    width: 24,
-    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
   },
   weekDayDateText: {
     fontSize: FontSize.xs,
@@ -656,6 +797,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   weekRaceText: {
+    flexShrink: 1,
     fontSize: 9,
     fontWeight: '800',
     color: Colors.warning,

@@ -12,16 +12,15 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import type { RacePrediction } from '../ai/racePredictions';
 import { useUnits } from '../hooks/useUnits';
+import { useLargeText } from '../hooks/useLargeText';
 import { formatPace, paceSuffix } from '../units/format';
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -61,6 +60,8 @@ export function RacePredictionCard({
   onUpgrade,
 }: Props) {
   const unit = useUnits();
+  const large = useLargeText();
+  const { width: screenWidth } = useWindowDimensions();
   const targetPrediction = useMemo(
     () => currentPredictions.find((p) => p.raceType === targetRace),
     [currentPredictions, targetRace],
@@ -81,7 +82,7 @@ export function RacePredictionCard({
   }, [historicalPredictions, targetRace]);
 
   // Graph dimensions
-  const graphWidth = SCREEN_WIDTH - Spacing.lg * 2 - Spacing.md * 2;
+  const graphWidth = screenWidth - Spacing.lg * 2 - Spacing.md * 2;
   const graphHeight = 120;
   const graphPadding = { top: 10, bottom: 20, left: 40, right: 10 };
   const plotWidth = graphWidth - graphPadding.left - graphPadding.right;
@@ -129,7 +130,10 @@ export function RacePredictionCard({
       {targetPrediction && (
         <View style={styles.heroPrediction}>
           <Text style={styles.heroLabel}>{targetPrediction.raceLabel}</Text>
-          <Text style={[styles.heroTime, !isPro && styles.blurred]}>
+          <Text
+            style={[styles.heroTime, !isPro && styles.blurred]}
+            maxFontSizeMultiplier={MaxFontScale.display}
+          >
             {isPro ? targetPrediction.predictedTimeFormatted : '??:??:??'}
           </Text>
           <View style={styles.heroMeta}>
@@ -231,6 +235,7 @@ export function RacePredictionCard({
             key={pred.raceType}
             style={[
               styles.predictionItem,
+              large && styles.predictionItemLarge,
               pred.raceType === targetRace && styles.predictionItemTarget,
             ]}
           >
@@ -277,16 +282,20 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
   headerLeft: {
     flexDirection: 'row',
+    flexShrink: 1,
     alignItems: 'center',
     gap: Spacing.sm,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -329,8 +338,11 @@ const styles = StyleSheet.create({
   },
   heroMeta: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.md,
+    columnGap: Spacing.md,
+    rowGap: Spacing.xs,
     marginTop: Spacing.xs,
   },
   heroPace: {
@@ -376,6 +388,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
+  predictionItemLarge: {
+    width: '100%',
+  },
   predictionItemTarget: {
     borderColor: Colors.primary + '40',
     backgroundColor: Colors.primary + '08',
@@ -409,10 +424,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.warning,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm + 4,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.xs,
     marginTop: Spacing.md,
   },
   upgradeBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     color: Colors.black,
     fontSize: FontSize.sm,
     fontWeight: '700',

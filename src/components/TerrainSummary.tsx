@@ -11,7 +11,8 @@ import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 import type { TerrainAggregate, TerrainType } from '../pace/elevationAnalysis';
 import type { PaceUnit } from '../pace/paceTypes';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 
 interface Props {
   aggregates: TerrainAggregate[];
@@ -99,6 +100,8 @@ function SlopeIndicator({
 // ── Main component ──────────────────────────────────────────────
 
 export function TerrainSummary({ aggregates, paceUnit }: Props) {
+  const large = useLargeText();
+
   if (aggregates.length === 0) return null;
 
   const paceLabel = paceUnit === 'minPerMile' ? '/mi' : '/km';
@@ -117,7 +120,7 @@ export function TerrainSummary({ aggregates, paceUnit }: Props) {
 
       <View style={styles.card}>
         {/* Three-column comparison */}
-        <View style={styles.columns}>
+        <View style={[styles.columns, large && styles.columnsLarge]}>
           {TERRAIN_ORDER.map((type, i) => {
             const agg = aggMap.get(type);
             const meta = TERRAIN_META[type];
@@ -130,9 +133,13 @@ export function TerrainSummary({ aggregates, paceUnit }: Props) {
 
             return (
               <React.Fragment key={type}>
-                {i > 0 && <View style={styles.divider} />}
+                {i > 0 && <View style={[styles.divider, large && styles.dividerLarge]} />}
                 <View
-                  style={[styles.column, !hasData && styles.columnDimmed]}
+                  style={[
+                    styles.column,
+                    large && styles.columnLarge,
+                    !hasData && styles.columnDimmed,
+                  ]}
                 >
                   <SlopeIndicator
                     type={type}
@@ -152,6 +159,7 @@ export function TerrainSummary({ aggregates, paceUnit }: Props) {
                       styles.paceValue,
                       !hasData && styles.paceValueDimmed,
                     ]}
+                    maxFontSizeMultiplier={MaxFontScale.display}
                   >
                     {formatPace(pace)}
                   </Text>
@@ -236,10 +244,19 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
   },
+  columnsLarge: {
+    flexDirection: 'column',
+  },
   column: {
     flex: 1,
     alignItems: 'center',
     gap: 2,
+  },
+  columnLarge: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   columnDimmed: {
     opacity: 0.3,
@@ -248,6 +265,12 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: Colors.surfaceLight,
     marginVertical: Spacing.xs,
+  },
+  dividerLarge: {
+    width: 'auto',
+    height: 1,
+    marginVertical: 0,
+    marginHorizontal: Spacing.md,
   },
   typeLabel: {
     fontSize: FontSize.xs,

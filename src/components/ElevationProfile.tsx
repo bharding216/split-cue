@@ -10,7 +10,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Path, Defs, ClipPath, Rect, G } from 'react-native-svg';
 import type { RoutePoint } from '../workout/workoutTypes';
 import type { ElevationSummary } from '../pace/elevationAnalysis';
-import { Colors, FontSize, Spacing, BorderRadius } from '../constants/theme';
+import { Colors, FontSize, Spacing, BorderRadius, MaxFontScale } from '../constants/theme';
 import type { PaceUnit } from '../pace/paceTypes';
 
 interface Props {
@@ -28,6 +28,9 @@ const TERRAIN_COLORS = {
 } as const;
 
 const PADDING = { top: 12, bottom: 24, left: 0, right: 0 };
+
+/** Centered slot for each axis label; wide enough for "12.5" at the capped font size. */
+const DIST_LABEL_WIDTH = 32;
 
 export function ElevationProfile({
   route,
@@ -180,13 +183,18 @@ export function ElevationProfile({
             key={lbl.label}
             style={[
               styles.distLabel,
-              { left: lbl.x - 10 },
+              { left: lbl.x - DIST_LABEL_WIDTH / 2 },
             ]}
+            numberOfLines={1}
+            maxFontSizeMultiplier={MaxFontScale.display}
           >
             {lbl.label}
           </Text>
         ))}
-        <Text style={[styles.distUnit, { right: PADDING.right + 2 }]}>
+        <Text
+          style={[styles.distUnit, { right: PADDING.right + 2 }]}
+          maxFontSizeMultiplier={MaxFontScale.display}
+        >
           {chart.unit}
         </Text>
       </View>
@@ -216,18 +224,22 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: Spacing.sm,
     marginBottom: Spacing.xs,
     paddingHorizontal: Spacing.xs,
   },
   title: {
+    flexShrink: 1,
     color: Colors.textPrimary,
     fontSize: FontSize.sm,
     fontWeight: '600',
   },
   gainLoss: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
   },
   gainText: {
@@ -250,7 +262,7 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 10,
     textAlign: 'center',
-    width: 20,
+    width: DIST_LABEL_WIDTH,
   },
   distUnit: {
     position: 'absolute',
@@ -260,8 +272,10 @@ const styles = StyleSheet.create({
   },
   legend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: Spacing.md,
+    columnGap: Spacing.md,
+    rowGap: Spacing.xs,
     marginTop: Spacing.sm,
   },
   legendItem: {

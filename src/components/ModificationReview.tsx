@@ -18,7 +18,8 @@ import {
   UIManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 import type { PlanModification } from '../ai/planService';
 import {
   formatDurationForSpeech,
@@ -57,6 +58,8 @@ const UNDO_WINDOW_MS = 15_000;
 
 export function ModificationReview({ items, coachMessage, onApply, onKeepOriginal, onUndo }: Props) {
   const unit = useUnits();
+  const large = useLargeText();
+  const collapsedLines = large ? 4 : 2;
   const [status, setStatus] = useState<'reviewing' | 'applying' | 'applied' | 'undoing'>('reviewing');
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   const [selectedCards, setSelectedCards] = useState<Set<number>>(
@@ -272,6 +275,8 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
                 <TouchableOpacity
                   onPress={() => toggleCard(index)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isExpanded ? 'Hide details' : 'Show details'}
                 >
                   <Ionicons
                     name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -299,7 +304,7 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
                       <Text style={styles.sectionLabel}>Before</Text>
                       <Text style={styles.beforeLabel}>{item.before.day_label || 'Workout'}</Text>
                       {item.before.description && (
-                        <Text style={styles.beforeDesc} numberOfLines={isExpanded ? undefined : 2}>
+                        <Text style={styles.beforeDesc} numberOfLines={isExpanded ? undefined : collapsedLines}>
                           {item.before.description}
                         </Text>
                       )}
@@ -315,7 +320,7 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
                       {item.modification.day_label || 'Updated Workout'}
                     </Text>
                     {item.modification.description && (
-                      <Text style={styles.afterDesc} numberOfLines={isExpanded ? undefined : 2}>
+                      <Text style={styles.afterDesc} numberOfLines={isExpanded ? undefined : collapsedLines}>
                         {item.modification.description}
                       </Text>
                     )}
@@ -341,6 +346,8 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
                 style={[styles.toggleBar, isSelected ? styles.toggleBarIncluded : styles.toggleBarExcluded]}
                 onPress={() => toggleSelected(index)}
                 activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected }}
               >
                 <Ionicons
                   name={isSelected ? 'checkmark-circle' : 'close-circle-outline'}
@@ -366,7 +373,7 @@ export function ModificationReview({ items, coachMessage, onApply, onKeepOrigina
             disabled={selectedCount === 0}
           >
             <Ionicons name="checkmark-circle" size={18} color={Colors.black} />
-            <Text style={styles.applyBtnText}>
+            <Text style={styles.applyBtnText} maxFontSizeMultiplier={MaxFontScale.display}>
               {selectedCount === items.length
                 ? 'Apply All Changes'
                 : selectedCount > 0
@@ -493,6 +500,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceLight,
   },
   toggleBarText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: FontSize.xs,
     fontWeight: '700',
   },
@@ -519,6 +528,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   skipText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.danger,
     fontWeight: '600',
@@ -629,12 +639,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.xs,
   },
   applyBtnDisabled: {
     opacity: 0.4,
   },
   applyBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.black,

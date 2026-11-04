@@ -25,7 +25,8 @@ import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
+import { useLargeText } from '../../../src/hooks/useLargeText';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -49,6 +50,7 @@ export default function WorkoutDetailScreen() {
   const { workoutId } = useLocalSearchParams<{ workoutId: string }>();
   const { plans, planWorkouts, history, dayEntries, refresh, removeWorkout, moveWorkout } = useTrainingPlan();
   const { user } = useAuth();
+  const large = useLargeText();
   const [generatingDetail, setGeneratingDetail] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
 
@@ -179,7 +181,9 @@ export default function WorkoutDetailScreen() {
       </View>
 
       {/* Workout name */}
-      <Text style={styles.workoutName}>{planWorkout.day_label || 'Training'}</Text>
+      <Text style={styles.workoutName} maxFontSizeMultiplier={MaxFontScale.display}>
+        {planWorkout.day_label || 'Training'}
+      </Text>
 
       {/* Quick stats */}
       {workoutData && (
@@ -212,7 +216,7 @@ export default function WorkoutDetailScreen() {
         {ownerPlan && (
           <>
             <Text style={styles.weekDot}>·</Text>
-            <Text style={styles.weekText}>{ownerPlan.title || 'Training Plan'}</Text>
+            <Text style={[styles.weekText, styles.weekPlanTitle]}>{ownerPlan.title || 'Training Plan'}</Text>
           </>
         )}
       </View>
@@ -301,9 +305,9 @@ export default function WorkoutDetailScreen() {
             </>
           )}
 
-          <View style={styles.secondaryRow}>
+          <View style={[styles.secondaryRow, large && styles.secondaryRowStacked]}>
             <TouchableOpacity
-              style={styles.secondaryBtn}
+              style={[styles.secondaryBtn, large && styles.secondaryBtnStacked]}
               onPress={() => setShowMoveModal(true)}
               activeOpacity={0.7}
             >
@@ -312,7 +316,7 @@ export default function WorkoutDetailScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.secondaryBtn}
+              style={[styles.secondaryBtn, large && styles.secondaryBtnStacked]}
               onPress={handleRemove}
               activeOpacity={0.7}
             >
@@ -351,11 +355,14 @@ const styles = StyleSheet.create({
   // Date row
   dateRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: Spacing.xs,
     marginBottom: Spacing.xs,
   },
   dateText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textMuted,
@@ -422,6 +429,9 @@ const styles = StyleSheet.create({
   weekDot: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
+  },
+  weekPlanTitle: {
+    flexShrink: 1,
   },
 
   // Description
@@ -545,6 +555,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.surfaceLight,
     gap: Spacing.xs,
+  },
+  secondaryRowStacked: {
+    flexDirection: 'column',
+  },
+  secondaryBtnStacked: {
+    flex: 0,
   },
   secondaryBtnText: {
     fontSize: FontSize.sm,

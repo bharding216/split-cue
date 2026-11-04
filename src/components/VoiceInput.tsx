@@ -177,6 +177,8 @@ class VoiceInputErrorBoundary extends Component<
               )
             }
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Voice input unavailable"
           >
             <Ionicons name="mic-off" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -292,6 +294,11 @@ function VoiceInputInner({
         onPress={handlePress}
         disabled={status === 'transcribing'}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={
+          status === 'transcribing' ? 'Transcribing' : status === 'recording' ? 'Stop recording' : 'Start voice input'
+        }
+        accessibilityState={{ disabled: status === 'transcribing' }}
       >
         {status === 'transcribing' ? (
           <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textSecondary} />
@@ -314,6 +321,9 @@ function VoiceInputInner({
         onPress={handlePress}
         disabled={status === 'transcribing'}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={status === 'recording' ? 'Stop recording' : undefined}
+        accessibilityState={{ disabled: status === 'transcribing' }}
       >
         {status === 'transcribing' ? (
           <>
@@ -364,12 +374,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
     minWidth: 200,
+    maxWidth: '100%',
   },
   recordBtnActive: {
     borderColor: Colors.danger + '50',
     backgroundColor: Colors.danger + '10',
   },
   statusText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },

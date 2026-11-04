@@ -54,7 +54,8 @@ import type { CompletedWorkout } from '../../../src/workout/workoutTypes';
 import type { PaceUnit } from '../../../src/pace/paceTypes';
 import type { RaceType, GoalType, RunningProfile, RunningPreference } from '../../../src/types/database';
 import { normalizeDayPreferences } from '../../../src/types/database';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
+import { useLargeText, useScaledSize } from '../../../src/hooks/useLargeText';
 import { ProfileSheet } from '../../../src/components/ProfileSheet';
 import { formatPace as formatUnitPace } from '../../../src/units/format';
 
@@ -113,6 +114,9 @@ export default function PlanSetupScreen() {
   const { canGeneratePlan, refreshSubscription } = useSubscription();
   const mountedRef = useRef(true);
   const draftLoaded = useRef(false);
+  const large = useLargeText();
+  const goalTimeFieldWidth = useScaledSize(60, MaxFontScale.display);
+  const dayChipSize = useScaledSize(48, MaxFontScale.display);
 
   const [step, setStep] = useState(1);
   const totalSteps = 4;
@@ -702,14 +706,14 @@ export default function PlanSetupScreen() {
     const currentIdx = GEN_STEPS.findIndex((s) => s.phase === genPhase);
 
     return (
-      <View style={styles.genScreen}>
+      <ScrollView style={styles.genScroll} contentContainerStyle={styles.genScreen}>
         <View style={styles.genCard}>
           {/* Header */}
           <View style={styles.genHeader}>
             <View style={styles.genSparkleWrap}>
               <Ionicons name="sparkles" size={32} color={Colors.accent} />
             </View>
-            <Text style={styles.genTitle}>Creating Your Plan</Text>
+            <Text style={styles.genTitle} maxFontSizeMultiplier={MaxFontScale.display}>Creating Your Plan</Text>
           </View>
 
           {/* Steps */}
@@ -768,7 +772,7 @@ export default function PlanSetupScreen() {
           {/* Timer / estimate */}
           <Text style={styles.genTimer}>{genElapsed}s · usually 10–15s</Text>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -801,7 +805,7 @@ export default function PlanSetupScreen() {
           <Text style={styles.sectionTitle}>What's your goal?</Text>
 
           {/* Goal type toggle */}
-          <View style={styles.goalTypeRow}>
+          <View style={[styles.goalTypeRow, large && styles.goalTypeRowLarge]}>
             <TouchableOpacity
               style={[styles.goalTypeCard, goalType === 'race' && styles.goalTypeCardActive]}
               onPress={() => setGoalType('race')}
@@ -849,9 +853,10 @@ export default function PlanSetupScreen() {
               {raceType === 'custom' && (
                 <View style={styles.customDistanceSection}>
                   <Text style={styles.customDistanceLabel}>Race Distance</Text>
-                  <View style={styles.customDistanceRow}>
+                  <View style={[styles.customDistanceRow, large && styles.customDistanceRowLarge]}>
                     <TextInput
-                      style={styles.customDistanceField}
+                      style={[styles.customDistanceField, large && styles.customDistanceFieldLarge]}
+                      maxFontSizeMultiplier={MaxFontScale.display}
                       value={customDistance}
                       onChangeText={setCustomDistance}
                       placeholder="e.g. 15"
@@ -971,7 +976,7 @@ export default function PlanSetupScreen() {
                         <Text style={styles.suggestionPace}>{formatPace(toDisplayPace(paceBaseline.pace))}{paceSuffix}</Text>
                         {' '}for {paceDistanceContext === 'any' ? 'a 5K' : `a ${paceDistanceLabel}`} now. Goals for ~{planWeeks} weeks of training:
                       </Text>
-                      <View style={styles.tierRow}>
+                      <View style={[styles.tierRow, large && styles.tierRowLarge]}>
                         {goalTiers.map((tier) => {
                           const active = !coachPicksPace && selectedTierId === tier.id;
                           return (
@@ -982,7 +987,10 @@ export default function PlanSetupScreen() {
                               activeOpacity={0.7}
                             >
                               <Text style={[styles.tierLabel, active && styles.raceChipLabelActive]}>{tier.label}</Text>
-                              <Text style={[styles.tierPace, active && styles.raceChipLabelActive]}>
+                              <Text
+                                style={[styles.tierPace, active && styles.raceChipLabelActive]}
+                                maxFontSizeMultiplier={MaxFontScale.display}
+                              >
                                 {formatPace(toDisplayPace(tier.pace))}
                               </Text>
                               <Text style={styles.tierPct}>
@@ -1004,7 +1012,8 @@ export default function PlanSetupScreen() {
                   <View style={[styles.goalTimeRow, goalTiers.length === 0 && { marginTop: Spacing.md }]}>
                     <View style={styles.goalTimeInput}>
                       <TextInput
-                        style={styles.goalTimeField}
+                        style={[styles.goalTimeField, { width: goalTimeFieldWidth }]}
+                        maxFontSizeMultiplier={MaxFontScale.display}
                         value={goalPaceMin}
                         onChangeText={setGoalPaceMin}
                         placeholder={realisticTier ? String(splitPace(toDisplayPace(realisticTier.pace)).min) : '--'}
@@ -1014,10 +1023,14 @@ export default function PlanSetupScreen() {
                       />
                       <Text style={styles.goalTimeLabel}>min</Text>
                     </View>
-                    <Text style={{ color: Colors.textSecondary, fontSize: FontSize.lg, marginHorizontal: 2 }}>:</Text>
+                    <Text
+                      style={{ color: Colors.textSecondary, fontSize: FontSize.lg, marginHorizontal: 2 }}
+                      maxFontSizeMultiplier={MaxFontScale.display}
+                    >:</Text>
                     <View style={styles.goalTimeInput}>
                       <TextInput
-                        style={styles.goalTimeField}
+                        style={[styles.goalTimeField, { width: goalTimeFieldWidth }]}
+                        maxFontSizeMultiplier={MaxFontScale.display}
                         value={goalPaceSec}
                         onChangeText={setGoalPaceSec}
                         placeholder={realisticTier ? String(splitPace(toDisplayPace(realisticTier.pace)).sec).padStart(2, '0') : '00'}
@@ -1175,7 +1188,8 @@ export default function PlanSetupScreen() {
               <View style={styles.goalTimeRow}>
                 <View style={styles.goalTimeInput}>
                   <TextInput
-                    style={styles.goalTimeField}
+                    style={[styles.goalTimeField, { width: goalTimeFieldWidth }]}
+                    maxFontSizeMultiplier={MaxFontScale.display}
                     value={goalTimeHours}
                     onChangeText={setGoalTimeHours}
                     placeholder="0"
@@ -1187,7 +1201,8 @@ export default function PlanSetupScreen() {
                 </View>
                 <View style={styles.goalTimeInput}>
                   <TextInput
-                    style={styles.goalTimeField}
+                    style={[styles.goalTimeField, { width: goalTimeFieldWidth }]}
+                    maxFontSizeMultiplier={MaxFontScale.display}
                     value={goalTimeMinutes}
                     onChangeText={setGoalTimeMinutes}
                     placeholder="0"
@@ -1201,7 +1216,7 @@ export default function PlanSetupScreen() {
             </View>
           )}
 
-          <View style={styles.stepNavRow}>
+          <View style={[styles.stepNavRow, large && styles.stepNavRowLarge]}>
             <TouchableOpacity style={styles.backBtn} onPress={() => setStep(1)} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={18} color={Colors.textSecondary} />
               <Text style={styles.backBtnText}>Back</Text>
@@ -1225,7 +1240,11 @@ export default function PlanSetupScreen() {
                 return (
                   <TouchableOpacity
                     key={n}
-                    style={[styles.dayChip, isSelected && styles.dayChipActive]}
+                    style={[
+                      styles.dayChip,
+                      { width: dayChipSize, height: dayChipSize },
+                      isSelected && styles.dayChipActive,
+                    ]}
                     onPress={() => {
                       const next = new Set(selectedDays);
                       if (next.has(n) && next.size > 1) {
@@ -1237,7 +1256,10 @@ export default function PlanSetupScreen() {
                     }}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.dayChipText, isSelected && styles.dayChipTextActive]}>
+                    <Text
+                      style={[styles.dayChipText, isSelected && styles.dayChipTextActive]}
+                      maxFontSizeMultiplier={MaxFontScale.display}
+                    >
                       {n}
                     </Text>
                   </TouchableOpacity>
@@ -1246,7 +1268,7 @@ export default function PlanSetupScreen() {
             </View>
           </View>
 
-          <View style={styles.stepNavRow}>
+          <View style={[styles.stepNavRow, large && styles.stepNavRowLarge]}>
             <TouchableOpacity style={styles.backBtn} onPress={() => setStep(2)} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={18} color={Colors.textSecondary} />
               <Text style={styles.backBtnText}>Back</Text>
@@ -1399,7 +1421,7 @@ export default function PlanSetupScreen() {
             </View>
           )}
 
-          <View style={styles.stepNavRow}>
+          <View style={[styles.stepNavRow, large && styles.stepNavRowLarge]}>
             <TouchableOpacity style={styles.backBtn} onPress={() => setStep(3)} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={18} color={Colors.textSecondary} />
               <Text style={styles.backBtnText}>Back</Text>
@@ -1548,6 +1570,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.xs,
   },
+  goalTypeRowLarge: {
+    flexDirection: 'column',
+  },
   goalTypeCard: {
     flex: 1,
     backgroundColor: Colors.surface,
@@ -1652,6 +1677,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
   },
+  tierRowLarge: {
+    flexDirection: 'column',
+  },
   tierChip: {
     flex: 1,
     backgroundColor: Colors.surface,
@@ -1737,6 +1765,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
+  customDistanceRowLarge: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  customDistanceFieldLarge: {
+    alignSelf: 'stretch',
+  },
   customDistanceField: {
     flex: 1,
     backgroundColor: Colors.surface,
@@ -1794,6 +1829,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   dateBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     color: Colors.textPrimary,
   },
@@ -1801,9 +1837,11 @@ const styles = StyleSheet.create({
   // Goal time
   goalTimeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.md,
   },
   goalTimeInput: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
@@ -1821,6 +1859,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   goalTimeLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
@@ -1871,11 +1910,14 @@ const styles = StyleSheet.create({
   // Wizard
   wizardHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   wizardTitle: {
+    flexShrink: 1,
     fontSize: FontSize.lg,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -1919,6 +1961,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginTop: Spacing.lg,
   },
+  stepNavRowLarge: {
+    flexDirection: 'column-reverse',
+  },
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1945,16 +1990,22 @@ const styles = StyleSheet.create({
   },
   reviewRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+    columnGap: Spacing.sm,
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceLight,
   },
   reviewLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textMuted,
   },
   reviewValue: {
+    flexShrink: 1,
+    marginLeft: 'auto',
+    textAlign: 'right',
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -2021,6 +2072,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   proGateTitle: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '800',
     color: Colors.accent,
@@ -2038,9 +2090,12 @@ const styles = StyleSheet.create({
   },
 
   // Generation progress overlay
-  genScreen: {
+  genScroll: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  genScreen: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.xl,

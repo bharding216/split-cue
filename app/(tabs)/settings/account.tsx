@@ -23,11 +23,13 @@ import { useStrava } from '../../../src/strava/useStrava';
 import { setStravaAutoUpload } from '../../../src/strava/stravaService';
 import { loadSettings, onSettingsSaved } from '../../../src/workout/workoutStorage';
 import { getSyncStatus, onSyncStatusChange, SyncStatus } from '../../../src/sync/cloudSync';
-import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
+import { useLargeText } from '../../../src/hooks/useLargeText';
 
 export default function AccountScreen() {
   const router = useRouter();
+  const large = useLargeText();
   const { user, signOut, deleteAccount } = useAuth();
   const [deleting, setDeleting] = useState(false);
   const { tier, manageSubscription } = useSubscription();
@@ -108,7 +110,9 @@ export default function AccountScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.centered}>
           <Ionicons name="person-circle-outline" size={64} color={Colors.textMuted} />
-          <Text style={styles.noAccountTitle}>No account</Text>
+          <Text style={styles.noAccountTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+            No account
+          </Text>
           <Text style={styles.noAccountText}>
             Sign in to unlock AI workout building and cloud sync.
           </Text>
@@ -188,8 +192,8 @@ export default function AccountScreen() {
       <View style={styles.connectedAppsSection}>
         <Text style={styles.connectedAppsTitle}>Connected Apps</Text>
         <View style={styles.stravaCard}>
-          <View style={styles.stravaRow}>
-            <View style={styles.stravaInfo}>
+          <View style={[styles.stravaRow, large && styles.stravaRowLarge]}>
+            <View style={[styles.stravaInfo, large && styles.stravaInfoStacked]}>
               <View style={styles.stravaBrand}>
                 <Ionicons name="fitness-outline" size={22} color="#FC5200" />
                 <Text style={styles.stravaName}>Strava</Text>
@@ -212,6 +216,8 @@ export default function AccountScreen() {
                   strava.disconnect();
                 }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Disconnect Strava"
               >
                 <Text style={styles.stravaDisconnectText}>Disconnect</Text>
               </TouchableOpacity>
@@ -418,6 +424,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   rowLabel: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
@@ -481,6 +488,14 @@ const styles = StyleSheet.create({
   stravaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  stravaRowLarge: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  stravaInfoStacked: {
+    flex: 0,
+    alignSelf: 'stretch',
   },
   stravaInfo: {
     flex: 1,

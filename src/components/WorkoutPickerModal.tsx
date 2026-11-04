@@ -30,7 +30,8 @@ import {
 } from '../workout/workoutTypes';
 import { createPresets } from '../workout/presets';
 import { loadHistory } from '../workout/workoutStorage';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 
 const MAX_RECENT = 8;
 
@@ -118,6 +119,7 @@ export function WorkoutPickerModal({
   const [tab, setTab] = useState<PickerTab>('templates');
   const [activeCategory, setActiveCategory] = useState<WorkoutCategory | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const large = useLargeText();
 
   const dateObj = useMemo(() => new Date(date + 'T12:00:00'), [date]);
 
@@ -163,26 +165,33 @@ export function WorkoutPickerModal({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={styles.sheet}>
+        <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} accessibilityLabel="Close" />
+        <View style={[styles.sheet, large && styles.sheetLarge]}>
           <View style={styles.handleRow}>
             <View style={styles.handle} />
           </View>
 
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Add Workout</Text>
+              <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>Add Workout</Text>
               <TouchableOpacity
                 style={styles.datePickerBtn}
                 onPress={() => setShowDatePicker((prev) => !prev)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityHint="Changes the date"
               >
                 <Ionicons name="calendar-outline" size={14} color={Colors.primary} />
                 <Text style={styles.headerDateTappable}>{formatDateDisplay(date)}</Text>
                 <Ionicons name="chevron-down" size={12} color={Colors.primary} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -208,7 +217,7 @@ export function WorkoutPickerModal({
             </View>
           )}
 
-          {loading ? (
+          {large && showDatePicker && Platform.OS === 'ios' ? null : loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={Colors.primary} size="large" />
             </View>
@@ -342,7 +351,7 @@ export function WorkoutPickerModal({
                         <Ionicons name={categoryIcon(cat)} size={18} color={categoryColor(cat)} />
                       </View>
                       <View style={styles.workoutInfo}>
-                        <Text style={styles.workoutName} numberOfLines={1}>{workout.name}</Text>
+                        <Text style={styles.workoutName} numberOfLines={large ? 3 : 1}>{workout.name}</Text>
                         <Text style={styles.workoutMeta}>
                           {formatTime(totalSec)} · {flat.length} interval{flat.length !== 1 ? 's' : ''}
                           {completedAt !== undefined ? ` · Ran ${formatCompletedDate(completedAt)}` : ''}
@@ -384,6 +393,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
+  sheetLarge: {
+    height: '94%',
+  },
   handleRow: {
     alignItems: 'center',
     paddingTop: Spacing.sm,
@@ -420,6 +432,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   headerDateTappable: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.primary,
     fontWeight: '600',

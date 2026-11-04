@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   FlatList,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -24,11 +24,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Speech from 'expo-speech';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
+import { useLargeText } from '../hooks/useLargeText';
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-const SHEET_HEIGHT = SCREEN_HEIGHT * 0.72;
 const ANIM_MS = 280;
 
 /** Strip noisy Android prefixes so voice names are human-readable. */
@@ -71,9 +70,12 @@ export default function VoicePickerSheet({
   onClose,
 }: Props) {
   const [enhancedOnly, setEnhancedOnly] = useState(false);
+  const large = useLargeText();
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetHeight = windowHeight * (large ? 0.92 : 0.72);
 
   // Slide animation
-  const translateY = useSharedValue(SHEET_HEIGHT);
+  const translateY = useSharedValue(sheetHeight);
   const backdropOpacity = useSharedValue(0);
 
   const animatedSheet = useAnimatedStyle(() => ({
@@ -93,7 +95,7 @@ export default function VoicePickerSheet({
   }, [translateY, backdropOpacity]);
 
   const close = useCallback(() => {
-    translateY.value = withTiming(SHEET_HEIGHT, {
+    translateY.value = withTiming(sheetHeight, {
       duration: ANIM_MS,
       easing: Easing.in(Easing.cubic),
     });
@@ -102,7 +104,7 @@ export default function VoicePickerSheet({
       setEnhancedOnly(false);
       onClose();
     }, ANIM_MS);
-  }, [translateY, backdropOpacity, onClose]);
+  }, [translateY, backdropOpacity, onClose, sheetHeight]);
 
   const isHighQuality = useCallback((v: Speech.Voice) => {
     if (v.quality === Speech.VoiceQuality.Enhanced) return true;
@@ -146,6 +148,8 @@ export default function VoicePickerSheet({
           style={[styles.voiceRow, active && styles.voiceRowActive]}
           onPress={() => handleSelect(item.identifier)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityState={{ selected: active }}
         >
           <View style={styles.voiceInfo}>
             <Text style={[styles.voiceName, active && styles.voiceNameActive]}>
@@ -180,6 +184,8 @@ export default function VoicePickerSheet({
             premiumOption.onSelect();
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityState={{ selected: premiumOption.selected }}
         >
           <View style={styles.voiceInfo}>
             <Text style={[styles.voiceName, premiumOption.selected && styles.voiceNameActive]}>
@@ -198,6 +204,8 @@ export default function VoicePickerSheet({
         style={[styles.voiceRow, selectedId === null && styles.voiceRowActive]}
         onPress={() => handleSelect(null)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ selected: selectedId === null }}
       >
         <View style={styles.voiceInfo}>
           <Text
@@ -235,7 +243,7 @@ export default function VoicePickerSheet({
         </TouchableWithoutFeedback>
 
         {/* Sheet */}
-        <Animated.View style={[styles.sheet, animatedSheet]}>
+        <Animated.View style={[styles.sheet, { height: sheetHeight }, animatedSheet]}>
           {/* Handle */}
           <View style={styles.handleBar}>
             <View style={styles.handle} />
@@ -243,8 +251,15 @@ export default function VoicePickerSheet({
 
           {/* Title row */}
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Choose a Voice</Text>
-            <TouchableOpacity onPress={close} activeOpacity={0.7}>
+            <Text style={styles.title} maxFontSizeMultiplier={MaxFontScale.display}>
+              Choose a Voice
+            </Text>
+            <TouchableOpacity
+              onPress={close}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Text style={styles.doneBtn}>Done</Text>
             </TouchableOpacity>
           </View>
@@ -262,6 +277,9 @@ export default function VoicePickerSheet({
                   setEnhancedOnly((prev) => !prev);
                 }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Enhanced voices only"
+                accessibilityState={{ selected: enhancedOnly }}
               >
                 <Text
                   style={[
@@ -313,11 +331,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
   },
   sheet: {
-    height: SHEET_HEIGHT,
     backgroundColor: Colors.background,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
@@ -342,6 +359,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   title: {
+    flexShrink: 1,
+    marginRight: Spacing.md,
     fontSize: FontSize.lg,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -367,7 +386,8 @@ const styles = StyleSheet.create({
   filterChip: {
     alignSelf: 'flex-start',
     paddingHorizontal: Spacing.sm + 2,
-    height: 36,
+    minHeight: 36,
+    paddingVertical: Spacing.xs,
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: BorderRadius.md,

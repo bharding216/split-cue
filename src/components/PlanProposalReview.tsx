@@ -19,7 +19,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VoiceInput } from './VoiceInput';
 import { derivePhases } from './TrainingPhases';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText, useScaledSize } from '../hooks/useLargeText';
 import type { PlanOutlineResult } from '../ai/planService';
 
 export interface PlanRevisionExchange {
@@ -97,6 +98,8 @@ export function PlanProposalReview({
   onBack,
 }: PlanProposalReviewProps) {
   const insets = useSafeAreaInsets();
+  const large = useLargeText();
+  const inputMaxHeight = useScaledSize(100, MaxFontScale.display);
   const scrollRef = useRef<ScrollView>(null);
   const [input, setInput] = useState('');
   const busy = revising || approving;
@@ -186,7 +189,7 @@ export function PlanProposalReview({
           </Text>
         )}
 
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, large && styles.actionRowLarge]}>
           <TouchableOpacity style={styles.backBtn} onPress={onBack} disabled={busy} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={18} color={Colors.textSecondary} />
             <Text style={styles.backBtnText}>Edit</Text>
@@ -210,7 +213,8 @@ export function PlanProposalReview({
       <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
         <VoiceInput onTranscription={submit} compact />
         <TextInput
-          style={styles.input}
+          style={[styles.input, { maxHeight: inputMaxHeight }]}
+          maxFontSizeMultiplier={MaxFontScale.display}
           value={input}
           onChangeText={setInput}
           placeholder='Ask for changes, or type "approve"'
@@ -227,6 +231,8 @@ export function PlanProposalReview({
           onPress={() => submit(input)}
           disabled={!input.trim() || busy}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
         >
           <Ionicons name="send" size={18} color={Colors.black} />
         </TouchableOpacity>
@@ -293,10 +299,13 @@ const styles = StyleSheet.create({
   phaseRowLast: { paddingBottom: 0 },
   phaseHead: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: Spacing.sm,
   },
   phaseWeeks: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.primary,
@@ -372,6 +381,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     marginTop: Spacing.lg,
+  },
+  actionRowLarge: {
+    flexDirection: 'column-reverse',
   },
   backBtn: {
     flexDirection: 'row',

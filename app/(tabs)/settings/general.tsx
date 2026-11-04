@@ -128,6 +128,7 @@ export default function GeneralSettingsScreen() {
           }}
           trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
           thumbColor={Colors.white}
+          accessibilityLabel="Vibrate on interval changes"
         />
       </View>
 
@@ -140,6 +141,7 @@ export default function GeneralSettingsScreen() {
           onValueChange={(v) => update({ keepScreenOn: v })}
           trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
           thumbColor={Colors.white}
+          accessibilityLabel="Keep screen on during workout"
         />
       </View>
 
@@ -156,6 +158,7 @@ export default function GeneralSettingsScreen() {
           onValueChange={handlePushToggle}
           trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
           thumbColor={Colors.white}
+          accessibilityLabel="New feature updates"
         />
       </View>
       {pushDenied && !pushEnabled && (
@@ -248,6 +251,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   actionBtnLabel: {
+    flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '600',
     color: Colors.textPrimary,

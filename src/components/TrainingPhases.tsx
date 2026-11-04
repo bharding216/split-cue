@@ -7,7 +7,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText, useScaledSize } from '../hooks/useLargeText';
 import type { PlanOutlineWeek, PlanPhase } from '../types/database';
 
 interface Phase {
@@ -87,6 +88,8 @@ export function resolvePhases(
 
 export function TrainingPhases({ outline, phases: coachWritten, approach, currentWeekNumber, maxVisible, expanded, onToggleExpanded }: TrainingPhasesProps) {
   const phases = resolvePhases(outline, coachWritten, currentWeekNumber);
+  const large = useLargeText();
+  const circleSize = useScaledSize(32, MaxFontScale.display);
 
   if (phases.length === 0) return null;
 
@@ -101,18 +104,33 @@ export function TrainingPhases({ outline, phases: coachWritten, approach, curren
       {visiblePhases.map((phase, i) => {
         const isLastVisible = i === visiblePhases.length - 1;
         const isLastOverall = phase.number === phases.length;
+        const badge = (
+          <Text style={[
+            styles.phaseBadge,
+            phase.status === 'current' && styles.phaseBadgeCurrent,
+            phase.status === 'completed' && styles.phaseBadgeCompleted,
+            large && styles.phaseBadgeLarge,
+          ]}>
+            {phase.status === 'current' ? 'Current' :
+             phase.status === 'completed' ? 'Done' : 'Upcoming'}
+          </Text>
+        );
         return (
-          <View key={phase.number} style={[styles.phaseRow, !!phase.focus && styles.phaseRowWithFocus]}>
+          <View key={phase.number} style={[styles.phaseRow, (!!phase.focus || large) && styles.phaseRowWithFocus]}>
             <View style={[
               styles.phaseCircle,
+              { width: circleSize, height: circleSize, borderRadius: circleSize / 2 },
               phase.status === 'current' && styles.phaseCircleCurrent,
               phase.status === 'completed' && styles.phaseCircleCompleted,
             ]}>
-              <Text style={[
-                styles.phaseNumber,
-                phase.status === 'current' && styles.phaseNumberCurrent,
-                phase.status === 'completed' && styles.phaseNumberCompleted,
-              ]}>
+              <Text
+                style={[
+                  styles.phaseNumber,
+                  phase.status === 'current' && styles.phaseNumberCurrent,
+                  phase.status === 'completed' && styles.phaseNumberCompleted,
+                ]}
+                maxFontSizeMultiplier={MaxFontScale.display}
+              >
                 {phase.number}
               </Text>
             </View>
@@ -120,7 +138,8 @@ export function TrainingPhases({ outline, phases: coachWritten, approach, curren
             {!isLastOverall && !(isLastVisible && !expanded && canCollapse) && (
               <View style={[
                 styles.phaseLine,
-                !!phase.focus && styles.phaseLineStretch,
+                { left: circleSize / 2 - 1, top: circleSize },
+                (!!phase.focus || large) && styles.phaseLineStretch,
                 phase.status === 'completed' && styles.phaseLineCompleted,
               ]} />
             )}
@@ -134,16 +153,10 @@ export function TrainingPhases({ outline, phases: coachWritten, approach, curren
               </Text>
               <Text style={styles.phaseWeeks}>{phase.weekRange}</Text>
               {phase.focus ? <Text style={styles.phaseFocus}>{phase.focus}</Text> : null}
+              {large && badge}
             </View>
 
-            <Text style={[
-              styles.phaseBadge,
-              phase.status === 'current' && styles.phaseBadgeCurrent,
-              phase.status === 'completed' && styles.phaseBadgeCompleted,
-            ]}>
-              {phase.status === 'current' ? 'Current' :
-               phase.status === 'completed' ? 'Done' : 'Upcoming'}
-            </Text>
+            {!large && badge}
           </View>
         );
       })}
@@ -153,6 +166,8 @@ export function TrainingPhases({ outline, phases: coachWritten, approach, curren
           style={styles.expandBtn}
           onPress={onToggleExpanded}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: !!expanded }}
         >
           <Text style={styles.expandBtnText}>
             {expanded ? 'Show less' : `Show ${hiddenCount} more phase${hiddenCount !== 1 ? 's' : ''}`}
@@ -271,6 +286,10 @@ const styles = StyleSheet.create({
   phaseBadgeCompleted: {
     color: Colors.textMuted,
   },
+  phaseBadgeLarge: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.xs,
+  },
   expandBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,6 +299,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   expandBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.primary,

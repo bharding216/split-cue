@@ -52,6 +52,7 @@ import {
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import { hapticTap } from '../audio/haptics';
 import { useUnits } from '../hooks/useUnits';
+import { useLargeText } from '../hooks/useLargeText';
 import { formatDistance, formatPace, metersPerUnit } from '../units/format';
 
 // ── Types ────────────────────────────────────────────────────
@@ -173,6 +174,7 @@ const barStyles = StyleSheet.create({
 
 function SegmentDetail({ seg }: { seg: Segment }) {
   const unit = useUnits();
+  const large = useLargeText();
   const extras: string[] = [];
   if (seg.targetPace) extras.push(formatPace(seg.targetPace, unit));
   if (seg.intensity) extras.push(seg.intensity);
@@ -183,9 +185,12 @@ function SegmentDetail({ seg }: { seg: Segment }) {
   const dur = seg.target.type === 'time' ? (seg.target.durationSeconds ?? 0) : 0;
 
   return (
-    <View style={detailStyles.intervalRow}>
+    <View style={[detailStyles.intervalRow, large && detailStyles.intervalRowLarge]}>
       <View style={[detailStyles.dot, { backgroundColor: intervalColor(segmentToIntervalType(seg.segmentType, seg.intensity)) }]} />
-      <Text style={detailStyles.intervalName} numberOfLines={1}>
+      <Text
+        style={[detailStyles.intervalName, large && detailStyles.intervalNameLarge]}
+        numberOfLines={large ? undefined : 1}
+      >
         {seg.label || defaultSegmentLabel(seg.segmentType)}
       </Text>
       {dur > 0 && (
@@ -297,11 +302,13 @@ const detailStyles = StyleSheet.create({
   },
   blockHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.xs,
     marginBottom: 4,
   },
   blockName: {
+    flexShrink: 1,
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.textSecondary,
@@ -323,6 +330,9 @@ const detailStyles = StyleSheet.create({
     paddingVertical: 2,
     gap: 6,
   },
+  intervalRowLarge: {
+    flexWrap: 'wrap',
+  },
   dot: {
     width: 7,
     height: 7,
@@ -333,6 +343,11 @@ const detailStyles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textPrimary,
     fontWeight: '500',
+  },
+  intervalNameLarge: {
+    flex: 0,
+    flexGrow: 1,
+    flexShrink: 1,
   },
   intervalTime: {
     fontSize: FontSize.xs,
@@ -394,6 +409,7 @@ export function VoiceEditSheet({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const large = useLargeText();
   const [phase, setPhase] = useState<Phase>('idle');
   const [transcription, setTranscription] = useState('');
   const [textInput, setTextInput] = useState('');
@@ -611,7 +627,7 @@ export function VoiceEditSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
+        <View style={[styles.sheet, large && styles.sheetLarge, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
           <View style={styles.handleRow}>
             <View style={styles.handle} />
           </View>
@@ -623,11 +639,16 @@ export function VoiceEditSheet({
                 <Ionicons name="sparkles" size={16} color={Colors.accent} />
                 <Text style={styles.headerTitle}>Edit with AI</Text>
               </View>
-              <Text style={styles.headerWorkout} numberOfLines={1}>
+              <Text style={styles.headerWorkout} numberOfLines={large ? undefined : 1}>
                 {workoutLabel} · {formatDate(workout.date)}
               </Text>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={handleClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -649,6 +670,8 @@ export function VoiceEditSheet({
                 ]}
                 onPress={handleMicPress}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={phase === 'recording' ? 'Stop recording' : 'Start recording'}
               >
                 {phase === 'recording' ? (
                   <View style={styles.recordingContent}>
@@ -700,6 +723,10 @@ export function VoiceEditSheet({
                       onPress={handleTextSubmit}
                       disabled={!textInput.trim()}
                       activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Send"
+                      accessibilityState={{ disabled: !textInput.trim() }}
+                      hitSlop={6}
                     >
                       <Ionicons
                         name="send"
@@ -795,7 +822,7 @@ export function VoiceEditSheet({
                             <Text style={styles.modLabel}>{workout.day_label}</Text>
                           )}
                           {mod.description && (
-                            <Text style={styles.modDesc} numberOfLines={3}>
+                            <Text style={styles.modDesc} numberOfLines={large ? undefined : 3}>
                               {mod.description}
                             </Text>
                           )}
@@ -835,7 +862,7 @@ export function VoiceEditSheet({
 
               {/* Action buttons */}
               {modifications.length > 0 && (
-                <View style={styles.actionRow}>
+                <View style={[styles.actionRow, large && styles.actionRowLarge]}>
                   <TouchableOpacity
                     style={styles.discardBtn}
                     onPress={handleClose}
@@ -845,7 +872,7 @@ export function VoiceEditSheet({
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.applyBtn}
+                    style={[styles.applyBtn, large && styles.applyBtnLarge]}
                     onPress={handleApply}
                     activeOpacity={0.8}
                   >
@@ -903,6 +930,9 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
+  },
+  sheetLarge: {
+    maxHeight: '92%',
   },
   handleRow: {
     alignItems: 'center',
@@ -1146,6 +1176,7 @@ const styles = StyleSheet.create({
   },
   dateChangeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.xs,
   },
@@ -1166,22 +1197,26 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   skipText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.danger,
     fontWeight: '600',
   },
   diffRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: Spacing.xs,
     marginBottom: 2,
   },
   diffOld: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     textDecorationLine: 'line-through',
   },
   diffNew: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.primary,
@@ -1225,6 +1260,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
+  actionRowLarge: {
+    flexDirection: 'column-reverse',
+  },
   discardBtn: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1248,7 +1286,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.xs,
   },
+  applyBtnLarge: {
+    flex: 0,
+  },
   applyBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.black,
@@ -1263,6 +1305,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   retryBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,

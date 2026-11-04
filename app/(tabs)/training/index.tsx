@@ -50,6 +50,7 @@ import { supabase } from '../../../src/analytics/supabaseClient';
 import { buildHistorySummary } from '../../../src/ai/historySummary';
 import type { AIContext } from '../../../src/ai/aiWorkoutService';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
+import { useLargeText } from '../../../src/hooks/useLargeText';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -105,6 +106,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 export default function TrainingScreen() {
   const router = useRouter();
   const startPlanCreation = useStartPlanCreation();
+  const large = useLargeText();
   const { user } = useAuth();
   const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
 
@@ -431,9 +433,9 @@ export default function TrainingScreen() {
                     </View>
                   ))}
                 </View>
-                <View style={styles.coachActions}>
+                <View style={[styles.coachActions, large && styles.wrapRow]}>
                   <TouchableOpacity
-                    style={styles.coachCta}
+                    style={[styles.coachCta, large && styles.fullRowBtn]}
                     onPress={() => router.push('/login' as any)}
                     activeOpacity={0.8}
                   >
@@ -441,7 +443,7 @@ export default function TrainingScreen() {
                     <Text style={styles.coachCtaText}>Get My Plan</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.coachLaterBtn}
+                    style={[styles.coachLaterBtn, large && styles.fullRowBtn]}
                     onPress={toggleCoachCollapsed}
                     activeOpacity={0.7}
                   >
@@ -519,7 +521,7 @@ export default function TrainingScreen() {
               >
                 <View style={styles.planHeaderTop}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.planName} numberOfLines={1}>
+                    <Text style={styles.planName} numberOfLines={large ? 3 : 1}>
                       {primaryPlan.title || formatRaceLabel(primaryPlan.race_type)}
                     </Text>
                   </View>
@@ -556,27 +558,27 @@ export default function TrainingScreen() {
           )}
 
           {/* Action row */}
-          <View style={styles.actionRow}>
+          <View style={[styles.actionRow, large && styles.wrapRow]}>
             <TouchableOpacity
-              style={styles.addWorkoutBtn}
+              style={[styles.addWorkoutBtn, large && styles.fullRowBtn]}
               onPress={() => handleAddWorkout(selectedDate)}
               activeOpacity={0.8}
             >
               <Ionicons name="add" size={18} color={Colors.black} />
-              <Text style={styles.addWorkoutBtnText} numberOfLines={1}>Add Workout</Text>
+              <Text style={styles.addWorkoutBtnText} numberOfLines={large ? undefined : 1}>Add Workout</Text>
             </TouchableOpacity>
             {hasPlan && user && (
               <TouchableOpacity
-                style={styles.addPlanBanner}
+                style={[styles.addPlanBanner, large && styles.addPlanBannerGrow]}
                 onPress={startPlanCreation}
                 activeOpacity={0.8}
               >
                 <Ionicons name="add-circle-outline" size={18} color={Colors.accent} />
-                <Text style={styles.addPlanBannerText} numberOfLines={1}>Add Plan</Text>
+                <Text style={styles.addPlanBannerText} numberOfLines={large ? undefined : 1}>Add Plan</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              style={styles.statsBtn}
+              style={[styles.statsBtn, large && styles.statsBtnLarge]}
               onPress={() => router.push('/(tabs)/training/history' as any)}
               activeOpacity={0.7}
               accessibilityRole="button"
@@ -585,7 +587,7 @@ export default function TrainingScreen() {
               <Ionicons name="time" size={18} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.statsBtn}
+              style={[styles.statsBtn, large && styles.statsBtnLarge]}
               onPress={() => router.push('/(tabs)/training/stats' as any)}
               activeOpacity={0.7}
               accessibilityRole="button"
@@ -710,6 +712,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   addWorkoutBtnText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.black,
@@ -722,6 +725,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md - 2,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  statsBtnLarge: {
+    flexGrow: 1,
+    minHeight: 48,
+  },
+  wrapRow: {
+    flexWrap: 'wrap',
+  },
+  fullRowBtn: {
+    flexBasis: '100%',
   },
   scrollContent: {
     padding: Spacing.md,
@@ -744,8 +757,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 1,
   },
   heroCollapsedText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -802,12 +817,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl * 2,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
     alignSelf: 'stretch',
   },
   createPlanBtnText: {
+    flexShrink: 1,
+    textAlign: 'center',
     color: Colors.black,
     fontSize: FontSize.md,
     fontWeight: '800',
@@ -825,6 +842,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
   },
   archivedLinkText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     fontWeight: '600',
@@ -881,6 +899,7 @@ const styles = StyleSheet.create({
   },
   planMeta: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 4,
   },
@@ -905,7 +924,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
   },
+  addPlanBannerGrow: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
   addPlanBannerText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -974,6 +998,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   coachFeatureText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
   },
@@ -989,6 +1014,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm + 4,
+    paddingHorizontal: Spacing.sm,
     gap: Spacing.xs,
   },
   coachCtaText: {
@@ -1026,8 +1052,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 1,
   },
   coachCollapsedText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,

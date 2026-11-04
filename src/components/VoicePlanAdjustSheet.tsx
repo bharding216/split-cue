@@ -37,7 +37,8 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { useLargeText } from '../hooks/useLargeText';
 import { transcribeAudio } from '../ai/transcriptionService';
 import {
   adjustPlan,
@@ -246,6 +247,7 @@ export function VoicePlanAdjustSheet({
   onApplied,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const large = useLargeText();
   const [phase, setPhase] = useState<Phase>('idle');
   const [transcription, setTranscription] = useState('');
   const [textInput, setTextInput] = useState('');
@@ -464,7 +466,7 @@ export function VoicePlanAdjustSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, large && styles.sheetLarge]}>
           <View style={styles.handleRow}>
             <View style={styles.handle} />
           </View>
@@ -474,11 +476,18 @@ export function VoicePlanAdjustSheet({
             <View style={styles.headerLeft}>
               <View style={styles.headerTitleRow}>
                 <Ionicons name="mic" size={18} color={Colors.accent} />
-                <Text style={styles.headerTitle}>Adjust My Plan</Text>
+                <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+                  Adjust My Plan
+                </Text>
               </View>
               <Text style={styles.headerSubtitle}>Speak or type your request</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={handleClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -497,6 +506,8 @@ export function VoicePlanAdjustSheet({
                   style={styles.micButton}
                   onPress={handleMicPress}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start recording"
                 >
                   <Ionicons name="mic" size={36} color={Colors.accent} />
                 </TouchableOpacity>
@@ -513,6 +524,7 @@ export function VoicePlanAdjustSheet({
                       style={styles.chip}
                       onPress={() => handleChipPress(chip)}
                       activeOpacity={0.7}
+                      accessibilityRole="button"
                     >
                       <Ionicons name={chip.icon} size={12} color={Colors.accent} />
                       <Text style={styles.chipLabel}>{chip.label}</Text>
@@ -529,6 +541,8 @@ export function VoicePlanAdjustSheet({
                   style={[styles.micButton, styles.micButtonActive]}
                   onPress={handleMicPress}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop recording"
                 >
                   <View style={styles.recordingContent}>
                     <SoundBars metering={metering} isActive />
@@ -623,7 +637,7 @@ export function VoicePlanAdjustSheet({
             <View style={[styles.inputBar, { paddingBottom: Math.max(Spacing.sm, insets.bottom) }]}>
               <TextInput
                 ref={textInputRef}
-                style={styles.textInput}
+                style={[styles.textInput, large && styles.textInputLarge]}
                 value={textInput}
                 onChangeText={setTextInput}
                 placeholder="Or type your request…"
@@ -637,6 +651,9 @@ export function VoicePlanAdjustSheet({
                 onPress={handleTextSend}
                 disabled={!textInput.trim()}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+                accessibilityState={{ disabled: !textInput.trim() }}
               >
                 <Ionicons name="send" size={16} color={Colors.black} />
               </TouchableOpacity>
@@ -672,6 +689,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
+  sheetLarge: {
+    maxHeight: '92%',
+  },
   handleRow: {
     alignItems: 'center',
     paddingTop: Spacing.sm,
@@ -701,6 +721,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   headerTitle: {
+    flexShrink: 1,
     fontSize: FontSize.xl,
     fontWeight: '800',
     color: Colors.textPrimary,
@@ -871,6 +892,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   retryButtonText: {
+    flexShrink: 1,
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textSecondary,
@@ -895,6 +917,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
     maxHeight: 80,
+  },
+  textInputLarge: {
+    maxHeight: undefined,
   },
   sendBtn: {
     width: 36,
