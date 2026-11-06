@@ -10,10 +10,15 @@ const BUNDLE_ID = IS_DEV
     : 'com.toddly.runningintervals';
 // Production Android package must match the Google Play Console listing
 const ANDROID_PACKAGE = IS_DEV || IS_PREVIEW ? BUNDLE_ID : 'com.surmount.pacecue';
-// Preview reuses the production App Group (the preview-specific one can't be created in Apple)
+// Dev/preview are signed by the Toddly team and production by the Surmount team; App Groups are
+// team-owned, so preview keeps Toddly's group (a preview-specific one can't be created in Apple)
 const APP_GROUP = IS_DEV
   ? 'group.com.toddly.runningintervals.dev'
-  : 'group.com.toddly.runningintervals';
+  : IS_PREVIEW
+    ? 'group.com.toddly.runningintervals'
+    : 'group.com.surmount.pacecue';
+// Toddly still owns the production `.widgets` App ID, so the Surmount-signed production widget uses `.widget`
+const WIDGET_BUNDLE_ID = IS_DEV || IS_PREVIEW ? `${BUNDLE_ID}.widgets` : `${BUNDLE_ID}.widget`;
 
 const APP_NAME = IS_DEV
   ? 'SplitCue Dev Build'
@@ -156,7 +161,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-widgets',
       {
-        bundleIdentifier: `${BUNDLE_ID}.widgets`,
+        bundleIdentifier: WIDGET_BUNDLE_ID,
         groupIdentifier: APP_GROUP,
       },
     ],
@@ -182,7 +187,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             appExtensions: [
               {
                 targetName: 'ExpoWidgetsTarget',
-                bundleIdentifier: `${BUNDLE_ID}.widgets`,
+                bundleIdentifier: WIDGET_BUNDLE_ID,
                 entitlements: {
                   'com.apple.security.application-groups': [APP_GROUP],
                 },
