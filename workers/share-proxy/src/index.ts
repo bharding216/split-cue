@@ -38,7 +38,10 @@ const SUPABASE_SHARE_FN =
   'https://oakhqqrxsavmoeqlzcny.supabase.co/functions/v1/share';
 
 const BUNDLE_ID = 'com.toddly.runningintervals';
-const TEAM_ID = 'M922P47QNZ';
+// Production is signed by Surmount; dev/preview are still signed by Toddly.
+// Installs signed before the team transfer still carry the Toddly prefix until they update.
+const TEAM_ID = 'G4DCQGFUKF';
+const LEGACY_TEAM_ID = 'M922P47QNZ';
 
 // ── Apple App Site Association ──────────────────────────────────────
 
@@ -49,8 +52,9 @@ const AASA = JSON.stringify({
       {
         appIDs: [
           `${TEAM_ID}.${BUNDLE_ID}`,
-          `${TEAM_ID}.${BUNDLE_ID}.dev`,
-          `${TEAM_ID}.${BUNDLE_ID}.preview`,
+          `${LEGACY_TEAM_ID}.${BUNDLE_ID}`,
+          `${LEGACY_TEAM_ID}.${BUNDLE_ID}.dev`,
+          `${LEGACY_TEAM_ID}.${BUNDLE_ID}.preview`,
         ],
         paths: ['/w/*'],
       },
