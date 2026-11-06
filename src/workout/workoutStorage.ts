@@ -313,6 +313,7 @@ export async function clearAllUserData(): Promise<void> {
 const CUE_BASES = new Set(['time', 'distance']);
 const PROGRESS_CUE_BASES = new Set(['time', 'distance', 'auto']);
 const CUE_DISTANCE_PRESETS = new Set(['off', 'quarter', 'half', 'full']);
+const SPLIT_DISTANCE_PRESETS = new Set(['quarter', 'half', 'full']);
 const AUDIO_CUE_MODES = new Set(['voice', 'beeps', 'both', 'silent']);
 
 /** Fill defaults and drop unknown cue-schedule values from older saves. */
@@ -325,6 +326,7 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
   if (!CUE_BASES.has(parsed.paceCueBasis)) parsed.paceCueBasis = 'time';
   if (!CUE_DISTANCE_PRESETS.has(parsed.progressCueDistance)) parsed.progressCueDistance = 'full';
   if (!CUE_DISTANCE_PRESETS.has(parsed.paceCueDistance)) parsed.paceCueDistance = 'half';
+  if (!SPLIT_DISTANCE_PRESETS.has(parsed.splitDistance)) parsed.splitDistance = DEFAULT_SETTINGS.splitDistance;
   if (!AUDIO_CUE_MODES.has(parsed.audioCueMode)) parsed.audioCueMode = DEFAULT_SETTINGS.audioCueMode;
   if (parsed.voiceEngine !== 'device' && parsed.voiceEngine !== 'premium') parsed.voiceEngine = 'premium';
   if (!PREMIUM_VOICES.some((v) => v.id === parsed.premiumVoiceId)) {

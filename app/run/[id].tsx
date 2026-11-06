@@ -28,12 +28,13 @@ import {
   loadHistory,
   loadWorkouts,
   loadSettings,
+  saveSettings,
   saveWorkout,
   withHistoryLock,
 } from '../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../src/workout/tempWorkoutCache';
 import { DEFAULT_SETTINGS } from '../../src/workout/workoutTypes';
-import type { PaceUnit } from '../../src/pace/paceTypes';
+import type { PaceUnit, SplitDistancePreset } from '../../src/pace/paceTypes';
 import { RouteMap } from '../../src/components/RouteMap';
 import { ElevationProfile } from '../../src/components/ElevationProfile';
 import { TerrainSummary } from '../../src/components/TerrainSummary';
@@ -48,7 +49,7 @@ import {
 } from '../../src/stats/personalRecords';
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
 import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
-import { SplitsTable } from '../../src/components/SplitsTable';
+import { RunSplits } from '../../src/components/RunSplits';
 import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
 import { StravaPushButton } from '../../src/strava/StravaPushButton';
@@ -130,6 +131,7 @@ export default function RunDetailsScreen() {
   const large = useLargeText();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
+  const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
   const [loading, setLoading] = useState(true);
 
   const chartWidth = screenWidth - Spacing.lg * 2;
@@ -146,6 +148,7 @@ export default function RunDetailsScreen() {
       const found = history.find((h) => h.id === id) ?? null;
       setRun(found);
       setPaceUnit(settings.paceUnit);
+      setSplitDistance(settings.splitDistance);
       if (found) {
         setAnnotations({ tags: found.tags ?? [], notes: found.notes ?? '' });
         setStatsRecords(computeStats(history, settings.paceUnit).records);
@@ -165,6 +168,13 @@ export default function RunDetailsScreen() {
     if (!elevation) return [];
     return aggregateByTerrain(elevation.segments);
   }, [elevation]);
+
+  const handleSplitDistanceChange = (preset: SplitDistancePreset) => {
+    setSplitDistance(preset);
+    loadSettings()
+      .then((settings) => saveSettings({ ...settings, splitDistance: preset }))
+      .catch(() => {});
+  };
 
   const handleSaveToMyWorkouts = async () => {
     if (!run) return;
@@ -286,12 +296,15 @@ export default function RunDetailsScreen() {
           </View>
         )}
 
-        {/* Splits */}
-        {run.splits && run.splits.length > 0 && (
-          <View style={styles.section}>
-            <SplitsTable splits={run.splits} paceUnit={paceUnit} />
-          </View>
-        )}
+        <View style={styles.section}>
+          <RunSplits
+            intervalSplits={run.splits}
+            route={run.route}
+            paceUnit={paceUnit}
+            splitDistance={splitDistance}
+            onSplitDistanceChange={handleSplitDistanceChange}
+          />
+        </View>
 
         <Text style={styles.groupTitle}>Reflection</Text>
         <ReflectionSection run={run} onChange={setAnnotations} />

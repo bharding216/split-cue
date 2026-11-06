@@ -291,7 +291,7 @@ export default function AccountScreen() {
       {/* Manage subscription */}
       {tier === 'pro' && (
         <TouchableOpacity
-          style={styles.actionRow}
+          style={[styles.actionRow, { marginTop: Spacing.md }]}
           onPress={() => {
             hapticTap();
             manageSubscription();

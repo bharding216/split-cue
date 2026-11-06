@@ -21,7 +21,13 @@ import {
   MAX_ACCURACY_METERS,
   createPaceState,
 } from '../pace/paceTypes';
-import { addSample, expireStalePace, resetPaceState } from '../pace/paceTracker';
+import {
+  addSample,
+  expireStalePace,
+  pausePaceState,
+  resetPaceState,
+  resumePaceState,
+} from '../pace/paceTracker';
 import {
   addWorkoutSessionLocationListener,
   isWorkoutSessionSupported,
@@ -72,6 +78,11 @@ export interface PaceTrackerResult {
   hasHadPace: () => boolean;
   /** Full unpruned GPS track accumulated during the workout. */
   getFullTrack: () => GpsSample[];
+  /** The full track split at each resume; no distance is counted between segments. */
+  getTrackSegments: () => GpsSample[][];
+  /** Ignore fixes and clear the current pace until `resume`. GPS stays on for a quick fix on resume. */
+  pause: () => void;
+  resume: () => void;
   start: () => Promise<void>;
   stop: () => Promise<void>;
   reset: () => void;
@@ -94,10 +105,14 @@ export function usePaceTracker(
   const foregroundSubRef = useRef<Location.LocationSubscription | null>(null);
   const sessionLocationSubRef = useRef<{ remove(): void } | null>(null);
   const trackingRef = useRef(false);
-  const fullTrackRef = useRef<GpsSample[]>([]);
-  /** Newest sample timestamp ingested. The foreground watcher and background task can both deliver the same fixes. */
+  const trackSegmentsRef = useRef<GpsSample[][]>([[]]);
+  /**
+   * Newest sample timestamp ingested. The foreground watcher and background task can both deliver the same fixes.
+   * Raised to the resume time on resume, so fixes taken during a pause are never ingested.
+   */
   const lastSampleAtRef = useRef(0);
   const hadPaceRef = useRef(false);
+  const pausedRef = useRef(false);
 
   const commit = useCallback((next: PaceState) => {
     if (next === paceStateRef.current) return;
@@ -109,12 +124,13 @@ export function usePaceTracker(
   /** Fold samples into the pace state, skipping any not newer than the last one ingested. */
   const ingest = useCallback(
     (samples: GpsSample[]) => {
+      if (pausedRef.current) return;
       let state = paceStateRef.current;
       for (const sample of samples) {
         if (sample.timestamp <= lastSampleAtRef.current) continue;
         lastSampleAtRef.current = sample.timestamp;
         if (sample.accuracy <= MAX_ACCURACY_METERS) {
-          fullTrackRef.current.push(sample);
+          trackSegmentsRef.current[trackSegmentsRef.current.length - 1].push(sample);
         }
         state = addSample(state, sample, windowRef.current);
       }
@@ -141,6 +157,23 @@ export function usePaceTracker(
 
   const getPaceState = useCallback(() => paceStateRef.current, []);
   const hasHadPace = useCallback(() => hadPaceRef.current, []);
+
+  const pause = useCallback(() => {
+    if (pausedRef.current) return;
+    drainBackgroundBuffer();
+    pausedRef.current = true;
+    commit(pausePaceState(paceStateRef.current));
+  }, [drainBackgroundBuffer, commit]);
+
+  const resume = useCallback(() => {
+    if (!pausedRef.current) return;
+    pausedRef.current = false;
+    backgroundSampleBuffer = [];
+    lastSampleAtRef.current = Math.max(lastSampleAtRef.current, Date.now());
+    const segments = trackSegmentsRef.current;
+    if (segments[segments.length - 1].length > 0) segments.push([]);
+    commit(resumePaceState(paceStateRef.current));
+  }, [commit]);
 
   /** Start GPS tracking. */
   const start = useCallback(async () => {
@@ -245,13 +278,18 @@ export function usePaceTracker(
     paceStateRef.current = fresh;
     setPaceState(fresh);
     backgroundSampleBuffer = [];
-    fullTrackRef.current = [];
+    trackSegmentsRef.current = [[]];
     lastSampleAtRef.current = 0;
     hadPaceRef.current = false;
+    pausedRef.current = false;
   }, []);
 
   /** Return a snapshot of the full GPS track accumulated during this workout. */
-  const getFullTrack = useCallback(() => [...fullTrackRef.current], []);
+  const getFullTrack = useCallback(() => trackSegmentsRef.current.flat(), []);
+  const getTrackSegments = useCallback(
+    () => trackSegmentsRef.current.filter((s) => s.length > 0).map((s) => [...s]),
+    [],
+  );
 
   // Drain background buffer when app comes to foreground
   useEffect(() => {
@@ -283,6 +321,9 @@ export function usePaceTracker(
     sync,
     hasHadPace,
     getFullTrack,
+    getTrackSegments,
+    pause,
+    resume,
     start,
     stop,
     reset,

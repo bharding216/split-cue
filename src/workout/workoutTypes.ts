@@ -221,6 +221,7 @@ import type {
   ProgressCueBasis,
   PaceWindowSize,
   PaceUnit,
+  SplitDistancePreset,
 } from '../pace/paceTypes';
 
 export interface AppSettings {
@@ -249,6 +250,8 @@ export interface AppSettings {
   paceCueOnlyWithTarget: boolean;
   /** Upload every finished run to Strava when it's connected. */
   stravaAutoUpload: boolean;
+  /** Last split length picked on Run Details. */
+  splitDistance: SplitDistancePreset;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -271,6 +274,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   paceUnit: 'minPerMile',
   paceCueOnlyWithTarget: false,
   stravaAutoUpload: false,
+  splitDistance: 'full',
 };
 
 // ── Segment helpers ──────────────────────────────────────────────────

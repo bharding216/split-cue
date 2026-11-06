@@ -99,31 +99,27 @@ function buildVerboseCueContext(
   };
 }
 
-/** Convert raw GPS samples into compact RoutePoints with cumulative distance. */
-function samplesToRoute(samples: GpsSample[]): RoutePoint[] {
-  if (samples.length === 0) return [];
+/**
+ * Convert raw GPS track segments into compact RoutePoints with cumulative distance.
+ * Distance is not counted across segment boundaries (pauses).
+ */
+function samplesToRoute(segments: GpsSample[][]): RoutePoint[] {
   let cumDist = 0;
-  const route: RoutePoint[] = [
-    {
-      lat: samples[0].latitude,
-      lng: samples[0].longitude,
-      alt: samples[0].altitude,
-      ts: samples[0].timestamp,
-      dist: 0,
-    },
-  ];
-  let odometer = advanceOdometer(createOdometer(), samples[0]).odometer;
-  for (let i = 1; i < samples.length; i++) {
-    const step = advanceOdometer(odometer, samples[i]);
-    odometer = step.odometer;
-    cumDist += step.meters;
-    route.push({
-      lat: samples[i].latitude,
-      lng: samples[i].longitude,
-      alt: samples[i].altitude,
-      ts: samples[i].timestamp,
-      dist: cumDist,
-    });
+  const route: RoutePoint[] = [];
+  for (const samples of segments) {
+    let odometer = createOdometer();
+    for (const sample of samples) {
+      const step = advanceOdometer(odometer, sample);
+      odometer = step.odometer;
+      cumDist += step.meters;
+      route.push({
+        lat: sample.latitude,
+        lng: sample.longitude,
+        alt: sample.altitude,
+        ts: sample.timestamp,
+        dist: cumDist,
+      });
+    }
   }
   return route;
 }
@@ -324,7 +320,7 @@ export function useWorkoutRunner(
     if (historySaved.current) return;
     historySaved.current = true;
     const ps = paceTrackerRef.current.getPaceState();
-    const fullTrack = paceTrackerRef.current.getFullTrack();
+    const trackSegments = paceTrackerRef.current.getTrackSegments();
     const entryId = generateId();
     const entry: CompletedWorkout = {
       id: entryId,
@@ -334,7 +330,7 @@ export function useWorkoutRunner(
       totalDurationMs: elapsedMs,
       splits: [...splitsRef.current],
       totalDistanceMeters: ps.totalDistanceMeters > 0 ? ps.totalDistanceMeters : undefined,
-      route: fullTrack.length > 0 ? samplesToRoute(fullTrack) : undefined,
+      route: trackSegments.length > 0 ? samplesToRoute(trackSegments) : undefined,
       configuration: workout,
       templateId: sessionMeta?.templateId,
       planWorkoutId: sessionMeta?.planWorkoutId,
@@ -751,7 +747,10 @@ export function useWorkoutRunner(
     const next = pauseWorkout(engineRef.current);
     engineRef.current = next;
     setEngine(next);
-    if (next.phase === 'paused') pausedAtRef.current = Date.now();
+    if (next.phase === 'paused') {
+      pausedAtRef.current = Date.now();
+      paceTrackerRef.current.pause();
+    }
 
     // Update Live Activity to show paused state
     updateLiveActivity(buildLAProps(next, true));
@@ -765,6 +764,7 @@ export function useWorkoutRunner(
       pausedMsRef.current += Date.now() - pausedAtRef.current;
       pausedAtRef.current = null;
     }
+    paceTrackerRef.current.resume();
 
     // Update Live Activity with new timing
     updateLiveActivity(buildLAProps(next, false));

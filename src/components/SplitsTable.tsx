@@ -21,6 +21,8 @@ interface Props {
   splits: IntervalSplit[];
   paceUnit: PaceUnit;
   style?: StyleProp<ViewStyle>;
+  /** Hide the built-in "Splits" title when the caller renders its own header. */
+  hideTitle?: boolean;
 }
 
 const CELL_FONT_SCALE = MaxFontScale.display;
@@ -30,7 +32,7 @@ function formatSplitDistance(meters: number, unit: PaceUnit): string {
   return value >= 0.1 ? value.toFixed(2) : `${Math.round(meters)}m`;
 }
 
-export function SplitsTable({ splits, paceUnit, style }: Props) {
+export function SplitsTable({ splits, paceUnit, style, hideTitle }: Props) {
   const large = useLargeText();
   const hasPace = splits.some((s) => s.avgPaceMinPerMile != null);
   const hasDist = splits.some((s) => s.distanceMeters != null);
@@ -39,7 +41,7 @@ export function SplitsTable({ splits, paceUnit, style }: Props) {
 
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.title}>Splits</Text>
+      {!hideTitle && <Text style={styles.title}>Splits</Text>}
 
       {/* With large text the columns can't fit side by side, so each row labels its own values instead */}
       {!large && (
@@ -238,6 +240,7 @@ const styles = StyleSheet.create({
   },
   valueCol: {
     minWidth: 48,
+    marginLeft: Spacing.sm,
     textAlign: 'right',
   },
   typeDot: {

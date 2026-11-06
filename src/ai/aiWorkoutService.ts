@@ -14,6 +14,8 @@ import {
   RepeatGroup,
   generateId,
   totalWorkoutSeconds,
+  totalWorkoutDistanceMeters,
+  formatDistanceShort,
   formatTime,
   defaultSegmentLabel,
   parseWorkoutCategory,
@@ -69,7 +71,12 @@ function sanitizeBlock(block: WorkoutBlock): WorkoutBlock {
  * the exact structure when the user asks for edits in a follow-up message.
  */
 function serializeWorkoutForContext(workout: WorkoutDefinition): string {
-  const total = formatTime(totalWorkoutSeconds(workout));
+  const totals: string[] = [];
+  const seconds = totalWorkoutSeconds(workout);
+  if (seconds > 0) totals.push(formatTime(seconds));
+  const meters = totalWorkoutDistanceMeters(workout);
+  if (meters) totals.push(formatDistanceShort(meters, 'minPerMile'));
+  const total = totals.join(' + ') || 'open-ended';
 
   const serializeBlockTree = (blocks: WorkoutBlock[], indent = ''): string => {
     return blocks.map((b) => {
@@ -80,7 +87,7 @@ function serializeWorkoutForContext(workout: WorkoutDefinition): string {
         if (b.target.type === 'time' && b.target.durationSeconds) {
           parts.push(formatTime(b.target.durationSeconds));
         } else if (b.target.type === 'distance' && b.target.distanceMeters) {
-          parts.push(`${b.target.distanceMeters}m`);
+          parts.push(`${Math.round(b.target.distanceMeters)}m (${formatDistanceShort(b.target.distanceMeters, 'minPerMile')})`);
         } else if (b.target.type === 'manual') {
           parts.push('manual');
         }

@@ -76,7 +76,7 @@ Use this history to coach the runner:
 - If they've been off for a while (7+ days since last workout), ease them back in with a lighter session
 - Consider progressive overload if volume and intensity have been consistent
 - Reference their actual history in your message (e.g. "Since your last 3 workouts were speed-focused, let's mix in some tempo work today")
-- Match workout duration to their typical run length unless they ask for something different`);
+- Match workout duration to their typical run length unless they ask for a specific time or distance`);
   }
 
   // ── Output schema ──────────────────────────────────────
@@ -100,7 +100,7 @@ Segment = {
   "blockType": "segment",
   "segmentType": "warmup" | "run" | "recovery" | "rest" | "cooldown",
   "label": "string (optional) — human-readable label e.g. 'Sprint', 'Recovery Jog'",
-  "target": { "type": "time" | "distance", "durationSeconds": number, "distanceMeters": number },
+  "target": { "type": "time", "durationSeconds": number } | { "type": "distance", "distanceMeters": number },
   "intensity": "recovery" | "easy" | "moderate" | "tempo" | "hard" | "sprint" (optional),
   "targetPace": number (optional) — min/mile e.g. 8.5 = 8:30/mi
 }
@@ -143,8 +143,13 @@ Rules:
 - intensity and targetPace are MUTUALLY EXCLUSIVE per segment. Use at most one.
 - If the runner's profile includes pace data, prefer targetPace for hard/tempo segments.
 - Otherwise use intensity.
-- A segment target can be TIME-BASED (type "time", durationSeconds > 0) or DISTANCE-BASED (type "distance", distanceMeters > 0). Use distance-based for track repeats (400m, 800m, mile repeats) and race-distance runs.
-- For time-based targets, include durationSeconds in the target object. For distance-based, include distanceMeters.
+- A segment target can be TIME-BASED (type "time", durationSeconds > 0) or DISTANCE-BASED (type "distance", distanceMeters > 0).
+- Honor the unit the runner asks for. If they give a distance ("4 miles", "a 10K", "6 x 800m"), use DISTANCE-BASED targets for those segments. If they give a time ("30 minutes", "5 x 3 min"), use TIME-BASED targets.
+- NEVER convert a requested distance into a duration using a pace (e.g. "4 miles at 8:00/mi" is a 4-mile distance segment with targetPace 8.0, NOT a 32-minute segment). A target pace only sets how fast to run; it does not change the target type.
+- Convert distances to meters: 1 mile = 1609.344 m, 1 km = 1000 m (e.g. 4 miles = 6437.376).
+- When the runner asks for a total run distance, the run segments plus any warmup/cooldown must add up to that distance. If you add a warmup or cooldown, make them distance-based too and shorten the main segment accordingly.
+- Use distance-based targets for track repeats (400m, 800m, mile repeats) and race-distance runs even when the runner doesn't specify a unit.
+- For time-based targets, include only durationSeconds in the target object. For distance-based, include only distanceMeters.
 - blocks must have at least one block.
 - repetitions must be a positive integer (1 = no repeat, just use a Segment instead).
 - Use RepeatGroups for interval sets: e.g. 6× (3 min run + 2 min recovery).

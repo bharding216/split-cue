@@ -60,6 +60,9 @@ export type ProgressCueBasis = CueBasis | 'auto';
  */
 export type CueDistancePreset = 'off' | 'quarter' | 'half' | 'full';
 
+/** Split length on Run Details, resolved like CueDistancePreset. */
+export type SplitDistancePreset = Exclude<CueDistancePreset, 'off'>;
+
 /** Rolling window size for pace calculation (seconds). */
 export type PaceWindowSize = 10 | 30 | 60;
 

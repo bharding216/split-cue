@@ -138,11 +138,32 @@ export function expireStalePace(
   if (state.currentPaceMps == null) return state;
   const newest = state.samples[state.samples.length - 1];
   if (newest && now - newest.timestamp <= windowSeconds * 1000) return state;
+  return clearPace(state);
+}
+
+function clearPace(state: PaceState): PaceState {
   return {
     ...state,
     currentPaceMps: null,
     currentPaceMinPerMile: null,
     currentPaceMinPerKm: null,
+  };
+}
+
+/** Pace state for a paused workout: no current pace, distance kept. */
+export function pausePaceState(state: PaceState): PaceState {
+  return clearPace(state);
+}
+
+/**
+ * Pace state on resume. The rolling window and odometer start fresh so the
+ * first fix after the pause counts no distance from where the pause began.
+ */
+export function resumePaceState(state: PaceState): PaceState {
+  return {
+    ...clearPace(state),
+    samples: [],
+    odometer: { prev: null, anchor: null, speedReported: state.odometer.speedReported },
   };
 }
 
