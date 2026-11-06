@@ -19,6 +19,8 @@ import {
 const EARTH_RADIUS_METERS = 6_371_000;
 const METERS_PER_MILE = 1_609.344;
 const METERS_PER_KM = 1_000;
+/** Reported speed below this counts as standing still (a slow walk is ~1 m/s). */
+const MOVING_SPEED_MPS = 0.5;
 
 /** Convert degrees to radians. */
 function toRad(deg: number): number {
@@ -104,9 +106,18 @@ export function expireStalePace(
  * Mean of the OS-reported (Doppler) speeds, which aren't affected by position
  * jitter. Null when the device doesn't report speed: iOS uses negative values
  * for invalid, and some Android providers report 0 for every fix.
+ *
+ * Fixes before the first moving one are skipped: standing at Start or after a
+ * long stop would otherwise drag the pace down for a whole window. Stops later
+ * in the window still count.
  */
 function averageReportedSpeed(samples: GpsSample[]): number | null {
+  const firstMoving = samples.findIndex(
+    (s) => s.speed != null && s.speed >= MOVING_SPEED_MPS,
+  );
+  if (firstMoving < 0) return null;
   const speeds = samples
+    .slice(firstMoving)
     .map((s) => s.speed)
     .filter((v): v is number => v != null && v >= 0);
   if (speeds.length < MIN_SAMPLES_FOR_PACE || !speeds.some((v) => v > 0)) {
