@@ -140,7 +140,7 @@ Respond with ONLY a JSON object (no markdown fences, no extra text) matching:
       "date": "YYYY-MM-DD",
       "workout": {
         "name": "string — short name matching the day_label",
-        "category": "easy" | "tempo" | "intervals" | "long_run" | "race",
+        "category": "easy" | "tempo" | "intervals" | "long_run" | "race" | "other",
         "blocks": [WorkoutBlock],
         "targetDistanceMeters": number (optional) — total workout auto-finish distance in meters
       }
@@ -181,6 +181,8 @@ Category meanings:
 - "intervals": structured speed work with repeating hard/easy blocks
 - "long_run": endurance-building long runs (45+ min)
 - "race": race simulations, time trials, race-distance runs
+- "other": anything that doesn't clearly fit one of the above
+Always include "category", matching the day_label's intent (a tempo day is "tempo" even when segments use targetPace). Never default to "easy" when unsure; use "other".
 
 Rules:
 - intensity and targetPace are MUTUALLY EXCLUSIVE per segment. Use at most one.

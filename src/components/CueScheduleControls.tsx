@@ -4,21 +4,31 @@
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import type { CueBasis, CueDistancePreset, PaceUnit } from '../pace/paceTypes';
+import type { CueBasis, CueDistancePreset, PaceUnit, ProgressCueBasis } from '../pace/paceTypes';
 import { CUE_DISTANCE_PRESETS, cueDistanceLabel } from '../audio/cueSchedule';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
 
-export function CueBasisToggle({
+const BASIS_LABELS: Record<ProgressCueBasis, string> = {
+  auto: 'Match interval',
+  time: 'By time',
+  distance: 'By distance',
+};
+
+export const PROGRESS_CUE_BASES: readonly ProgressCueBasis[] = ['auto', 'time', 'distance'];
+
+export function CueBasisToggle<T extends ProgressCueBasis = CueBasis>({
   value,
   onChange,
+  options = ['time', 'distance'] as T[],
 }: {
-  value: CueBasis;
-  onChange: (basis: CueBasis) => void;
+  value: T;
+  onChange: (basis: T) => void;
+  options?: readonly T[];
 }) {
   return (
     <View style={styles.row}>
-      {(['time', 'distance'] as const).map((basis) => {
+      {options.map((basis) => {
         const active = value === basis;
         return (
           <TouchableOpacity
@@ -31,7 +41,7 @@ export function CueBasisToggle({
             activeOpacity={0.7}
           >
             <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
-              {basis === 'time' ? 'By time' : 'By distance'}
+              {BASIS_LABELS[basis]}
             </Text>
           </TouchableOpacity>
         );

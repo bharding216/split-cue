@@ -3,7 +3,7 @@
  * Distance steps follow the runner's pace unit.
  */
 
-import type { CueBasis, CueDistancePreset, PaceUnit } from '../pace/paceTypes';
+import type { CueBasis, CueDistancePreset, PaceUnit, ProgressCueBasis } from '../pace/paceTypes';
 import { METERS_PER_KM, METERS_PER_MILE } from '../workout/workoutTypes';
 
 export const CUE_DISTANCE_PRESETS: CueDistancePreset[] = ['off', 'quarter', 'half', 'full'];
@@ -53,9 +53,12 @@ export function paceCuesEnabled(settings: {
   return settings.paceCueFrequency > 0;
 }
 
-/** Interval-progress distance cues need GPS even when pace display is off. */
+/**
+ * Interval-progress distance cues need GPS even when pace display is off.
+ * 'auto' only speaks distance in distance intervals, which start GPS on their own.
+ */
 export function distanceProgressCuesNeedGps(settings: {
-  progressCueBasis: CueBasis;
+  progressCueBasis: ProgressCueBasis;
   progressCueDistance: CueDistancePreset;
 }): boolean {
   return settings.progressCueBasis === 'distance' && settings.progressCueDistance !== 'off';

@@ -511,6 +511,13 @@ const CATEGORIES: CategoryConfig[] = [
     description: 'Race simulations and time trials',
     color: Colors.primary,
   },
+  {
+    key: 'other',
+    title: 'Other',
+    icon: 'ellipsis-horizontal-circle-outline',
+    description: 'No clear type yet. Edit one to choose a category',
+    color: Colors.textSecondary,
+  },
 ];
 
 const RECENT_INLINE_LIMIT = 5;
@@ -640,7 +647,7 @@ export default function HomeScreen() {
       acc[cat].push(w);
       return acc;
     },
-    { easy: [], tempo: [], intervals: [], long_run: [], race: [] }
+    { easy: [], tempo: [], intervals: [], long_run: [], race: [], other: [] }
   );
 
   /** Persist reordered workouts within one category back into the flat list. */
@@ -792,6 +799,7 @@ export default function HomeScreen() {
         )}
         {CATEGORIES.map((cat) => {
           const items = grouped[cat.key];
+          if (cat.key === 'other' && items.length === 0) return null;
           const isExpanded = expanded.has(cat.key);
           return (
             <View key={cat.key} style={styles.categorySection}>
@@ -844,7 +852,7 @@ export default function HomeScreen() {
 
         {workouts.length === 0 && (
           <Text style={styles.emptyText}>
-            No saved templates yet. Tap Quick Start above to begin, or save a template to build your library.
+            No saved workouts yet. Tap Quick Start above to begin, or tap Save to My Workouts on any workout you want to keep.
           </Text>
         )}
       </ScrollView>

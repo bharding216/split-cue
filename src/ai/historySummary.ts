@@ -175,8 +175,9 @@ export function buildHistorySummary(history: CompletedWorkout[]): HistorySummary
  * Format a pace value as M:SS string (e.g. 7.5 → "7:30").
  */
 function formatPace(pace: number): string {
-  const m = Math.floor(pace);
-  const s = Math.round((pace - m) * 60);
+  const total = Math.round(pace * 60);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 

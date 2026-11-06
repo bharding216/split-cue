@@ -24,6 +24,8 @@ import {
   defaultSegmentLabel,
   formatDistanceForSpeech,
   formatCueDistanceForSpeech,
+  METERS_PER_KM,
+  METERS_PER_MILE,
 } from '../workout/workoutTypes';
 import { cueDistanceMeters } from './cueSchedule';
 import { type Clip, clipKey } from './clipKey';
@@ -318,6 +320,44 @@ export function distanceProgressPhrase(meters: number, unit: PaceUnit): string {
   return `${formatCueDistanceForSpeech(meters, unit)} passed`;
 }
 
+/** Remaining distance below this is too small to announce. */
+const MIN_REMAINING_METERS = 10;
+
+/** Quarter steps keep cue wording ("2 and a half miles"); anything else is spoken to a tenth. */
+function remainingDistanceForSpeech(meters: number, unit: PaceUnit): string {
+  const quarter = cueDistanceMeters('quarter', unit);
+  const offStep = Math.abs(meters - Math.round(meters / quarter) * quarter);
+  if (offStep < MIN_REMAINING_METERS) return formatCueDistanceForSpeech(meters, unit);
+  if (unit === 'minPerKm') {
+    if (meters < METERS_PER_KM) return `${Math.round(meters / 10) * 10} meters`;
+    return `${Math.round((meters / METERS_PER_KM) * 10) / 10} kilometers`;
+  }
+  const miles = Math.round((meters / METERS_PER_MILE) * 10) / 10;
+  if (miles < 0.1) return `${Math.round(meters / 10) * 10} meters`;
+  return `${miles} ${miles === 1 ? 'mile' : 'miles'}`;
+}
+
+function toGoPiece(meters: number, unit: PaceUnit): Piece {
+  return piece(`${remainingDistanceForSpeech(meters, unit)} to go.`, '14 minutes 52 seconds.');
+}
+
+/** "1 mile passed. 14 minutes 52 seconds. 3 miles to go." */
+export function distanceSplitCue(
+  meters: number,
+  elapsedSeconds: number,
+  unit: PaceUnit,
+  goalMeters?: number,
+): CuePhrase {
+  const distance = distanceProgressPhrase(meters, unit);
+  const pieces: Piece[] = [
+    { clip: distance, text: `${distance}.` },
+    ...measurePieces(elapsedSeconds, undefined, true),
+  ];
+  const remaining = (goalMeters ?? 0) - meters;
+  if (remaining >= MIN_REMAINING_METERS) pieces.push(toGoPiece(remaining, unit));
+  return toPhrase(pieces);
+}
+
 /**
  * Factual pace cue — just the current pace, no judgment.
  *   "Current pace 7 minutes 35 seconds per mile"
@@ -459,7 +499,9 @@ export function enumerateWorkoutClips(workout: WorkoutDefinition, settings: AppS
   };
   const intervals = flattenWorkout(workout);
   const progressStep =
-    settings.progressCueBasis === 'time' ? settings.timeRemainingInterval : 0;
+    settings.progressCueBasis === 'distance' ? 0 : settings.timeRemainingInterval;
+  const auto = settings.progressCueBasis === 'auto';
+  const distanceStep = cueDistanceMeters(settings.progressCueDistance, settings.paceUnit);
 
   intervals.forEach((ci, i) => {
     const ctx = buildCueContext(ci, intervals[i + 1], settings.paceUnit);
@@ -474,7 +516,14 @@ export function enumerateWorkoutClips(workout: WorkoutDefinition, settings: AppS
       }
     }
 
-    if (progressStep > 0) {
+    if (auto && isDistanceInterval(ci) && distanceStep > 0) {
+      const goal = ci.distanceMeters ?? 0;
+      for (let d = distanceStep; goal - d >= MIN_REMAINING_METERS; d += distanceStep) {
+        add(toPhrase([toGoPiece(goal - d, settings.paceUnit)]));
+      }
+    }
+
+    if (progressStep > 0 && !(auto && isDistanceInterval(ci))) {
       const limit = timed ? ci.durationSeconds : UNTIMED_PROGRESS_LIMIT_SECONDS;
       for (let t = progressStep; t < limit; t += progressStep) {
         add(intervalProgressCue(t));

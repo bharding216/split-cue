@@ -311,6 +311,7 @@ export async function clearAllUserData(): Promise<void> {
 // ── Settings ─────────────────────────────────────────────────────────
 
 const CUE_BASES = new Set(['time', 'distance']);
+const PROGRESS_CUE_BASES = new Set(['time', 'distance', 'auto']);
 const CUE_DISTANCE_PRESETS = new Set(['off', 'quarter', 'half', 'full']);
 const AUDIO_CUE_MODES = new Set(['voice', 'beeps', 'both', 'silent']);
 
@@ -320,7 +321,7 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
   if (typeof (parsed.countdownWarningSeconds as unknown) === 'number') {
     parsed.countdownWarningSeconds = [parsed.countdownWarningSeconds as unknown as number];
   }
-  if (!CUE_BASES.has(parsed.progressCueBasis)) parsed.progressCueBasis = 'time';
+  if (!PROGRESS_CUE_BASES.has(parsed.progressCueBasis)) parsed.progressCueBasis = 'time';
   if (!CUE_BASES.has(parsed.paceCueBasis)) parsed.paceCueBasis = 'time';
   if (!CUE_DISTANCE_PRESETS.has(parsed.progressCueDistance)) parsed.progressCueDistance = 'full';
   if (!CUE_DISTANCE_PRESETS.has(parsed.paceCueDistance)) parsed.paceCueDistance = 'half';

@@ -405,7 +405,7 @@ export function DayDetail({
               activeOpacity={0.7}
             >
               <Ionicons name="play" size={14} color={Colors.textPrimary} />
-              <Text style={styles.secondaryBtnText}>Run Again</Text>
+              <Text style={styles.secondaryBtnText}>Repeat</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -24,6 +24,22 @@ export interface PaceState {
   currentPaceMinPerKm: number | null;
   /** Total distance covered in meters since workout start. */
   totalDistanceMeters: number;
+  /** Bookkeeping for how distance accumulates between fixes. */
+  odometer: Odometer;
+}
+
+/** Distance bookkeeping across fixes; see `advanceOdometer`. */
+export interface Odometer {
+  /** Previous accepted fix. */
+  prev: GpsSample | null;
+  /** Last fix at which straight-line distance was counted (fallback mode). */
+  anchor: GpsSample | null;
+  /** Whether this device has reported a positive speed during the track. */
+  speedReported: boolean;
+}
+
+export function createOdometer(): Odometer {
+  return { prev: null, anchor: null, speedReported: false };
 }
 
 /** How often to announce pace (seconds, 0 = off). */
@@ -31,6 +47,12 @@ export type PaceCueFrequency = 0 | 15 | 30 | 45 | 60 | 90 | 120;
 
 /** Whether a periodic cue fires on elapsed time or covered distance. */
 export type CueBasis = 'time' | 'distance';
+
+/**
+ * Interval-progress cues can also follow each interval's goal: elapsed time in
+ * timed intervals, distance plus elapsed time in distance intervals.
+ */
+export type ProgressCueBasis = CueBasis | 'auto';
 
 /**
  * Distance step for periodic cues.
@@ -60,5 +82,6 @@ export function createPaceState(): PaceState {
     currentPaceMinPerMile: null,
     currentPaceMinPerKm: null,
     totalDistanceMeters: 0,
+    odometer: createOdometer(),
   };
 }

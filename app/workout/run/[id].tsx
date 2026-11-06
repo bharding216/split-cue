@@ -36,7 +36,11 @@ import {
 } from '../../../src/workout/workoutTypes';
 import type { PaceCueFrequency } from '../../../src/pace/paceTypes';
 import { paceCuesEnabled, distanceProgressCuesNeedGps } from '../../../src/audio/cueSchedule';
-import { CueBasisToggle, CueDistanceChips } from '../../../src/components/CueScheduleControls';
+import {
+  CueBasisToggle,
+  CueDistanceChips,
+  PROGRESS_CUE_BASES,
+} from '../../../src/components/CueScheduleControls';
 import { loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { useWorkoutRunner, type SessionMeta } from '../../../src/hooks/useWorkoutRunner';
@@ -678,10 +682,14 @@ function ActiveWorkoutInner({
                 {formatDistanceShort(runner.intervalDistanceRemaining ?? 0, settings.paceUnit)}
               </Text>
               <Text style={styles.distSubLabel}>remaining</Text>
-              {/* Also show elapsed time for distance intervals */}
-              <Text style={styles.distElapsed}>
-                {formatTime(Math.floor((Date.now() - state.startedAt) / 1000))} elapsed
+              <Text
+                style={styles.distElapsed}
+                maxFontSizeMultiplier={MaxFontScale.display}
+                accessibilityLabel={`${formatTime(runner.elapsedSeconds)} elapsed`}
+              >
+                {formatTime(runner.elapsedSeconds)}
               </Text>
+              <Text style={styles.distSubLabel}>elapsed</Text>
             </View>
           ) : (
             <Timer
@@ -711,6 +719,13 @@ function ActiveWorkoutInner({
                 {formatDistanceShort(runner.workoutDistanceTarget, settings.paceUnit)}
               </Text>
             </View>
+            {/* The distance interval display already shows the clock */}
+            {!runner.isDistanceInterval && (
+              <View style={styles.distTargetInfo}>
+                <Text style={styles.distTargetLabel}>ELAPSED</Text>
+                <Text style={styles.distTargetValue}>{formatTime(runner.elapsedSeconds)}</Text>
+              </View>
+            )}
             <View style={styles.distProgressTrack}>
               <View
                 style={[
@@ -1007,15 +1022,21 @@ function MidRunSettingsSheet({
             {/* Interval Progress */}
             <Text style={sheetStyles.sectionTitle}>Interval Progress</Text>
             <Text style={sheetStyles.sectionSub}>
-              {settings.progressCueBasis === 'distance'
-                ? 'Announce distance covered during each interval'
-                : 'Announce elapsed time during intervals'}
+              {settings.progressCueBasis === 'auto'
+                ? 'Elapsed time in timed intervals, distance and time in distance intervals'
+                : settings.progressCueBasis === 'distance'
+                  ? 'Announce distance covered during each interval'
+                  : 'Announce elapsed time during intervals'}
             </Text>
             <CueBasisToggle
               value={settings.progressCueBasis}
+              options={PROGRESS_CUE_BASES}
               onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
             />
-            {settings.progressCueBasis === 'time' ? (
+            {settings.progressCueBasis === 'auto' && (
+              <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+            )}
+            {settings.progressCueBasis !== 'distance' && (
               <View style={sheetStyles.chipRow}>
                 {TIME_ANNOUNCE_OPTIONS.map((opt) => (
                   <TouchableOpacity
@@ -1041,7 +1062,11 @@ function MidRunSettingsSheet({
                   </TouchableOpacity>
                 ))}
               </View>
-            ) : (
+            )}
+            {settings.progressCueBasis === 'auto' && (
+              <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+            )}
+            {settings.progressCueBasis !== 'time' && (
               <CueDistanceChips
                 value={settings.progressCueDistance}
                 unit={settings.paceUnit}
@@ -1259,6 +1284,12 @@ const sheetStyles = StyleSheet.create({
     color: Colors.textMuted,
     marginBottom: Spacing.sm,
     marginTop: Spacing.xs,
+  },
+  stepLabel: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    marginTop: Spacing.sm,
   },
   chipRow: {
     flexDirection: 'row',
@@ -1852,10 +1883,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   distElapsed: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
+    fontSize: FontSize.xxl,
+    fontWeight: '300',
+    color: Colors.textPrimary,
     fontVariant: ['tabular-nums'],
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
   distTargetBar: {
     marginHorizontal: Spacing.lg,

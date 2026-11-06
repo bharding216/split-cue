@@ -16,6 +16,7 @@ import {
   totalWorkoutSeconds,
   formatTime,
   defaultSegmentLabel,
+  parseWorkoutCategory,
 } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import { HistorySummary, serializeHistorySummary } from './historySummary';
@@ -86,8 +87,9 @@ function serializeWorkoutForContext(workout: WorkoutDefinition): string {
 
         if (b.intensity) parts.push(`intensity: ${b.intensity}`);
         if (b.targetPace != null) {
-          const m = Math.floor(b.targetPace);
-          const s = Math.round((b.targetPace - m) * 60);
+          const total = Math.round(b.targetPace * 60);
+          const m = Math.floor(total / 60);
+          const s = total % 60;
           parts.push(`pace ${m}:${s.toString().padStart(2, '0')}/mi`);
         }
         return `${indent}- ${parts.join(', ')}`;
@@ -99,7 +101,8 @@ function serializeWorkoutForContext(workout: WorkoutDefinition): string {
     }).join('\n');
   };
 
-  return `[Workout: "${workout.name}" — Total: ${total}]\n${serializeBlockTree(workout.blocks)}`;
+  const category = workout.category ? ` — Category: ${workout.category}` : '';
+  return `[Workout: "${workout.name}"${category} — Total: ${total}]\n${serializeBlockTree(workout.blocks)}`;
 }
 
 /**
@@ -159,7 +162,7 @@ export async function generateWorkout(
     workout = {
       id: generateId(),
       name: rawWorkout.name ?? 'AI Workout',
-      category: rawWorkout.category,
+      category: parseWorkoutCategory(rawWorkout.category),
       blocks: (rawWorkout.blocks as WorkoutBlock[]).map(sanitizeBlock),
       targetDistanceMeters: rawWorkout.targetDistanceMeters ?? undefined,
       createdAt: now,
@@ -170,7 +173,7 @@ export async function generateWorkout(
     const oldDef = {
       id: generateId(),
       name: rawWorkout?.name ?? 'AI Workout',
-      category: rawWorkout?.category,
+      category: parseWorkoutCategory(rawWorkout?.category),
       warmup: rawWorkout?.warmup ?? [],
       blocks: rawWorkout?.blocks ?? [],
       cooldown: rawWorkout?.cooldown ?? [],

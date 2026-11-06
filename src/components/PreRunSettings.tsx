@@ -34,12 +34,16 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
   // Build a compact cue-schedule label for the summary chip.
   const cueLabel = (() => {
     if (settings.audioCueMode === 'silent') return null;
-    if (settings.progressCueBasis === 'distance') {
-      return cueDistanceLabel(settings.progressCueDistance, settings.paceUnit);
-    }
-    if (settings.timeRemainingInterval === 0) return null;
     const v = settings.timeRemainingInterval;
-    return v >= 60 ? `${v / 60} min` : `${v}s`;
+    const timeLabel = v === 0 ? null : v >= 60 ? `${v / 60} min` : `${v}s`;
+    const distanceLabel =
+      settings.progressCueDistance === 'off'
+        ? null
+        : cueDistanceLabel(settings.progressCueDistance, settings.paceUnit);
+    if (settings.progressCueBasis === 'distance') return distanceLabel;
+    if (settings.progressCueBasis === 'time') return timeLabel;
+    if (timeLabel && distanceLabel) return `${timeLabel} / ${distanceLabel}`;
+    return timeLabel ?? distanceLabel;
   })();
 
   return (

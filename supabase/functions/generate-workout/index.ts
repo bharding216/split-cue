@@ -88,7 +88,7 @@ Respond with ONLY a JSON object (no markdown fences, no extra text) matching:
   "message": "string — your coaching message to the runner",
   "workout": {
     "name": "string — short workout name, e.g. 'Tempo Run' or 'Hill Repeats'",
-    "category": "easy" | "tempo" | "intervals" | "long_run" | "race",
+    "category": "easy" | "tempo" | "intervals" | "long_run" | "race" | "other",
     "blocks": [WorkoutBlock],
     "targetDistanceMeters": number (optional) — total workout auto-finish distance in meters
   }
@@ -133,6 +133,11 @@ Category meanings:
 - "intervals": structured speed work with repeating hard/easy blocks
 - "long_run": endurance-building long runs (45+ min)
 - "race": race simulations, time trials, race-distance runs
+- "other": anything that doesn't clearly fit one of the above
+
+Category rules:
+- ALWAYS include "category". It must describe what the runner asked for — a tempo run is "tempo" even when its segments use targetPace instead of intensity.
+- Never default to "easy" when unsure; use "other".
 
 Rules:
 - intensity and targetPace are MUTUALLY EXCLUSIVE per segment. Use at most one.

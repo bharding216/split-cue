@@ -54,14 +54,15 @@ import {
   buildCueContext,
   intervalProgressCue,
   distanceProgressPhrase,
+  distanceSplitCue,
   paceCue,
   type CueContext,
   type CuePhrase,
 } from '../audio/cuePhrases';
 import { cueDistanceMeters, nextCueMark, distanceProgressCuesNeedGps } from '../audio/cueSchedule';
 import { usePaceTracker, type PaceTrackerResult } from './usePaceTracker';
-import type { GpsSample, PaceState } from '../pace/paceTypes';
-import { haversineMeters } from '../pace/paceTracker';
+import { createOdometer, type GpsSample, type PaceState } from '../pace/paceTypes';
+import { advanceOdometer } from '../pace/paceTracker';
 import {
   hapticIntervalChange,
   hapticWarning,
@@ -111,8 +112,11 @@ function samplesToRoute(samples: GpsSample[]): RoutePoint[] {
       dist: 0,
     },
   ];
+  let odometer = advanceOdometer(createOdometer(), samples[0]).odometer;
   for (let i = 1; i < samples.length; i++) {
-    cumDist += haversineMeters(samples[i - 1], samples[i]);
+    const step = advanceOdometer(odometer, samples[i]);
+    odometer = step.odometer;
+    cumDist += step.meters;
     route.push({
       lat: samples[i].latitude,
       lng: samples[i].longitude,
@@ -130,6 +134,8 @@ export interface WorkoutRunnerControls {
   remainingMillis: number;
   progress: number; // 0..1
   totalRemaining: number; // seconds
+  /** Time since Start, excluding pauses (seconds). */
+  elapsedSeconds: number;
   currentLabel: string;
   currentType: string;
   nextLabel: string | null;
@@ -190,6 +196,9 @@ export function useWorkoutRunner(
   settingsRef.current = settings;
   /** Whether GPS tracking was started for this workout. */
   const usesGpsRef = useRef(false);
+  /** Time spent paused, for the workout clock. */
+  const pausedMsRef = useRef(0);
+  const pausedAtRef = useRef<number | null>(null);
 
   // Track which warnings we've already fired to avoid duplicates
   const firedWarnings = useRef(new Set<number>());
@@ -506,7 +515,17 @@ export function useWorkoutRunner(
           const phrases: CuePhrase[] = [];
           const textPhrase = (text: string): CuePhrase => ({ clips: [text], text });
 
-          if (settingsNow.progressCueBasis === 'distance') {
+          const progressBasis = settingsNow.progressCueBasis;
+          if (progressBasis === 'auto' && isDistanceInterval(ci)) {
+            const step = cueDistanceMeters(settingsNow.progressCueDistance, settingsNow.paceUnit);
+            const mark = nextCueMark(intervalDist, step, lastProgressMark.current);
+            if (mark != null) {
+              lastProgressMark.current = mark;
+              phrases.push(
+                distanceSplitCue(mark * step, elapsedSec, settingsNow.paceUnit, ci.distanceMeters),
+              );
+            }
+          } else if (progressBasis === 'distance') {
             const step = cueDistanceMeters(settingsNow.progressCueDistance, settingsNow.paceUnit);
             const mark = nextCueMark(intervalDist, step, lastProgressMark.current);
             if (mark != null) {
@@ -676,6 +695,8 @@ export function useWorkoutRunner(
     firedCountdowns.current.clear();
     lastIndex.current = 0;
     batteryAtStartRef.current = null;
+    pausedMsRef.current = 0;
+    pausedAtRef.current = null;
     backgroundCountRef.current = 0;
     backgroundMsRef.current = 0;
     backgroundedAtRef.current = null;
@@ -730,6 +751,7 @@ export function useWorkoutRunner(
     const next = pauseWorkout(engineRef.current);
     engineRef.current = next;
     setEngine(next);
+    if (next.phase === 'paused') pausedAtRef.current = Date.now();
 
     // Update Live Activity to show paused state
     updateLiveActivity(buildLAProps(next, true));
@@ -739,6 +761,10 @@ export function useWorkoutRunner(
     const next = resumeWorkout(engineRef.current);
     engineRef.current = next;
     setEngine(next);
+    if (pausedAtRef.current != null) {
+      pausedMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = null;
+    }
 
     // Update Live Activity with new timing
     updateLiveActivity(buildLAProps(next, false));
@@ -838,6 +864,15 @@ export function useWorkoutRunner(
     remainingMillis: remainingMs(engine),
     progress: ciIsDistance ? intervalDistProgress : intervalProgress(engine),
     totalRemaining: totalRemainingSeconds(engine),
+    elapsedSeconds:
+      engine.startedAt > 0
+        ? Math.max(
+            0,
+            Math.floor(
+              ((pausedAtRef.current ?? Date.now()) - engine.startedAt - pausedMsRef.current) / 1000,
+            ),
+          )
+        : 0,
     currentLabel: ci?.label || '',
     currentType: ci?.type || 'easy',
     nextLabel: ni?.label || null,

@@ -52,9 +52,24 @@ import {
   totalWorkoutSeconds,
   defaultSegmentLabel,
   segmentToIntervalType,
+  categorizeWorkout,
+  generateId,
+  withResolvedCategory,
+  type WorkoutCategory,
 } from '../workout/workoutTypes';
+import { saveWorkout } from '../workout/workoutStorage';
+import { track } from '../analytics/track';
 import { WorkoutEditorForm } from './WorkoutEditorForm';
 import { hapticTap } from '../audio/haptics';
+
+const CATEGORY_LABELS: Record<WorkoutCategory, string> = {
+  easy: 'Easy',
+  tempo: 'Tempo',
+  intervals: 'Intervals',
+  long_run: 'Long Run',
+  race: 'Race',
+  other: 'Other',
+};
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -341,7 +356,12 @@ function VoiceWorkoutSheetInner({
   const [textInput, setTextInput] = useState('');
   const [aiMessage, setAiMessage] = useState('');
   const [proposedWorkout, setProposedWorkout] = useState<WorkoutDefinition | null>(null);
+  const [savedToLibrary, setSavedToLibrary] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setSavedToLibrary(false);
+  }, [proposedWorkout]);
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
@@ -474,6 +494,25 @@ function VoiceWorkoutSheetInner({
     onAccept(proposedWorkout);
   }, [proposedWorkout, onAccept]);
 
+  const handleSaveToLibrary = useCallback(async () => {
+    if (!proposedWorkout || savedToLibrary) return;
+    hapticTap();
+    const now = Date.now();
+    const newId = generateId();
+    try {
+      await saveWorkout({
+        ...withResolvedCategory(proposedWorkout),
+        id: newId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      track('workout_saved', { workout_id: newId, workout_name: proposedWorkout.name, is_copy: false });
+      setSavedToLibrary(true);
+    } catch {
+      Alert.alert('Save Failed', 'Your workout could not be saved. Please try again.');
+    }
+  }, [proposedWorkout, savedToLibrary]);
+
   const handleEdit = useCallback(() => {
     hapticTap();
     setPhase('editing');
@@ -496,6 +535,7 @@ function VoiceWorkoutSheetInner({
   const metering = phase === 'recording' ? recorderState.metering : undefined;
   const flat = proposedWorkout ? flattenWorkout(proposedWorkout) : [];
   const totalSecs = proposedWorkout ? totalWorkoutSeconds(proposedWorkout) : 0;
+  const category = proposedWorkout ? categorizeWorkout(proposedWorkout) : null;
 
   const dateLabel = (() => {
     const d = new Date(date + 'T12:00:00');
@@ -654,8 +694,14 @@ function VoiceWorkoutSheetInner({
                   <View style={styles.workoutCardHeader}>
                     <Text style={styles.workoutName}>{proposedWorkout.name}</Text>
                     <Text style={styles.workoutSummary}>
+                      {category ? `${CATEGORY_LABELS[category]} · ` : ''}
                       {formatTime(totalSecs)} · {flat.length} interval{flat.length !== 1 ? 's' : ''}
                     </Text>
+                    {category === 'other' && (
+                      <Text style={styles.categoryHint}>
+                        Not sure what type this is. Tap Edit to choose one.
+                      </Text>
+                    )}
                   </View>
 
                   <BlocksPreview blocks={proposedWorkout.blocks} />
@@ -681,6 +727,24 @@ function VoiceWorkoutSheetInner({
                     <Text style={styles.acceptButtonText}>Add to Calendar</Text>
                   </TouchableOpacity>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={handleSaveToLibrary}
+                  disabled={savedToLibrary}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: savedToLibrary }}
+                >
+                  <Ionicons
+                    name={savedToLibrary ? 'checkmark-circle' : 'bookmark-outline'}
+                    size={16}
+                    color={savedToLibrary ? Colors.primary : Colors.accent}
+                  />
+                  <Text style={[styles.retryButtonText, { color: savedToLibrary ? Colors.primary : Colors.accent }]}>
+                    {savedToLibrary ? 'Saved to My Workouts' : 'Also save to My Workouts'}
+                  </Text>
+                </TouchableOpacity>
 
                 {/* Try again */}
                 <TouchableOpacity
@@ -922,6 +986,11 @@ const styles = StyleSheet.create({
   workoutSummary: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  categoryHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
     marginTop: 2,
   },
 

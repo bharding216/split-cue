@@ -26,6 +26,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   WorkoutDefinition,
   generateId,
+  withResolvedCategory,
   QuickStartType,
 } from '../../src/workout/workoutTypes';
 import { loadWorkouts, saveWorkout } from '../../src/workout/workoutStorage';
@@ -113,7 +114,7 @@ export default function ConfigureWorkoutScreen() {
   const saveAsNew = useCallback(async (w: WorkoutDefinition, isCopy: boolean) => {
     const newId = generateId();
     const now = Date.now();
-    await saveWorkout({ ...w, id: newId, createdAt: now, updatedAt: now });
+    await saveWorkout({ ...withResolvedCategory(w), id: newId, createdAt: now, updatedAt: now });
     track('workout_saved', { workout_id: newId, is_copy: isCopy });
     setMeta((prev) => ({ ...prev, templateId: newId }));
     setOriginal({ ...w, id: newId });

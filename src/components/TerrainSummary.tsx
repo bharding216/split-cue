@@ -33,8 +33,9 @@ const TERRAIN_ORDER: TerrainType[] = ['uphill', 'flat', 'downhill'];
 
 function formatPace(paceMinutes: number | null): string {
   if (paceMinutes == null || !isFinite(paceMinutes)) return '--:--';
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
+  const total = Math.round(paceMinutes * 60);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 

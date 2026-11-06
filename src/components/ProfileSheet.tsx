@@ -123,8 +123,9 @@ const LIMITATION_PRESETS = [
 // ── Pace helpers ─────────────────────────────────────────────
 
 function paceToMMSS(decimal: number): string {
-  const mins = Math.floor(decimal);
-  const secs = Math.round((decimal - mins) * 60);
+  const total = Math.round(decimal * 60);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 

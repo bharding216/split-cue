@@ -27,7 +27,11 @@ import {
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
-import { CueBasisToggle, CueDistanceChips } from '../../../src/components/CueScheduleControls';
+import {
+  CueBasisToggle,
+  CueDistanceChips,
+  PROGRESS_CUE_BASES,
+} from '../../../src/components/CueScheduleControls';
 import {
   configureAudio,
   getAvailableVoices,
@@ -326,15 +330,21 @@ export default function AudioSettingsScreen() {
       {/* Interval progress announcements */}
       <Text style={styles.sectionTitle}>Interval Progress</Text>
       <Text style={styles.sectionSub}>
-        {settings.progressCueBasis === 'distance'
-          ? 'Announce each time you cover this distance in the interval. GPS starts automatically.'
-          : 'Announce elapsed time during each interval (requires Voice or Both audio mode)'}
+        {settings.progressCueBasis === 'auto'
+          ? 'Timed intervals announce elapsed time. Distance intervals announce distance and elapsed time (requires Voice or Both audio mode).'
+          : settings.progressCueBasis === 'distance'
+            ? 'Announce each time you cover this distance in the interval. GPS starts automatically.'
+            : 'Announce elapsed time during each interval (requires Voice or Both audio mode)'}
       </Text>
       <CueBasisToggle
         value={settings.progressCueBasis}
+        options={PROGRESS_CUE_BASES}
         onChange={(progressCueBasis) => update({ progressCueBasis })}
       />
-      {settings.progressCueBasis === 'time' ? (
+      {settings.progressCueBasis === 'auto' && (
+        <Text style={styles.stepLabel}>Timed intervals, every</Text>
+      )}
+      {settings.progressCueBasis !== 'distance' && (
         <View style={styles.row}>
           {TIME_REMAINING_OPTIONS.map((opt) => (
             <TouchableOpacity
@@ -361,7 +371,11 @@ export default function AudioSettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
-      ) : (
+      )}
+      {settings.progressCueBasis === 'auto' && (
+        <Text style={styles.stepLabel}>Distance intervals, every</Text>
+      )}
+      {settings.progressCueBasis !== 'time' && (
         <CueDistanceChips
           value={settings.progressCueDistance}
           unit={settings.paceUnit}
@@ -386,6 +400,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     marginBottom: Spacing.sm,
+  },
+  stepLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    marginTop: Spacing.md,
   },
   row: {
     flexDirection: 'row',

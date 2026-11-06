@@ -345,7 +345,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
             {onSaveAsNew && (
               <TouchableOpacity style={styles.saveAsNewHeaderBtn} onPress={handleSaveAsNew} activeOpacity={0.7}>
                 <Ionicons name="copy-outline" size={14} color={Colors.accent} />
-                <Text style={styles.saveAsNewHeaderText}>New Template</Text>
+                <Text style={styles.saveAsNewHeaderText}>Save as New</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -369,7 +369,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           <View style={styles.editHintContent}>
             <Ionicons name="information-circle-outline" size={16} color={Colors.accent} />
             <Text style={styles.editHintText}>
-              Edits save over the original template. Tap <Text style={{ fontWeight: '700' }}>New Template</Text> to keep both.
+              Edits update this saved workout. Tap <Text style={{ fontWeight: '700' }}>Save as New</Text> to keep both.
             </Text>
           </View>
           <TouchableOpacity onPress={dismissEditHint} hitSlop={8}>
@@ -541,12 +541,12 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           </>
         )}
 
-        {/* Actions — new template */}
+        {/* Actions — new workout */}
         {!autoSave && !isPlanWorkout && !sessionMode && (
           <View style={styles.actions}>
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.8}>
               <Ionicons name="bookmark-outline" size={18} color={Colors.black} />
-              <Text style={styles.saveBtnText}>Save Template</Text>
+              <Text style={styles.saveBtnText}>Save Workout</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -554,7 +554,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
           </View>
         )}
 
-        {/* Actions — plan workout → update the calendar entry, optionally copy to templates */}
+        {/* Actions — plan workout → update the calendar entry, optionally copy to My Workouts */}
         {isPlanWorkout && !sessionMode && (
           <View style={styles.actions}>
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.8}>
@@ -564,7 +564,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
             {onSaveAsNew && (
               <TouchableOpacity style={styles.saveAsNewBtn} onPress={handleSaveAsNew} activeOpacity={0.8}>
                 <Ionicons name="bookmark-outline" size={18} color={Colors.accent} />
-                <Text style={styles.saveAsNewBtnText}>Save to Templates</Text>
+                <Text style={styles.saveAsNewBtnText}>Save to My Workouts</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
@@ -1341,6 +1341,7 @@ const CATEGORY_OPTIONS: { value: WorkoutCategory; label: string; icon: string; c
   { value: 'intervals', label: 'Intervals', icon: 'repeat-outline', color: Colors.danger },
   { value: 'long_run', label: 'Long Run', icon: 'trail-sign-outline', color: Colors.accent },
   { value: 'race', label: 'Race', icon: 'trophy-outline', color: Colors.primary },
+  { value: 'other', label: 'Other', icon: 'ellipsis-horizontal-circle-outline', color: Colors.textSecondary },
 ];
 
 function CategorySuggestion({

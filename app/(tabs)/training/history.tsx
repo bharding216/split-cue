@@ -519,7 +519,7 @@ export default function HistoryScreen() {
                         activeOpacity={0.7}
                       >
                         <Ionicons name="play" size={14} color={Colors.black} />
-                        <Text style={styles.actionBtnLabel}>Run Again</Text>
+                        <Text style={styles.actionBtnLabel}>Repeat</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity

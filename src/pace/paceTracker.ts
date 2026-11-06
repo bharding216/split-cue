@@ -13,6 +13,7 @@ import {
   MAX_ACCURACY_METERS,
   MIN_SAMPLES_FOR_PACE,
   MIN_PACE_SPAN_SECONDS,
+  Odometer,
   createPaceState,
 } from './paceTypes';
 
@@ -57,13 +58,7 @@ export function addSample(
   if (sample.accuracy > MAX_ACCURACY_METERS) return state;
 
   const samples = [...state.samples, sample];
-
-  // Accumulate total distance from the last accepted sample
-  let totalDistanceMeters = state.totalDistanceMeters;
-  if (state.samples.length > 0) {
-    const prev = state.samples[state.samples.length - 1];
-    totalDistanceMeters += haversineMeters(prev, sample);
-  }
+  const { odometer, meters } = advanceOdometer(state.odometer, sample);
 
   // Compute rolling-window pace
   const pace = computeRollingPace(samples, windowSeconds, sample.timestamp);
@@ -77,8 +72,57 @@ export function addSample(
     currentPaceMps: pace.paceMps,
     currentPaceMinPerMile: pace.paceMinPerMile,
     currentPaceMinPerKm: pace.paceMinPerKm,
-    totalDistanceMeters,
+    totalDistanceMeters: state.totalDistanceMeters + meters,
+    odometer,
   };
+}
+
+/** Longest gap between fixes over which their reported speeds stand in for the path. */
+const MAX_SPEED_GAP_MS = 5_000;
+/** In fallback mode, movement under this (or the two fixes' combined accuracy) counts as position jitter. */
+const MIN_JITTER_METERS = 5;
+
+function hasSpeed(s: GpsSample): s is GpsSample & { speed: number } {
+  return s.speed != null && s.speed >= 0;
+}
+
+/**
+ * Distance covered since the previous fix.
+ *
+ * Summing straight lines between fixes counts position jitter (a few meters
+ * per fix) as movement, which inflates distance badly at walking pace. When
+ * the device reports speed, integrate it over time instead, like the live
+ * pace does. Otherwise, or across a GPS gap, count straight-line distance
+ * from the last counted fix only once it exceeds both fixes' accuracy.
+ */
+export function advanceOdometer(
+  odo: Odometer,
+  sample: GpsSample,
+): { odometer: Odometer; meters: number } {
+  const speedReported = odo.speedReported || (sample.speed != null && sample.speed > 0);
+  const { prev } = odo;
+  if (!prev) {
+    return { odometer: { prev: sample, anchor: sample, speedReported }, meters: 0 };
+  }
+
+  const dtMs = sample.timestamp - prev.timestamp;
+  if (
+    speedReported &&
+    dtMs > 0 &&
+    dtMs <= MAX_SPEED_GAP_MS &&
+    hasSpeed(prev) &&
+    hasSpeed(sample)
+  ) {
+    const meters = ((prev.speed + sample.speed) / 2) * (dtMs / 1000);
+    return { odometer: { prev: sample, anchor: sample, speedReported }, meters };
+  }
+
+  const anchor = odo.anchor ?? prev;
+  const straight = haversineMeters(anchor, sample);
+  if (straight > Math.max(anchor.accuracy + sample.accuracy, MIN_JITTER_METERS)) {
+    return { odometer: { prev: sample, anchor: sample, speedReported }, meters: straight };
+  }
+  return { odometer: { prev: sample, anchor, speedReported }, meters: 0 };
 }
 
 /**
@@ -182,8 +226,9 @@ function computeRollingPace(
 /** Format a pace value (decimal minutes) into "M:SS" display string. */
 export function formatPaceDisplay(paceMinutes: number | null): string {
   if (paceMinutes == null || !isFinite(paceMinutes)) return '--:--';
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
+  const total = Math.round(paceMinutes * 60);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 

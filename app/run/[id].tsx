@@ -21,6 +21,7 @@ import {
   CompletedWorkout,
   formatTime,
   generateId,
+  withResolvedCategory,
   WORKOUT_NOTES_MAX_LENGTH,
 } from '../../src/workout/workoutTypes';
 import {
@@ -165,16 +166,16 @@ export default function RunDetailsScreen() {
     return aggregateByTerrain(elevation.segments);
   }, [elevation]);
 
-  const handleUseAsTemplate = async () => {
+  const handleSaveToMyWorkouts = async () => {
     if (!run) return;
     const source = run.configuration
       ?? (await loadWorkouts()).find((w) => w.id === run.workoutId);
     if (source) {
       const newId = generateId();
       const copy = {
-        ...source,
+        ...withResolvedCategory(source),
         id: newId,
-        name: `${source.name || run.workoutName} (Copy)`,
+        name: source.name || run.workoutName,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -344,7 +345,7 @@ export default function RunDetailsScreen() {
             activeOpacity={0.7}
           >
             <Ionicons name="play" size={16} color={Colors.black} />
-            <Text style={styles.actionBtnText}>Run Again</Text>
+            <Text style={styles.actionBtnText}>Repeat Workout</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtnSecondary, large && styles.actionBtnLarge]}
@@ -358,11 +359,11 @@ export default function RunDetailsScreen() {
 
         <TouchableOpacity
           style={styles.templateBtn}
-          onPress={handleUseAsTemplate}
+          onPress={handleSaveToMyWorkouts}
           activeOpacity={0.7}
         >
-          <Ionicons name="copy-outline" size={16} color={Colors.primary} />
-          <Text style={styles.templateBtnText}>Use Workout as Template</Text>
+          <Ionicons name="bookmark-outline" size={16} color={Colors.primary} />
+          <Text style={styles.templateBtnText}>Save to My Workouts</Text>
         </TouchableOpacity>
       </ScrollView>
     </>

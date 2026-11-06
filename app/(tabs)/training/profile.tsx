@@ -149,8 +149,9 @@ const PACE_TIERS: { key: keyof RaceTimeEntry; label: string }[] = [
 // ── Pace helpers ─────────────────────────────────────────────
 
 function paceToMMSS(decimal: number): string {
-  const mins = Math.floor(decimal);
-  const secs = Math.round((decimal - mins) * 60);
+  const total = Math.round(decimal * 60);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
@@ -167,10 +168,11 @@ function mmSSToPace(text: string): number | null {
 
 // ── Race time helpers ────────────────────────────────────────
 
-function secondsToDisplay(totalSec: number): string {
+function secondsToDisplay(seconds: number): string {
+  const totalSec = Math.round(seconds);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
-  const s = Math.round(totalSec % 60);
+  const s = totalSec % 60;
   if (h > 0) {
     return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }

@@ -218,6 +218,7 @@ import type {
   CueBasis,
   CueDistancePreset,
   PaceCueFrequency,
+  ProgressCueBasis,
   PaceWindowSize,
   PaceUnit,
 } from '../pace/paceTypes';
@@ -228,9 +229,9 @@ export interface AppSettings {
   countdownWarningSeconds: number[];
   keepScreenOn: boolean;
   timeRemainingInterval: TimeRemainingInterval;
-  /** Interval-progress cues: elapsed time, or distance covered in the interval. */
-  progressCueBasis: CueBasis;
-  /** Distance step for interval-progress cues. Used when progressCueBasis is 'distance'. */
+  /** Interval-progress cues: elapsed time, distance covered in the interval, or whichever matches the interval's goal. */
+  progressCueBasis: ProgressCueBasis;
+  /** Distance step for interval-progress cues. Used when progressCueBasis is 'distance' or 'auto'. */
   progressCueDistance: CueDistancePreset;
   voiceIdentifier: string | null;
   /** Speak cues with the device's TTS voice or the premium AI voice. */
@@ -256,7 +257,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   countdownWarningSeconds: [10],
   keepScreenOn: true,
   timeRemainingInterval: 60,
-  progressCueBasis: 'time',
+  progressCueBasis: 'auto',
   progressCueDistance: 'full',
   voiceIdentifier: null,
   voiceEngine: 'premium',
@@ -596,21 +597,61 @@ export function totalWorkoutDistanceMeters(def: WorkoutDefinition): number | nul
 
 // ── Workout categorization ───────────────────────────────────────────
 
-export type WorkoutCategory = 'easy' | 'tempo' | 'intervals' | 'long_run' | 'race';
+/** 'other' is for workouts whose type can't be determined; never guess 'easy'. */
+export type WorkoutCategory = 'easy' | 'tempo' | 'intervals' | 'long_run' | 'race' | 'other';
+
+export const WORKOUT_CATEGORIES: readonly WorkoutCategory[] = [
+  'easy', 'tempo', 'intervals', 'long_run', 'race', 'other',
+];
 
 const LEGACY_CATEGORY_MAP: Record<string, WorkoutCategory> = {
   distance: 'easy',
   timed: 'easy',
 };
 
-export function categorizeWorkout(def: WorkoutDefinition): WorkoutCategory {
-  if (def.category) {
-    return LEGACY_CATEGORY_MAP[def.category] ?? def.category;
-  }
-  return inferCategory(def);
+/** Normalize a stored or AI-provided category; undefined when unrecognized. */
+export function parseWorkoutCategory(value: unknown): WorkoutCategory | undefined {
+  if (typeof value !== 'string') return undefined;
+  const v = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if ((WORKOUT_CATEGORIES as readonly string[]).includes(v)) return v as WorkoutCategory;
+  return LEGACY_CATEGORY_MAP[v];
 }
 
+export function categorizeWorkout(def: WorkoutDefinition): WorkoutCategory {
+  return parseWorkoutCategory(def.category) ?? inferCategory(def);
+}
+
+/**
+ * Pin the effective category onto a copy that's leaving its original context
+ * (e.g. a calendar workout saved to My Workouts), so later edits to the name
+ * or blocks don't silently reclassify it.
+ */
+export function withResolvedCategory(def: WorkoutDefinition): WorkoutDefinition {
+  const category = categorizeWorkout(def);
+  return { ...def, category: category === 'other' ? undefined : category };
+}
+
+const CATEGORY_KEYWORDS: [RegExp, WorkoutCategory][] = [
+  [/\b(race(?!\s*pace)|time[\s-]?trial|parkrun)\b/i, 'race'],
+  [/\blong[\s-]?run\b/i, 'long_run'],
+  [/\b(tempo|threshold|lactate|cruise)\b/i, 'tempo'],
+  [/\b(intervals?|repeats?|reps|fartlek|hills?|track|speed|vo2|ladder|pyramid)\b/i, 'intervals'],
+  [/\blong\b/i, 'long_run'],
+  [/\b(easy|recovery|shake[\s-]?out|aerobic|base)\b/i, 'easy'],
+];
+
+function categoryFromText(text: string | undefined): WorkoutCategory | undefined {
+  if (!text) return undefined;
+  return CATEGORY_KEYWORDS.find(([re]) => re.test(text))?.[1];
+}
+
+const HARDISH_INTENSITIES: ReadonlySet<Intensity> = new Set(['moderate', 'tempo', 'hard', 'sprint']);
+
 function inferCategory(def: WorkoutDefinition): WorkoutCategory {
+  // What the workout is called is the clearest statement of what it is.
+  const fromName = categoryFromText(def.name);
+  if (fromName) return fromName;
+
   if (def.targetDistanceMeters) {
     const d = def.targetDistanceMeters;
     const isRaceDist =
@@ -621,40 +662,45 @@ function inferCategory(def: WorkoutDefinition): WorkoutCategory {
     if (isRaceDist) return 'race';
   }
 
-  if (!Array.isArray(def.blocks) || def.blocks.length === 0) return 'easy';
+  if (!Array.isArray(def.blocks) || def.blocks.length === 0) return 'other';
 
-  // Check for repeat groups or multiple top-level blocks with runs
   const hasRepeats = def.blocks.some(
     (b) => b.blockType === 'repeat' && b.repetitions > 1 && b.blocks.length > 1
-  );
-  const runBlocks = def.blocks.filter(
-    (b) => b.blockType === 'segment' && b.segmentType === 'run'
   );
   const repeatGroups = def.blocks.filter((b) => b.blockType === 'repeat');
   if (hasRepeats || repeatGroups.length > 1) return 'intervals';
 
-  // Tempo: single run segment with hard-ish intensity
-  const topSegments = def.blocks.filter((b) => b.blockType === 'segment') as Segment[];
-  const runSegments = topSegments.filter((s) => s.segmentType === 'run');
-  if (
-    runSegments.length === 1 &&
-    repeatGroups.length === 0 &&
-    runSegments[0].intensity &&
-    ['tempo', 'hard', 'sprint', 'moderate'].includes(runSegments[0].intensity)
-  ) {
-    return 'tempo';
+  const runs: Segment[] = [];
+  let runSeconds = 0;
+  let runMeters = 0;
+  walkSegments(def.blocks, (seg, mult) => {
+    if (seg.segmentType !== 'run') return;
+    runs.push(seg);
+    if (seg.target.type === 'time') runSeconds += (seg.target.durationSeconds ?? 0) * mult;
+    if (seg.target.type === 'distance') runMeters += (seg.target.distanceMeters ?? 0) * mult;
+  });
+  if (runs.length === 0) return 'other';
+
+  const hardish = runs.filter((s) => s.intensity && HARDISH_INTENSITIES.has(s.intensity));
+  if (hardish.length > 0) {
+    const fast = hardish.some((s) => s.intensity === 'hard' || s.intensity === 'sprint');
+    return hardish.length > 1 && fast ? 'intervals' : 'tempo';
   }
 
-  // Long run: single easy/recovery run > 45 min or > 8 km
-  if (runSegments.length === 1 && repeatGroups.length === 0) {
-    const seg = runSegments[0];
-    const isEasyIsh = !seg.intensity || seg.intensity === 'easy' || seg.intensity === 'recovery';
-    const isLongTime = seg.target.type === 'time' && (seg.target.durationSeconds ?? 0) >= 2700;
-    const isLongDist = seg.target.type === 'distance' && (seg.target.distanceMeters ?? 0) >= 8000;
-    if (isEasyIsh && (isLongTime || isLongDist)) return 'long_run';
+  // Segments with a target pace but no named intensity (common in AI workouts)
+  // are often named for what they are.
+  for (const seg of runs) {
+    const fromLabel = categoryFromText(seg.label);
+    if (fromLabel) return fromLabel;
   }
 
-  return 'easy';
+  const noHardSignal = runs.every(
+    (s) => s.intensity === 'easy' || s.intensity === 'recovery' || (!s.intensity && s.targetPace == null),
+  );
+  if (noHardSignal && (runSeconds >= 2700 || runMeters >= 8000)) return 'long_run';
+  if (runs.every((s) => s.intensity === 'easy' || s.intensity === 'recovery')) return 'easy';
+
+  return 'other';
 }
 
 // ── Block construction helpers ───────────────────────────────────────

@@ -235,9 +235,10 @@ export function selectBestInputWorkout(
 // ── Formatting Helpers ─────────────────────────────────────
 
 function formatTime(totalMinutes: number): string {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = Math.floor(totalMinutes % 60);
-  const seconds = Math.round((totalMinutes * 60) % 60);
+  const totalSec = Math.round(totalMinutes * 60);
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
   if (hours > 0) {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
@@ -245,7 +246,8 @@ function formatTime(totalMinutes: number): string {
 }
 
 function formatPace(paceMinPerMile: number): string {
-  const min = Math.floor(paceMinPerMile);
-  const sec = Math.round((paceMinPerMile - min) * 60);
+  const total = Math.round(paceMinPerMile * 60);
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
   return `${min}:${String(sec).padStart(2, '0')}/mi`;
 }

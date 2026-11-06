@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { WorkoutDefinition, generateId } from '../../src/workout/workoutTypes';
+import { WorkoutDefinition, generateId, withResolvedCategory } from '../../src/workout/workoutTypes';
 import { loadWorkouts, saveWorkout } from '../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../src/workout/tempWorkoutCache';
 import { WorkoutEditorForm } from '../../src/components/WorkoutEditorForm';
@@ -90,7 +90,7 @@ export default function EditWorkoutScreen() {
             ? updated.name
             : updated.name.replace(/\s*\(copy\)$/i, '') + ' (Copy)';
           await saveWorkout({
-            ...updated,
+            ...withResolvedCategory(updated),
             id: newId,
             name,
             createdAt: now,
@@ -102,7 +102,7 @@ export default function EditWorkoutScreen() {
             is_copy: true,
           });
           if (planWorkoutId) {
-            Alert.alert('Saved to Templates', `"${name}" was added to your templates.`);
+            Alert.alert('Saved to My Workouts', `"${name}" was added to My Workouts.`);
             return;
           }
           router.back();

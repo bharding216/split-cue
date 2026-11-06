@@ -12,7 +12,7 @@
  */
 
 import { supabase } from '../analytics/supabaseClient';
-import { generateId, type CompletedWorkout } from '../workout/workoutTypes';
+import { generateId, parseWorkoutCategory, type CompletedWorkout } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
 import type { AIContext } from './aiWorkoutService';
@@ -83,6 +83,7 @@ export interface WorkoutDetailResult {
     date: string;
     workout: {
       name: string;
+      category?: string;
       warmup: unknown[];
       blocks: unknown[];
       cooldown: unknown[];
@@ -102,6 +103,7 @@ export interface PlanModification {
   description?: string;
   workout?: {
     name: string;
+    category?: string;
     warmup: unknown[];
     blocks: unknown[];
     cooldown: unknown[];
@@ -315,6 +317,7 @@ export async function generateWorkoutDetails(
       const workoutData = migrateToBlockModel({
         id: generateId(),
         name: detail.workout.name,
+        category: parseWorkoutCategory(detail.workout.category),
         warmup: detail.workout.warmup ?? [],
         blocks: detail.workout.blocks ?? [],
         cooldown: detail.workout.cooldown ?? [],
@@ -974,6 +977,7 @@ export async function applyPlanModifications(
           ? migrateToBlockModel({
               id: generateId(),
               name: mod.workout.name,
+              category: parseWorkoutCategory(mod.workout.category),
               warmup: mod.workout.warmup ?? [],
               blocks: mod.workout.blocks ?? [],
               cooldown: mod.workout.cooldown ?? [],
@@ -1061,6 +1065,7 @@ export async function addWorkoutToCalendar(
       workout_data: {
         id: workout.id,
         name: workout.name,
+        category: workout.category,
         blocks: workout.blocks ?? [],
         targetDistanceMeters: workout.targetDistanceMeters ?? null,
         createdAt: workout.createdAt ?? Date.now(),
