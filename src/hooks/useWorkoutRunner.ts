@@ -78,6 +78,10 @@ import {
   updateLiveActivity,
   endLiveActivity,
 } from './useLiveActivity';
+import { startWorkoutSession, stopWorkoutSession } from '../../modules/workout-session';
+
+/** How long the Android workout session outlives the workout, so the completion cue can play. */
+const SESSION_END_GRACE_MS = 10_000;
 
 /** Build a verbose CueContext from the engine state for rich voice announcements. */
 function buildVerboseCueContext(
@@ -184,6 +188,8 @@ export function useWorkoutRunner(
   engineRef.current = engine;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  /** Whether GPS tracking was started for this workout. */
+  const usesGpsRef = useRef(false);
 
   // Track which warnings we've already fired to avoid duplicates
   const firedWarnings = useRef(new Set<number>());
@@ -635,6 +641,22 @@ export function useWorkoutRunner(
     setPremiumVoice(settings.voiceEngine === 'premium' ? settings.premiumVoiceId : null);
   }, [settings.voiceIdentifier, settings.duckOtherAudio, settings.voiceEngine, settings.premiumVoiceId]);
 
+  // Keep the Android workout session (foreground service) up while the
+  // workout is running or paused, so cues keep firing with the screen locked.
+  const inWorkout = engine.phase === 'running' || engine.phase === 'paused';
+  useEffect(() => {
+    if (!inWorkout) return;
+    const usesLocation = usesGpsRef.current;
+    startWorkoutSession({
+      title: workout.name || 'Workout in progress',
+      body: usesLocation
+        ? 'Tracking your running pace and playing audio cues'
+        : 'Playing your workout audio cues',
+      usesLocation,
+    });
+    return () => stopWorkoutSession(SESSION_END_GRACE_MS);
+  }, [inWorkout, workout.name]);
+
   // Clean up Live Activity and background loop on unmount
   useEffect(() => {
     return () => {
@@ -666,6 +688,7 @@ export function useWorkoutRunner(
       settingsRef.current.paceTrackingEnabled ||
       hasDistanceFeature(workout) ||
       distanceProgressCuesNeedGps(settingsRef.current);
+    usesGpsRef.current = needsGps;
     if (needsGps) {
       paceTrackerRef.current.reset();
       paceTrackerRef.current.start();

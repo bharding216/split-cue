@@ -1,0 +1,16 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.workoutsession'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.workoutsession"
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.core:core-ktx:1.17.0'
+}

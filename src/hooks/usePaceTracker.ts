@@ -19,6 +19,7 @@ import {
   createPaceState,
 } from '../pace/paceTypes';
 import { addSample, expireStalePace, resetPaceState } from '../pace/paceTracker';
+import { isWorkoutSessionSupported } from '../../modules/workout-session';
 
 const BACKGROUND_LOCATION_TASK = 'pace-cue-background-location';
 
@@ -188,11 +189,15 @@ export function usePaceTracker(
           timeInterval: 2000,
           activityType: Location.ActivityType.Fitness,
           showsBackgroundLocationIndicator: true,
-          foregroundService: {
-            notificationTitle: 'SplitCue',
-            notificationBody: 'Tracking your running pace',
-            notificationColor: '#4ADE80',
-          },
+          // The workout session's foreground service already keeps location
+          // running on Android; a second service would add a duplicate notification.
+          foregroundService: isWorkoutSessionSupported
+            ? undefined
+            : {
+                notificationTitle: 'SplitCue',
+                notificationBody: 'Tracking your running pace',
+                notificationColor: '#4ADE80',
+              },
         });
       } catch (e) {
         console.warn('Failed to start background location:', e);
