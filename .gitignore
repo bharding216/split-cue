@@ -33,6 +33,10 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+.env.apple-migration
+
+# Apple Sign In team-transfer migration (contains user identifiers and emails)
+scripts/apple-migration/out/
 
 # admin dashboard
 admin/.next/

@@ -14,6 +14,14 @@ Everything the app code needs from the outside world to make auth, subscriptions
 5. In Xcode: enable the **Sign in with Apple** capability on the main target
 6. Add `expo-apple-authentication` to `app.config.ts` plugins if needed
 
+#### App transfer (Toddly LLC → Surmount Web Services LLC, Nov 6 2026)
+Apple user IDs and private-relay emails are scoped to the developer team, so the
+transfer changed them. `scripts/apple-migration/migrate.ts` (see its header) remapped
+all 80 existing Apple identities in `auth.identities` to Surmount-team IDs; the
+pre-migration rows are in `public.apple_migration_backup`. Apple's migration endpoint
+stays open until ~Jan 5 2027. Re-export and re-run the script if any pre-transfer
+Apple user turns up unmigrated, then drop the backup table after that date.
+
 ### Google Sign-In
 1. Go to **Google Cloud Console → APIs & Services → Credentials**
 2. Create an **OAuth 2.0 Client ID** (iOS type) with your bundle ID
