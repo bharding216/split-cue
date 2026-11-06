@@ -6,16 +6,25 @@
  * or the screen locks, unless a headless task is active. Without this, the
  * workout tick (and every cue it triggers) stalls until the app is reopened.
  *
+ * For GPS workouts the service also tracks location, which keeps working with
+ * the screen locked under "While using the app" access.
+ *
  * No-op on iOS, and on Android binaries built before this module existed.
  */
 
 import { AppRegistry, Platform } from 'react-native';
-import { requireOptionalNativeModule } from 'expo';
+import { requireOptionalNativeModule, type NativeModule } from 'expo';
+import type { GpsSample } from '../../src/pace/paceTypes';
 
 /** Must match TASK_KEY in WorkoutSessionService.kt. */
 const TASK_KEY = 'SplitCueWorkoutSession';
 
-interface WorkoutSessionNative {
+/** A location fix as sent by the native module. Fields the OS didn't report are null. */
+type NativeLocation = Omit<GpsSample, 'accuracy'> & { accuracy: number | null };
+
+declare class WorkoutSessionNative extends NativeModule<{
+  onLocation: (location: NativeLocation) => void;
+}> {
   start(title: string, body: string, usesLocation: boolean): void;
   stop(): void;
 }
@@ -25,8 +34,22 @@ const native =
     ? requireOptionalNativeModule<WorkoutSessionNative>('WorkoutSession')
     : null;
 
-/** Whether the workout session foreground service is available on this build. */
+/**
+ * Whether the workout session foreground service is available on this build.
+ * When true, GPS during a workout comes from the session rather than
+ * expo-location, and background location permission isn't used.
+ */
 export const isWorkoutSessionSupported = native != null;
+
+/** Receive location fixes while a session started with `usesLocation` is running. */
+export function addWorkoutSessionLocationListener(
+  listener: (sample: GpsSample) => void,
+): { remove(): void } | null {
+  if (!native) return null;
+  return native.addListener('onLocation', (location) =>
+    listener({ ...location, accuracy: location.accuracy ?? 999 }),
+  );
+}
 
 let active = false;
 let finishTask: (() => void) | null = null;

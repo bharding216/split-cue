@@ -9,6 +9,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import { isWorkoutSessionSupported } from '../../modules/workout-session';
 import { supabase } from './supabaseClient';
 import { deviceCountry, getAnonymousId } from './track';
 import { getInstallReferrer, getInstallationTime, staticDeviceInfo } from './deviceInfo';
@@ -28,9 +29,11 @@ let lastArgs: { userId: string | null; subscriptionTier: SubscriptionTier | null
 
 async function locationPermissions() {
   try {
+    // Android builds with the workout session don't declare background location,
+    // and expo-location throws when asked about an undeclared permission.
     const [foreground, background] = await Promise.all([
       Location.getForegroundPermissionsAsync(),
-      Location.getBackgroundPermissionsAsync(),
+      isWorkoutSessionSupported ? null : Location.getBackgroundPermissionsAsync(),
     ]);
     const precise = foreground.granted
       ? foreground.ios
@@ -41,7 +44,7 @@ async function locationPermissions() {
       : null;
     return {
       location_foreground: foreground.status,
-      location_background: background.status,
+      location_background: background?.status ?? null,
       location_precise: precise,
     };
   } catch {

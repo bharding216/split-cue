@@ -88,7 +88,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.FOREGROUND_SERVICE_LOCATION',
       'android.permission.ACCESS_FINE_LOCATION',
       'android.permission.ACCESS_COARSE_LOCATION',
-      'android.permission.ACCESS_BACKGROUND_LOCATION',
     ],
     intentFilters: [
       {
@@ -113,7 +112,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         locationWhenInUsePermission:
           'Allow SplitCue to track your running pace.',
         isIosBackgroundLocationEnabled: true,
-        isAndroidBackgroundLocationEnabled: true,
+        // The workout session foreground service tracks with the screen locked
+        // under "While using the app", so Android never needs background location.
+        isAndroidBackgroundLocationEnabled: false,
         isAndroidForegroundServiceEnabled: true,
       },
     ],

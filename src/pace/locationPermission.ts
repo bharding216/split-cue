@@ -9,6 +9,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { isWorkoutSessionSupported } from '../../modules/workout-session';
 
 /** Where background access is offered: before a run, and again on the finish screen. */
 export type BackgroundOfferPlacement = 'preRun' | 'finished';
@@ -37,6 +38,9 @@ export async function requestForegroundLocationAccess(): Promise<LocationAccess>
 export async function shouldOfferBackgroundLocation(
   placement: BackgroundOfferPlacement,
 ): Promise<boolean> {
+  // The Android workout session tracks with the screen locked using foreground
+  // access, and those builds don't declare background location at all.
+  if (isWorkoutSessionSupported) return false;
   if (await AsyncStorage.getItem(BACKGROUND_OFFER_DISMISSED_KEYS[placement])) return false;
   const foreground = await Location.getForegroundPermissionsAsync();
   if (!foreground.granted) return false;

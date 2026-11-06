@@ -5,6 +5,9 @@
  * background location updates via TaskManager when backgrounded.
  * The background task feeds samples into a module-level buffer, drained by
  * `sync()` on every workout tick and on app resume.
+ *
+ * On Android builds with the workout session module, fixes come from the
+ * session's foreground service instead, which needs no background permission.
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
@@ -19,7 +22,10 @@ import {
   createPaceState,
 } from '../pace/paceTypes';
 import { addSample, expireStalePace, resetPaceState } from '../pace/paceTracker';
-import { isWorkoutSessionSupported } from '../../modules/workout-session';
+import {
+  addWorkoutSessionLocationListener,
+  isWorkoutSessionSupported,
+} from '../../modules/workout-session';
 
 const BACKGROUND_LOCATION_TASK = 'pace-cue-background-location';
 
@@ -86,6 +92,7 @@ export function usePaceTracker(
   const windowRef = useRef(windowSeconds);
   windowRef.current = windowSeconds;
   const foregroundSubRef = useRef<Location.LocationSubscription | null>(null);
+  const sessionLocationSubRef = useRef<{ remove(): void } | null>(null);
   const trackingRef = useRef(false);
   const fullTrackRef = useRef<GpsSample[]>([]);
   /** Newest sample timestamp ingested. The foreground watcher and background task can both deliver the same fixes. */
@@ -148,17 +155,24 @@ export function usePaceTracker(
       return;
     }
 
+    setPermissionStatus('granted');
+    trackingRef.current = true;
+    setIsTracking(true);
+    backgroundSampleBuffer = [];
+
+    // On Android the workout session (started by useWorkoutRunner for GPS
+    // workouts) delivers fixes, including with the screen locked.
+    if (isWorkoutSessionSupported) {
+      sessionLocationSubRef.current = addWorkoutSessionLocationListener(processSample);
+      return;
+    }
+
     const { status: bgStatus } =
       await Location.getBackgroundPermissionsAsync();
     // Background permission is optional — foreground still works
     if (bgStatus !== 'granted') {
       console.warn('Background location not granted — pace tracking will pause when backgrounded');
     }
-
-    setPermissionStatus('granted');
-    trackingRef.current = true;
-    setIsTracking(true);
-    backgroundSampleBuffer = [];
 
     // Start foreground watcher for real-time updates
     foregroundSubRef.current = await Location.watchPositionAsync(
@@ -189,15 +203,11 @@ export function usePaceTracker(
           timeInterval: 2000,
           activityType: Location.ActivityType.Fitness,
           showsBackgroundLocationIndicator: true,
-          // The workout session's foreground service already keeps location
-          // running on Android; a second service would add a duplicate notification.
-          foregroundService: isWorkoutSessionSupported
-            ? undefined
-            : {
-                notificationTitle: 'SplitCue',
-                notificationBody: 'Tracking your running pace',
-                notificationColor: '#4ADE80',
-              },
+          foregroundService: {
+            notificationTitle: 'SplitCue',
+            notificationBody: 'Tracking your running pace',
+            notificationColor: '#4ADE80',
+          },
         });
       } catch (e) {
         console.warn('Failed to start background location:', e);
@@ -214,6 +224,8 @@ export function usePaceTracker(
       foregroundSubRef.current.remove();
       foregroundSubRef.current = null;
     }
+    sessionLocationSubRef.current?.remove();
+    sessionLocationSubRef.current = null;
 
     try {
       const isRegistered = await TaskManager.isTaskRegisteredAsync(
@@ -258,6 +270,8 @@ export function usePaceTracker(
         foregroundSubRef.current.remove();
         foregroundSubRef.current = null;
       }
+      sessionLocationSubRef.current?.remove();
+      sessionLocationSubRef.current = null;
     };
   }, []);
 
