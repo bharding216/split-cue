@@ -3,11 +3,17 @@
  *
  * Handles the Strava OAuth 2.0 flow:
  *   GET  → returns the Strava authorize URL for the client to open
+ *          (?check=capacity returns { available } without starting OAuth)
  *   POST → exchanges an authorization code for tokens and stores them
  *   DELETE → revokes the token and removes the connection
  *
+ * Strava caps how many athletes an API app may connect. Set
+ * STRAVA_ATHLETE_CAPACITY to that cap so new connections are refused
+ * before the user is sent to Strava. Unset means no limit is enforced.
+ *
  * Deploy:  supabase functions deploy strava-auth
  * Secrets: supabase secrets set STRAVA_CLIENT_ID=... STRAVA_CLIENT_SECRET=...
+ *          supabase secrets set STRAVA_ATHLETE_CAPACITY=...
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -17,6 +23,11 @@ const STRAVA_CLIENT_ID = Deno.env.get("STRAVA_CLIENT_ID")!;
 const STRAVA_CLIENT_SECRET = Deno.env.get("STRAVA_CLIENT_SECRET")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const STRAVA_ATHLETE_CAPACITY = Number(Deno.env.get("STRAVA_ATHLETE_CAPACITY")) || null;
+
+const AT_CAPACITY_CODE = "strava_at_capacity";
+const AT_CAPACITY_MESSAGE =
+  "Strava limits how many runners SplitCue can connect, and we've reached that limit for now. We're working with Strava to raise it, so please check back soon.";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -59,6 +70,34 @@ function adminClient() {
   });
 }
 
+/**
+ * Whether this user may start a Strava connection. Users who are already
+ * connected can always reconnect, since they don't take a new slot.
+ */
+async function hasCapacityFor(userId: string): Promise<boolean> {
+  if (!STRAVA_ATHLETE_CAPACITY) return true;
+
+  const db = adminClient();
+  const { data: existing, error: existingError } = await db
+    .from("strava_connections")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return true;
+
+  const { count, error } = await db
+    .from("strava_connections")
+    .select("id", { count: "exact", head: true });
+  if (error) throw error;
+
+  return (count ?? 0) < STRAVA_ATHLETE_CAPACITY;
+}
+
+function atCapacityResponse() {
+  return jsonResponse({ error: AT_CAPACITY_MESSAGE, code: AT_CAPACITY_CODE }, 409);
+}
+
 // ── Handler ──────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -75,6 +114,15 @@ Deno.serve(async (req) => {
     // ── GET: Return the Strava OAuth authorize URL ──────────
     if (req.method === "GET") {
       const url = new URL(req.url);
+      const available = await hasCapacityFor(userId);
+
+      if (url.searchParams.get("check") === "capacity") {
+        return jsonResponse({ available });
+      }
+      if (!available) {
+        return atCapacityResponse();
+      }
+
       const redirectUri = url.searchParams.get("redirect_uri");
       if (!redirectUri) {
         return errorResponse("redirect_uri query param is required", 400);
@@ -120,6 +168,10 @@ Deno.serve(async (req) => {
       if (!tokenResponse.ok) {
         const err = await tokenResponse.text();
         console.error("Strava token exchange failed:", tokenResponse.status, err);
+        // Strava enforces the cap itself too, e.g. if our count drifted or the secret is unset.
+        if (tokenResponse.status === 403 && /limit/i.test(err)) {
+          return atCapacityResponse();
+        }
         return errorResponse("Failed to exchange authorization code", 502);
       }
 

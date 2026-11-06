@@ -20,7 +20,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { useStrava } from '../../../src/strava/useStrava';
-import { setStravaAutoUpload } from '../../../src/strava/stravaService';
+import {
+  setStravaAutoUpload,
+  STRAVA_AT_CAPACITY_MESSAGE,
+} from '../../../src/strava/stravaService';
 import { loadSettings, onSettingsSaved } from '../../../src/workout/workoutStorage';
 import { getSyncStatus, onSyncStatusChange, SyncStatus } from '../../../src/sync/cloudSync';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
@@ -248,6 +251,8 @@ export default function AccountScreen() {
           {!strava.isConnected &&
             (strava.connecting ? (
               <ActivityIndicator color="#FC5200" style={styles.stravaConnecting} />
+            ) : strava.atCapacity ? (
+              <Text style={styles.stravaCapacityNote}>{STRAVA_AT_CAPACITY_MESSAGE}</Text>
             ) : (
               <TouchableOpacity
                 style={styles.stravaConnectBtn}
@@ -546,6 +551,14 @@ const styles = StyleSheet.create({
   stravaConnecting: {
     marginTop: Spacing.md,
     height: 48,
+  },
+  stravaCapacityNote: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceLight,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
   },
   stravaDisconnectBtn: {
     paddingVertical: Spacing.sm,

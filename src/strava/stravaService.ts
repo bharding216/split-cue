@@ -28,6 +28,20 @@ const STRAVA_REDIRECT_URI = 'https://splitcue.app/strava/callback';
 /** The custom-scheme URI the Cloudflare Worker bounces into (what openAuthSessionAsync listens for). */
 const APP_REDIRECT_URI = `${SCHEME}://strava/callback`;
 
+// We call the strava-auth function URL directly (instead of
+// supabase.functions.invoke) because GET requests need query params.
+const SUPABASE_URL = 'https://oakhqqrxsavmoeqlzcny.supabase.co';
+const SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ha2hxcXJ4c2F2bW9lcWx6Y255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyOTgyMDYsImV4cCI6MjEwNjg3NDIwNn0.kLmkWC2SgnSfaGY20s4WXo2n1BauLboEZZQDYbrKs4M';
+const STRAVA_AUTH_URL = `${SUPABASE_URL}/functions/v1/strava-auth`;
+
+/** Error code strava-auth returns when SplitCue has hit Strava's athlete limit. */
+const AT_CAPACITY_CODE = 'strava_at_capacity';
+
+/** Shown when Strava connections are full. */
+export const STRAVA_AT_CAPACITY_MESSAGE =
+  "Strava limits how many runners SplitCue can connect, and we've reached that limit for now. We're working with Strava to raise it, so please check back soon.";
+
 // ── Connection status ────────────────────────────────────────
 
 export interface StravaConnection {
@@ -66,12 +80,43 @@ export async function getStravaStatus(): Promise<StravaConnection> {
   }
 }
 
+// ── Capacity ─────────────────────────────────────────────────
+
+/**
+ * Whether the current user can start a new Strava connection, i.e.
+ * SplitCue hasn't reached Strava's connected-athlete limit. Assumes
+ * capacity is available if the check fails, since strava-auth refuses
+ * the connection anyway when it's full.
+ */
+export async function getStravaCapacityAvailable(): Promise<boolean> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return true;
+
+    const res = await fetch(`${STRAVA_AUTH_URL}?check=capacity`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+    });
+    if (!res.ok) return true;
+
+    const body = await res.json();
+    return body.available !== false;
+  } catch {
+    return true;
+  }
+}
+
 // ── OAuth connect ────────────────────────────────────────────
 
 export interface ConnectResult {
   success: boolean;
   athleteName?: string;
   error?: string;
+  /** The connection was refused because Strava's athlete limit is reached. */
+  atCapacity?: boolean;
 }
 
 /**
@@ -89,14 +134,9 @@ export async function connectStrava(): Promise<ConnectResult> {
       return { success: false, error: 'Please sign in first' };
     }
 
-    // Step 1: Get the authorize URL from the Edge Function.
-    // We call the function URL directly (instead of supabase.functions.invoke)
-    // because we need to pass redirect_uri as a query param on a GET request.
-    const SUPABASE_URL = 'https://oakhqqrxsavmoeqlzcny.supabase.co';
-    const SUPABASE_ANON_KEY =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ha2hxcXJ4c2F2bW9lcWx6Y255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyOTgyMDYsImV4cCI6MjEwNjg3NDIwNn0.kLmkWC2SgnSfaGY20s4WXo2n1BauLboEZZQDYbrKs4M';
-
-    const fnUrl = `${SUPABASE_URL}/functions/v1/strava-auth?redirect_uri=${encodeURIComponent(STRAVA_REDIRECT_URI)}`;
+    // Step 1: Get the authorize URL from the Edge Function. It refuses
+    // when Strava's athlete limit is reached, before any browser opens.
+    const fnUrl = `${STRAVA_AUTH_URL}?redirect_uri=${encodeURIComponent(STRAVA_REDIRECT_URI)}`;
     const getRes = await fetch(fnUrl, {
       method: 'GET',
       headers: {
@@ -107,6 +147,9 @@ export async function connectStrava(): Promise<ConnectResult> {
 
     if (!getRes.ok) {
       const errBody = await getRes.json().catch(() => ({}));
+      if (errBody.code === AT_CAPACITY_CODE) {
+        return { success: false, atCapacity: true, error: STRAVA_AT_CAPACITY_MESSAGE };
+      }
       return { success: false, error: errBody.error ?? 'Failed to start Strava connection' };
     }
 
@@ -136,7 +179,7 @@ export async function connectStrava(): Promise<ConnectResult> {
     }
 
     // Step 4: Exchange the code for tokens via the Edge Function
-    const exchangeRes = await fetch(`${SUPABASE_URL}/functions/v1/strava-auth`, {
+    const exchangeRes = await fetch(STRAVA_AUTH_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -149,6 +192,9 @@ export async function connectStrava(): Promise<ConnectResult> {
     const exchangeBody = await exchangeRes.json().catch(() => ({}));
 
     if (!exchangeRes.ok) {
+      if (exchangeBody.code === AT_CAPACITY_CODE) {
+        return { success: false, atCapacity: true, error: STRAVA_AT_CAPACITY_MESSAGE };
+      }
       return {
         success: false,
         error: exchangeBody.error ?? `Strava connection failed (${exchangeRes.status})`,
@@ -180,11 +226,7 @@ export async function disconnectStrava(): Promise<{ error?: string }> {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { error: 'Not signed in' };
 
-    const SUPABASE_URL = 'https://oakhqqrxsavmoeqlzcny.supabase.co';
-    const SUPABASE_ANON_KEY =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ha2hxcXJ4c2F2bW9lcWx6Y255Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyOTgyMDYsImV4cCI6MjEwNjg3NDIwNn0.kLmkWC2SgnSfaGY20s4WXo2n1BauLboEZZQDYbrKs4M';
-
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/strava-auth`, {
+    const res = await fetch(STRAVA_AUTH_URL, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${session.access_token}`,

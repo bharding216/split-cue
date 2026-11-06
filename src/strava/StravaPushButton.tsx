@@ -26,7 +26,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import { useStrava } from './useStrava';
-import { getPendingStravaUpload, stravaActivityUrl, type PushResult } from './stravaService';
+import {
+  getPendingStravaUpload,
+  stravaActivityUrl,
+  STRAVA_AT_CAPACITY_MESSAGE,
+  type PushResult,
+} from './stravaService';
 import { hapticTap } from '../audio/haptics';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import type {
@@ -214,6 +219,17 @@ export function StravaPushButton({
 
   const busy = pushState === 'connecting' || pushState === 'pushing';
 
+  if (!strava.isConnected && !busy && strava.atCapacity) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.capacityRow}>
+          <Ionicons name="information-circle-outline" size={18} color={Colors.textSecondary} />
+          <Text style={styles.capacityText}>{STRAVA_AT_CAPACITY_MESSAGE}</Text>
+        </View>
+      </View>
+    );
+  }
+
   if (!strava.isConnected && !busy) {
     return (
       <View style={styles.container}>
@@ -308,6 +324,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: FontSize.sm,
     fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  capacityRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
+  capacityText: {
+    flex: 1,
+    fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
   connectHint: {

@@ -10,10 +10,12 @@ import { Alert } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getStravaStatus,
+  getStravaCapacityAvailable,
   connectStrava,
   disconnectStrava,
   pushWorkoutToStrava,
   setStravaAutoUpload,
+  STRAVA_AT_CAPACITY_MESSAGE,
   type StravaConnection,
   type PushResult,
   type PushTrigger,
@@ -31,6 +33,8 @@ export interface UseStravaReturn {
   pushing: boolean;
   /** Whether we're still loading the initial connection status. */
   loading: boolean;
+  /** Strava's athlete limit is reached, so new connections can't be made. */
+  atCapacity: boolean;
   /** Initiate the Strava OAuth connection flow. Resolves true once connected. */
   connect: () => Promise<boolean>;
   /** Disconnect the linked Strava account. */
@@ -51,16 +55,19 @@ export function useStrava(): UseStravaReturn {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [atCapacity, setAtCapacity] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user) {
       setStatus({ connected: false, athleteName: null, stravaAthleteId: null });
+      setAtCapacity(false);
       setLoading(false);
       return;
     }
     try {
       const s = await getStravaStatus();
       setStatus(s);
+      setAtCapacity(s.connected ? false : !(await getStravaCapacityAvailable()));
     } catch {
       // Non-fatal — keep whatever state we had
     } finally {
@@ -79,9 +86,18 @@ export function useStrava(): UseStravaReturn {
       Alert.alert('Sign In Required', 'Please sign in before connecting Strava.');
       return false;
     }
+    if (atCapacity) {
+      Alert.alert('Strava Connections Are Full', STRAVA_AT_CAPACITY_MESSAGE);
+      return false;
+    }
     setConnecting(true);
     try {
       const result = await connectStrava();
+      if (result.atCapacity) {
+        setAtCapacity(true);
+        Alert.alert('Strava Connections Are Full', STRAVA_AT_CAPACITY_MESSAGE);
+        return false;
+      }
       if (result.success) {
         setStatus({
           connected: true,
@@ -113,7 +129,7 @@ export function useStrava(): UseStravaReturn {
     } finally {
       setConnecting(false);
     }
-  }, [user]);
+  }, [user, atCapacity]);
 
   const disconnect = useCallback(async () => {
     Alert.alert(
@@ -159,6 +175,7 @@ export function useStrava(): UseStravaReturn {
     connecting,
     pushing,
     loading,
+    atCapacity,
     connect,
     disconnect,
     pushWorkout,
