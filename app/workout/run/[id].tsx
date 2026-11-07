@@ -54,6 +54,7 @@ import { useWorkoutRunner, type SessionMeta } from '../../../src/hooks/useWorkou
 import { Timer } from '../../../src/components/Timer';
 import { IntervalProgress } from '../../../src/components/IntervalProgress';
 import { formatPaceDisplay, formatDistance } from '../../../src/pace/paceTracker';
+import { paceToUnit } from '../../../src/units/format';
 import { currentInterval as getCurrentInterval } from '../../../src/workout/workoutEngine';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -1530,9 +1531,11 @@ function PaceDisplay({
 }: {
   paceState: import('../../../src/pace/paceTypes').PaceState;
   paceUnit: import('../../../src/pace/paceTypes').PaceUnit;
+  /** Stored in min/mile. */
   targetPace?: number;
 }) {
   const large = useLargeText();
+  const target = targetPace != null ? paceToUnit(targetPace, paceUnit) : undefined;
   const currentPace =
     paceUnit === 'minPerMile'
       ? paceState.currentPaceMinPerMile
@@ -1544,8 +1547,8 @@ function PaceDisplay({
   // Determine pace status relative to target
   let statusColor: string = Colors.textSecondary;
   let statusText = '';
-  if (targetPace != null && currentPace != null && isFinite(currentPace)) {
-    const diff = currentPace - targetPace;
+  if (target != null && currentPace != null && isFinite(currentPace)) {
+    const diff = currentPace - target;
     if (Math.abs(diff) < 0.15) {
       statusColor = Colors.primary;
       statusText = 'On target';
@@ -1568,11 +1571,11 @@ function PaceDisplay({
             <Text style={paceStyles.paceUnit}> {unitLabel}</Text>
           </Text>
         </View>
-        {targetPace != null && (
+        {target != null && (
           <View style={[paceStyles.targetCol, large && paceStyles.colLarge]}>
             <Text style={paceStyles.paceLabel}>TARGET</Text>
             <Text style={[paceStyles.targetValue]}>
-              {formatPaceDisplay(targetPace)}
+              {formatPaceDisplay(target)}
               <Text style={paceStyles.paceUnit}> {unitLabel}</Text>
             </Text>
           </View>

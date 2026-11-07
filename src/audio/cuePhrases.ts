@@ -12,6 +12,7 @@
 
 import type { PaceUnit } from '../pace/paceTypes';
 import { formatPaceForSpeech } from '../pace/paceTracker';
+import { paceToUnit } from '../workout/goalPaceSuggestions';
 import {
   type AppSettings,
   type BlockSegmentSummary,
@@ -113,8 +114,8 @@ export function buildCueContext(
     nextDuration: ni?.durationSeconds,
     nextDistanceMeters: ni?.distanceMeters,
     nextEffort: ni?.effort,
-    nextTargetPace: ni?.targetPace,
-    targetPace: ci.targetPace,
+    nextTargetPace: ni?.targetPace != null ? paceToUnit(ni.targetPace, paceUnit ?? 'minPerMile') : undefined,
+    targetPace: ci.targetPace != null ? paceToUnit(ci.targetPace, paceUnit ?? 'minPerMile') : undefined,
     paceUnit,
   };
 }
