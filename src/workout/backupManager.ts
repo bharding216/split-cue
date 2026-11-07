@@ -102,7 +102,7 @@ export async function importData(): Promise<ImportResult | null> {
 
   const { uri } = result.assets[0];
   const file = new File(uri);
-  const raw = file.text();
+  const raw = await file.text();
   const parsed = JSON.parse(raw);
 
   if (!isValidBackup(parsed)) {

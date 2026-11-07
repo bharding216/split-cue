@@ -114,6 +114,72 @@ export type StravaUser = {
   latest_push_at: string | null;
 };
 
+export type SecondRunCohort = {
+  cohort: string;
+  first_runners: number;
+  eligible_7: number;
+  returned_7: number;
+  eligible_14: number;
+  returned_14: number;
+  eligible_30: number;
+  returned_30: number;
+};
+
+export type FirstRunBreakdownRow = {
+  dimension: string;
+  value: string;
+  first_runners: number;
+  eligible: number;
+  returned: number;
+  return_pct: number | null;
+};
+
+export type FirstRunUser = {
+  anonymous_user_id: string;
+  display_name: string | null;
+  first_at: string;
+  first_workout: string | null;
+  first_source: string | null;
+  first_category: string | null;
+  first_minutes: number;
+  first_ended: string;
+  second_at: string | null;
+  second_workout: string | null;
+  gap_days: number | null;
+  total_runs: number;
+  platform: string | null;
+  country: string | null;
+};
+
+export type TimelineEvent = {
+  created_at: string;
+  event_name: string;
+  metadata: Record<string, unknown> | null;
+  app_version: string | null;
+  environment: string | null;
+  user_id: string | null;
+};
+
+export type FunnelCount = {
+  step: string;
+  user_count: number;
+};
+
+export type SurveyReason = {
+  reason: string;
+  user_count: number;
+};
+
+export type SurveyComment = {
+  created_at: string;
+  anonymous_user_id: string;
+  reason: string | null;
+  detail: string;
+  platform: string | null;
+  app_version: string | null;
+  runs_since: number;
+};
+
 /**
  * Fetch all overview metrics in parallel.
  */
@@ -337,6 +403,99 @@ export async function getStravaStats(days = 30): Promise<StravaStats> {
     autoPushes: row?.auto_pushes ?? 0,
     uniquePushers: row?.unique_pushers ?? 0,
   };
+}
+
+/**
+ * Second-run retention by weekly cohort of first runs (qualifying runs only).
+ */
+export async function getSecondRunRetention(weeks = 12): Promise<SecondRunCohort[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('second_run_retention', { cohort_weeks: weeks });
+  return (data as SecondRunCohort[]) ?? [];
+}
+
+/**
+ * First runs grouped by how they started, with 14-day return rates.
+ */
+export async function getFirstRunBreakdown(days = 90): Promise<FirstRunBreakdownRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('first_run_breakdown', { num_days: days });
+  return (data as FirstRunBreakdownRow[]) ?? [];
+}
+
+/**
+ * Runners whose first qualifying run was in the last N days, newest first.
+ */
+export async function getFirstRunUsers(days = 30): Promise<FirstRunUser[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('first_run_users', { num_days: days });
+  return (data as FirstRunUser[]) ?? [];
+}
+
+/**
+ * Every event for one device, newest first.
+ */
+export async function getUserTimeline(anonymousUserId: string, maxRows = 500): Promise<TimelineEvent[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('user_timeline', {
+    p_anonymous_user_id: anonymousUserId,
+    max_rows: maxRows,
+  });
+  return (data as TimelineEvent[]) ?? [];
+}
+
+/**
+ * Next-run suggestion → calendar → reminder → run, unique devices (last N days).
+ */
+export async function getNextRunFunnel(days = 30): Promise<FunnelCount[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('next_run_funnel', { num_days: days });
+  return (data as FunnelCount[]) ?? [];
+}
+
+/**
+ * Lapsed-runner survey answers (last N days).
+ */
+export async function getLapsedSurveyBreakdown(days = 90): Promise<SurveyReason[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('lapsed_survey_breakdown', { num_days: days });
+  return (data as SurveyReason[]) ?? [];
+}
+
+/**
+ * Lapsed-runner survey response rates: saw it, answered, commented, closed (last N days).
+ */
+export async function getLapsedSurveySummary(days = 90): Promise<FunnelCount[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('lapsed_survey_summary', { num_days: days });
+  return (data as FunnelCount[]) ?? [];
+}
+
+/**
+ * Free-text comments from the lapsed-runner survey, newest first (last N days).
+ */
+export async function getLapsedSurveyComments(days = 90, maxRows = 100): Promise<SurveyComment[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('lapsed_survey_comments', { num_days: days, max_rows: maxRows });
+  return (data as SurveyComment[]) ?? [];
+}
+
+/**
+ * Run reminders: asked → blocked → scheduled → opened → started → finished (last N days).
+ */
+export async function getRunReminderFunnel(days = 30): Promise<FunnelCount[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('run_reminder_funnel', { num_days: days });
+  return (data as FunnelCount[]) ?? [];
 }
 
 /**

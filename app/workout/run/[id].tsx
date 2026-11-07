@@ -5,7 +5,7 @@
  * and start/pause/resume/skip controls.
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import {
   Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
   WorkoutDefinition,
@@ -32,8 +32,14 @@ import {
   formatDistanceShort,
   hasDistanceFeature,
   WORKOUT_TAG_GROUPS,
+  categorizeWorkout,
   type CompletedWorkout,
 } from '../../../src/workout/workoutTypes';
+import { resolveWorkoutSource, runQualifies } from '../../../src/analytics/workoutContext';
+import { suggestNextRun } from '../../../src/workout/nextRunSuggestion';
+import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/components/NextRunSuggestionCard';
+import { addWorkoutToCalendar } from '../../../src/ai/planService';
+import { useAuth } from '../../../src/contexts/AuthContext';
 import type { PaceCueFrequency } from '../../../src/pace/paceTypes';
 import { paceCuesEnabled, distanceProgressCuesNeedGps } from '../../../src/audio/cueSchedule';
 import {
@@ -43,6 +49,7 @@ import {
 } from '../../../src/components/CueScheduleControls';
 import { loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../../src/workout/tempWorkoutCache';
+import { loadActiveSession, type ActiveSessionSnapshot } from '../../../src/workout/activeSession';
 import { useWorkoutRunner, type SessionMeta } from '../../../src/hooks/useWorkoutRunner';
 import { Timer } from '../../../src/components/Timer';
 import { IntervalProgress } from '../../../src/components/IntervalProgress';
@@ -93,21 +100,54 @@ const FEEL_TAGS: readonly string[] =
 
 const FEEL_OPTIONS = FEEL_TAGS.map((tag) => ({ tag, emoji: FEEL_EMOJI[tag] ?? '•' }));
 
+function localDateKey(offsetDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function intervalLengthText(
+  interval: FlatInterval,
+  paceUnit: import('../../../src/pace/paceTypes').PaceUnit,
+): string {
+  if (interval.openEnded) return 'Open';
+  return isDistanceInterval(interval)
+    ? formatDistanceShort(interval.distanceMeters!, paceUnit)
+    : formatTime(interval.durationSeconds);
+}
+
 export default function ActiveWorkoutScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, resume } = useLocalSearchParams<{ id: string; resume?: string }>();
   const router = useRouter();
   const [workout, setWorkout] = useState<WorkoutDefinition | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | undefined>();
+  const [resumeFrom, setResumeFrom] = useState<ActiveSessionSnapshot | undefined>();
 
   useEffect(() => {
-    const trackOpened = (workoutId: string, meta?: SessionMeta) =>
+    const saved = resume === '1' ? loadActiveSession() : null;
+    if (saved && saved.workout.id === id) {
+      setSessionMeta(saved.sessionMeta);
+      setResumeFrom(saved);
+      setWorkout(saved.workout);
+      loadSettings().then((s) => {
+        setSettings(s);
+        setSettingsLoaded(true);
+      });
+      return;
+    }
+
+
+    const trackOpened = (w: WorkoutDefinition, meta?: SessionMeta) =>
       track('run_screen_opened', {
-        workout_id: workoutId,
+        workout_id: w.id,
         template_id: meta?.templateId,
         plan_workout_id: meta?.planWorkoutId,
         quick_start_type: meta?.quickStartType,
+        workout_source: resolveWorkoutSource(meta),
+        workout_origin: w.origin ?? 'manual',
+        workout_category: categorizeWorkout(w),
       });
 
     const cached = getTempWorkout(id!);
@@ -116,7 +156,7 @@ export default function ActiveWorkoutScreen() {
       clearTempWorkout(id!);
       setWorkout(cached);
       setSessionMeta(meta ? { ...meta } : undefined);
-      trackOpened(cached.id, meta);
+      trackOpened(cached, meta);
       loadSettings().then((s) => {
         setSettings(s);
         setSettingsLoaded(true);
@@ -126,14 +166,15 @@ export default function ActiveWorkoutScreen() {
         const found = workouts.find((w) => w.id === id);
         if (found) {
           setWorkout(found);
-          setSessionMeta({ templateId: found.id });
-          trackOpened(found.id, { templateId: found.id });
+          const meta: SessionMeta = { source: 'saved_template', templateId: found.id };
+          setSessionMeta(meta);
+          trackOpened(found, meta);
         }
         setSettings(s);
         setSettingsLoaded(true);
       });
     }
-  }, [id]);
+  }, [id, resume]);
 
   // Settings start as defaults until loaded, so only prepare once both are real.
   useEffect(() => {
@@ -166,6 +207,7 @@ export default function ActiveWorkoutScreen() {
       settings={settings}
       onUpdateSettings={updateSettings}
       sessionMeta={sessionMeta}
+      resumeFrom={resumeFrom}
     />
   );
 }
@@ -175,17 +217,25 @@ function ActiveWorkoutInner({
   settings,
   onUpdateSettings,
   sessionMeta,
+  resumeFrom,
 }: {
   workout: WorkoutDefinition;
   settings: AppSettings;
   onUpdateSettings: (partial: Partial<AppSettings>) => Promise<void>;
   sessionMeta?: SessionMeta;
+  resumeFrom?: ActiveSessionSnapshot;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const large = useLargeText();
-  const runner = useWorkoutRunner(workout, settings, sessionMeta);
-  const { completeWorkout: completePlanWorkout } = useTrainingPlan();
+  const runner = useWorkoutRunner(workout, settings, sessionMeta, resumeFrom);
+  const {
+    completeWorkout: completePlanWorkout,
+    ensurePlan,
+    planWorkouts,
+    refresh: refreshPlans,
+  } = useTrainingPlan();
+  const { user } = useAuth();
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [newRecords, setNewRecords] = useState<PersonalRecord[]>([]);
   const [newAwards, setNewAwards] = useState<AwardBadge[]>([]);
@@ -311,8 +361,16 @@ function ActiveWorkoutInner({
   }, [settings.keepScreenOn]);
 
   const color = intervalColor(runner.currentType);
+  const finishesRun = runner.isOpenEnded && state.currentIndex === state.intervals.length - 1;
 
   const handleStop = () => {
+    if (finishesRun) {
+      Alert.alert('Finish Run', 'Done running?', [
+        { text: 'Keep Going', style: 'cancel' },
+        { text: 'Finish', onPress: () => runner.skip() },
+      ]);
+      return;
+    }
     Alert.alert('End Workout', 'Are you sure you want to stop?', [
       { text: 'Keep Going', style: 'cancel' },
       {
@@ -340,6 +398,98 @@ function ActiveWorkoutInner({
     leaveFinishedScreen();
     router.push(`/run/${entryId}` as any);
   }, [leaveFinishedScreen, router, runner.completedEntryId, selectedFeel]);
+
+  // ── Next-run suggestion ──
+  // Offered after a run that counts, unless the calendar already has one in the next few days.
+  const plannedMs = state.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
+  const runCounts =
+    runQualifies(state.totalElapsedMs, plannedMs) || runner.paceState.totalDistanceMeters >= 1000;
+  const hasUpcomingPlanned = planWorkouts.some(
+    (pw) =>
+      pw.status === 'planned' &&
+      pw.id !== sessionMeta?.planWorkoutId &&
+      pw.date >= localDateKey(0) &&
+      pw.date <= localDateKey(3) &&
+      !pw.day_label?.toLowerCase().includes('rest'),
+  );
+  const nextRun = useMemo(
+    () =>
+      state.phase === 'finished' && runner.completedEntryId && runCounts && !hasUpcomingPlanned
+        ? suggestNextRun(workout, state.totalElapsedMs, settings)
+        : null,
+    // Suggest once per finished run; later settings or plan changes shouldn't swap it out.
+    [state.phase, runner.completedEntryId],
+  );
+  const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>('idle');
+  const pendingSignInAdd = useRef(false);
+
+  useEffect(() => {
+    if (!nextRun) return;
+    track('next_run_suggestion_shown', {
+      suggested_date: nextRun.dateKey,
+      days_out: nextRun.daysOut,
+      category: nextRun.workout.category ?? categorizeWorkout(nextRun.workout),
+      signed_in: !!user,
+      has_tip: !!nextRun.tip,
+    });
+  }, [nextRun]);
+
+  const addSuggestionToCalendar = useCallback(async () => {
+    if (!nextRun || !user) return;
+    setSuggestionStatus('adding');
+    try {
+      const plan = await ensurePlan();
+      const added = await addWorkoutToCalendar(plan.id, user.id, nextRun.dateKey, nextRun.workout, plan.start_date);
+      track('next_run_suggestion_added', {
+        suggested_date: nextRun.dateKey,
+        days_out: nextRun.daysOut,
+        category: nextRun.workout.category ?? categorizeWorkout(nextRun.workout),
+      });
+      track('workout_added_to_plan', {
+        workout_id: nextRun.workout.id,
+        date: nextRun.dateKey,
+        source: 'post_run_suggestion',
+      });
+      await refreshPlans().catch(() => {});
+      leaveFinishedScreen();
+      router.navigate({
+        pathname: '/(tabs)/training' as any,
+        params: { date: nextRun.dateKey, highlight: added.id },
+      });
+      track('calendar_opened_from_suggestion', { suggested_date: nextRun.dateKey });
+    } catch (e) {
+      console.warn('Failed to add suggested run to calendar:', e);
+      setSuggestionStatus('error');
+    }
+  }, [nextRun, user, ensurePlan, refreshPlans, leaveFinishedScreen, router]);
+
+  const handleAddSuggestion = useCallback(() => {
+    hapticTap();
+    if (user) {
+      addSuggestionToCalendar();
+      return;
+    }
+    track('next_run_suggestion_signin_prompted', { suggested_date: nextRun?.dateKey });
+    pendingSignInAdd.current = true;
+    setSuggestionStatus('idle');
+    router.push('/login' as any);
+  }, [user, addSuggestionToCalendar, nextRun, router]);
+
+  // Finish adding once sign-in succeeds; the login modal returns to this screen.
+  useEffect(() => {
+    if (user && pendingSignInAdd.current) {
+      pendingSignInAdd.current = false;
+      addSuggestionToCalendar();
+    }
+  }, [user, addSuggestionToCalendar]);
+
+  // Back from the login modal without signing in. The add stays pending in case
+  // the session arrives just after the modal closes.
+  useFocusEffect(
+    useCallback(() => {
+      if (pendingSignInAdd.current && !user) setSuggestionStatus('signin_cancelled');
+    }, [user]),
+  );
 
   // ── IDLE state ──
   if (state.phase === 'idle') {
@@ -372,11 +522,13 @@ function ActiveWorkoutInner({
           {workout.name}
         </Text>
         <Text style={styles.intervalCount}>
-          {state.intervals.length} intervals
-          {workout.targetDistanceMeters
-            ? ` · ${formatDistanceShort(workout.targetDistanceMeters, settings.paceUnit)} goal`
-            : ` · ${formatTime(state.intervals.reduce((s, i) => s + i.durationSeconds, 0))}`
-          }
+          {state.intervals.every((i) => i.openEnded)
+            ? 'No set time or distance. Finish whenever you like.'
+            : `${state.intervals.length} intervals${
+                workout.targetDistanceMeters
+                  ? ` · ${formatDistanceShort(workout.targetDistanceMeters, settings.paceUnit)} goal`
+                  : ` · ${formatTime(state.intervals.reduce((s, i) => s + i.durationSeconds, 0))}`
+              }`}
         </Text>
         {hasDistanceFeature(workout) && (
           <Text style={styles.gpsNote}>📍 GPS will auto-enable for distance-based runs</Text>
@@ -454,9 +606,7 @@ function ActiveWorkoutInner({
                       />
                       <Text style={styles.previewLabel}>{int.label}</Text>
                       <Text style={styles.previewTime}>
-                        {isDistanceInterval(int)
-                          ? formatDistanceShort(int.distanceMeters!, settings.paceUnit)
-                          : formatTime(int.durationSeconds)}
+                        {intervalLengthText(int, settings.paceUnit)}
                       </Text>
                     </View>
                   </React.Fragment>
@@ -584,6 +734,15 @@ function ActiveWorkoutInner({
           <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
         )}
 
+        {nextRun && (
+          <NextRunSuggestionCard
+            suggestion={nextRun}
+            signedIn={!!user}
+            status={suggestionStatus}
+            onAdd={handleAddSuggestion}
+          />
+        )}
+
         {autoUploadEnabled ? (
           <View style={styles.stravaAutoRow}>
             <Ionicons name="sync-outline" size={16} color={STRAVA_ORANGE} />
@@ -668,7 +827,23 @@ function ActiveWorkoutInner({
       >
         {/* Main timer — or distance display for distance-based intervals */}
         <View style={[styles.timerArea, large && styles.timerAreaLarge]}>
-          {runner.isDistanceInterval ? (
+          {runner.isOpenEnded ? (
+            <View style={styles.distanceTimerArea}>
+              <Text style={styles.distLabel} maxFontSizeMultiplier={MaxFontScale.display}>
+                {runner.currentLabel}
+              </Text>
+              <Text
+                style={[styles.distRemaining, { color }]}
+                maxFontSizeMultiplier={MaxFontScale.timer}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                accessibilityLabel={`${formatTime(runner.intervalElapsedSeconds)} elapsed`}
+              >
+                {formatTime(runner.intervalElapsedSeconds)}
+              </Text>
+              <Text style={styles.distSubLabel}>elapsed</Text>
+            </View>
+          ) : runner.isDistanceInterval ? (
             <View style={styles.distanceTimerArea}>
               <Text style={styles.distLabel} maxFontSizeMultiplier={MaxFontScale.display}>
                 {runner.currentLabel}
@@ -701,12 +876,14 @@ function ActiveWorkoutInner({
         </View>
 
         {/* Progress bar */}
-        <View style={styles.progressArea}>
-          <IntervalProgress
-            progress={runner.progress}
-            intervalType={runner.currentType}
-          />
-        </View>
+        {!runner.isOpenEnded && (
+          <View style={styles.progressArea}>
+            <IntervalProgress
+              progress={runner.progress}
+              intervalType={runner.currentType}
+            />
+          </View>
+        )}
 
         {/* Workout distance target progress */}
         {runner.workoutDistanceTarget != null && (
@@ -719,8 +896,8 @@ function ActiveWorkoutInner({
                 {formatDistanceShort(runner.workoutDistanceTarget, settings.paceUnit)}
               </Text>
             </View>
-            {/* The distance interval display already shows the clock */}
-            {!runner.isDistanceInterval && (
+            {/* The distance and open-ended interval displays already show the clock */}
+            {!runner.isDistanceInterval && !runner.isOpenEnded && (
               <View style={styles.distTargetInfo}>
                 <Text style={styles.distTargetLabel}>ELAPSED</Text>
                 <Text style={styles.distTargetValue}>{formatTime(runner.elapsedSeconds)}</Text>
@@ -759,12 +936,15 @@ function ActiveWorkoutInner({
         />
 
         {/* Total remaining */}
-        <Text style={styles.totalRemaining}>
-          {runner.workoutDistanceTarget != null && runner.workoutDistanceRemaining != null
-            ? `${formatDistanceShort(runner.workoutDistanceRemaining, settings.paceUnit)} to go`
-            : `${formatTime(runner.totalRemaining)} remaining`
-          }
-        </Text>
+        {runner.workoutDistanceTarget != null && runner.workoutDistanceRemaining != null ? (
+          <Text style={styles.totalRemaining}>
+            {formatDistanceShort(runner.workoutDistanceRemaining, settings.paceUnit)} to go
+          </Text>
+        ) : (runner.totalRemaining > 0 || !runner.isOpenEnded) && (
+          <Text style={styles.totalRemaining}>
+            {formatTime(runner.totalRemaining)} remaining
+          </Text>
+        )}
       </ScrollView>
 
       {/* Controls */}
@@ -823,9 +1003,13 @@ function ActiveWorkoutInner({
             runner.skip();
           }}
           accessibilityRole="button"
-          accessibilityLabel="Skip interval"
+          accessibilityLabel={finishesRun ? 'Finish run' : 'Skip interval'}
         >
-          <Ionicons name="play-skip-forward" size={22} color={Colors.textPrimary} />
+          <Ionicons
+            name={finishesRun ? 'flag' : 'play-skip-forward'}
+            size={22}
+            color={Colors.textPrimary}
+          />
         </TouchableOpacity>
       </View>
     </View>
@@ -1568,10 +1752,7 @@ function WorkoutTimeline({
             ]}
             maxFontSizeMultiplier={MaxFontScale.display}
           >
-            {isDistanceInterval(item)
-              ? formatDistanceShort(item.distanceMeters!, paceUnit)
-              : formatTime(item.durationSeconds)
-            }
+            {intervalLengthText(item, paceUnit)}
           </Text>
         </View>
       );

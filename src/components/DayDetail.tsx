@@ -37,6 +37,10 @@ interface DayDetailProps {
   onViewRun: (historyEntryId: string) => void;
   onRunAgain: (run: CompletedWorkout) => void;
   onAddWorkout?: (date: string) => void;
+  /** Plan workout to call out, e.g. one just added from the post-run suggestion. */
+  highlightWorkoutId?: string | null;
+  /** Shown above the highlighted workout's actions. */
+  highlightContent?: React.ReactNode;
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -179,6 +183,8 @@ export function DayDetail({
   onViewRun,
   onRunAgain,
   onAddWorkout,
+  highlightWorkoutId,
+  highlightContent,
 }: DayDetailProps) {
   const dateDisplay = formatDateDisplay(selectedDate);
   const unit = useUnits();
@@ -241,9 +247,10 @@ export function DayDetail({
         const isPlanned = pw.status === 'planned';
         const isCompleted = pw.status === 'completed';
         const hasWorkoutData = !!pw.workout_data;
+        const highlighted = pw.id === highlightWorkoutId;
 
         return (
-          <View key={pw.id} style={styles.planCard}>
+          <View key={pw.id} style={[styles.planCard, highlighted && styles.planCardHighlighted]}>
             {/* AI edit button — top-right of card (only for detailed workouts in the 14-day window) */}
             {onVoiceEdit && isPlanned && !isRest && hasWorkoutData && (
               <TouchableOpacity
@@ -281,6 +288,8 @@ export function DayDetail({
                 <Text style={styles.restDayText}>Rest and recover</Text>
               </View>
             )}
+
+            {highlighted && highlightContent}
 
             {/* ── Actions for planned workouts ── */}
             {isPlanned && !isRest && (
@@ -447,6 +456,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
     position: 'relative' as const,
+  },
+  planCardHighlighted: {
+    borderColor: Colors.primary,
+    borderWidth: 2,
   },
   aiEditBtn: {
     position: 'absolute' as const,

@@ -40,6 +40,7 @@ import {
   type PlanModification,
 } from '../ai/planService';
 import { loadHistory } from '../workout/workoutStorage';
+import { cancelRunReminder, rescheduleRunReminder } from '../notifications/runReminders';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -350,6 +351,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
   const removeWorkout = useCallback(async (workoutId: string) => {
     await removePlanWorkoutApi(workoutId);
+    cancelRunReminder(workoutId, 'removed').catch(() => {});
     removedWorkoutIds.current.add(workoutId);
     setPlanWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
   }, []);
@@ -360,6 +362,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     const ownerPlan = plans.find((p) => p.id === workout.plan_id);
     const startDate = ownerPlan?.start_date ?? newDate;
     await movePlanWorkoutApi(workoutId, newDate, startDate);
+    rescheduleRunReminder(workoutId, newDate).catch(() => {});
     const start = new Date(startDate);
     const target = new Date(newDate);
     const diffMs = target.getTime() - start.getTime();
@@ -421,6 +424,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     async (workoutId: string, completedWorkoutId: string, completedRun?: CompletedWorkout) => {
       const plannedWorkout = planWorkouts.find((w) => w.id === workoutId);
       await completePlanWorkoutApi(workoutId, completedWorkoutId);
+      cancelRunReminder(workoutId, 'completed').catch(() => {});
       setPlanWorkouts((prev) =>
         prev.map((w) =>
           w.id === workoutId

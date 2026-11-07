@@ -86,6 +86,8 @@ export interface PaceTrackerResult {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   reset: () => void;
+  /** Pick up a workout restored after the app was closed. Starts paused; call `resume` to take fixes again. */
+  restore: (totalDistanceMeters: number, segments: GpsSample[][]) => void;
 }
 
 export function usePaceTracker(
@@ -284,6 +286,17 @@ export function usePaceTracker(
     pausedRef.current = false;
   }, []);
 
+  const restore = useCallback((totalDistanceMeters: number, segments: GpsSample[][]) => {
+    const restored = pausePaceState({ ...createPaceState(), totalDistanceMeters });
+    paceStateRef.current = restored;
+    setPaceState(restored);
+    backgroundSampleBuffer = [];
+    trackSegmentsRef.current = segments.length > 0 ? segments.map((s) => [...s]) : [[]];
+    lastSampleAtRef.current = 0;
+    hadPaceRef.current = false;
+    pausedRef.current = true;
+  }, []);
+
   /** Return a snapshot of the full GPS track accumulated during this workout. */
   const getFullTrack = useCallback(() => trackSegmentsRef.current.flat(), []);
   const getTrackSegments = useCallback(
@@ -327,5 +340,6 @@ export function usePaceTracker(
     start,
     stop,
     reset,
+    restore,
   };
 }

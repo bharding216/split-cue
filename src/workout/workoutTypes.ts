@@ -59,12 +59,16 @@ export type IntervalType = 'warmup' | 'hard' | 'easy' | 'cooldown';
 
 // ── Workout definition ───────────────────────────────────────────────
 
+/** Where a workout's structure came from, when it wasn't built by hand. */
+export type WorkoutOrigin = 'ai_voice' | 'imported' | 'next_run_suggestion';
+
 export interface WorkoutDefinition {
   id: string;
   name: string;
   blocks: WorkoutBlock[];
   targetDistanceMeters?: number;
   category?: WorkoutCategory;
+  origin?: WorkoutOrigin;
   createdAt: number;
   updatedAt: number;
 }
@@ -113,6 +117,8 @@ export interface FlatInterval {
   segmentType: SegmentType;
   /** New: the named intensity from the block model. */
   intensity?: Intensity;
+  /** Manual target: no time or distance limit, ends when the runner taps Skip. */
+  openEnded?: boolean;
 }
 
 // ── Engine state ─────────────────────────────────────────────────────
@@ -185,7 +191,24 @@ export const WORKOUT_NOTES_MAX_LENGTH = 1000;
 
 // ── Quick Start & Completed Workout ──────────────────────────────────
 
-export type QuickStartType = 'distance' | 'timed' | 'intervals' | 'tempo' | 'easy_run' | 'custom';
+export type QuickStartType = 'free_run' | 'distance' | 'timed' | 'intervals' | 'tempo' | 'easy_run' | 'custom';
+
+/** Conditions at the end of a run, from Apple WeatherKit. Stored in metric. */
+export interface RunWeather {
+  /** WeatherKit condition code, e.g. "PartlyCloudy". */
+  conditionCode: string;
+  temperatureC: number;
+  feelsLikeC: number;
+  /** Relative humidity, 0–1. */
+  humidity: number;
+  windSpeedKph: number;
+  windGustKph?: number;
+  precipitationMmPerHour: number;
+  uvIndex: number;
+  daylight: boolean;
+  /** When WeatherKit observed these conditions (epoch ms). */
+  observedAt: number;
+}
 
 export interface CompletedWorkout {
   id: string;
@@ -206,6 +229,8 @@ export interface CompletedWorkout {
   templateId?: string;
   planWorkoutId?: string;
   quickStartType?: QuickStartType;
+  /** Only GPS runs have weather: it's looked up at the route's last point. */
+  weather?: RunWeather;
 }
 
 // ── Settings ─────────────────────────────────────────────────────────
@@ -376,6 +401,11 @@ export function isDistanceInterval(interval: { durationSeconds: number; distance
   return !!(interval.distanceMeters && interval.distanceMeters > 0 && !interval.durationSeconds);
 }
 
+/** Whether an interval has no time limit: it ends on distance, or when the runner taps Skip. */
+export function isUntimedInterval(interval: { durationSeconds: number; distanceMeters?: number; openEnded?: boolean }): boolean {
+  return isDistanceInterval(interval) || !!interval.openEnded;
+}
+
 export function formatDistanceForSpeech(meters: number): string {
   if (Math.abs(meters - METERS_PER_MILE) < 10) return '1 mile';
   if (Math.abs(meters - METERS_PER_MILE * 0.5) < 10) return 'half mile';
@@ -486,6 +516,7 @@ function flattenBlockTree(
         blockIntervalCount: 1,
         segmentType: seg.segmentType,
         intensity: seg.intensity,
+        openEnded: seg.target.type === 'manual' || undefined,
       });
       blockNum++;
     } else {
@@ -516,6 +547,7 @@ function flattenBlockTree(
               blockIntervalCount: innerSegments.length,
               segmentType: seg.segmentType,
               intensity: seg.intensity,
+              openEnded: seg.target.type === 'manual' || undefined,
             });
             innerIdx++;
           } else {

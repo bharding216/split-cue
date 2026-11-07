@@ -20,8 +20,10 @@ import {
   generateId,
   IntervalType,
   isDistanceInterval,
+  isUntimedInterval,
   hasDistanceFeature,
   QuickStartType,
+  DISTANCE_INTERVAL_MAX_MS,
 } from '../workout/workoutTypes';
 import {
   createEngineState,
@@ -70,10 +72,25 @@ import {
   hapticWorkoutComplete,
 } from '../audio/haptics';
 import { saveCompletedWorkout } from '../workout/workoutStorage';
+import { attachRunWeather } from '../weather/weatherService';
+import {
+  saveActiveSession,
+  clearActiveSession,
+  restoreSession,
+  type ActiveSessionSnapshot,
+} from '../workout/activeSession';
 import { onWorkoutCompleted } from '../review/storeReview';
 import { track } from '../analytics/track';
 import { getPowerSnapshot } from '../analytics/deviceInfo';
 import { gpsQuality } from '../analytics/runContext';
+import {
+  buildWorkoutContext,
+  getRunHistoryContext,
+  runQualifies,
+  markFirstRunTracked,
+  type RunHistoryContext,
+} from '../analytics/workoutContext';
+import type { WorkoutSource } from '../workout/tempWorkoutCache';
 import {
   startLiveActivity,
   updateLiveActivity,
@@ -83,6 +100,9 @@ import { startWorkoutSession, stopWorkoutSession } from '../../modules/workout-s
 
 /** How long the Android workout session outlives the workout, so the completion cue can play. */
 const SESSION_END_GRACE_MS = 10_000;
+
+/** How often the in-progress workout is saved while running, for resume after the app is closed. */
+const SESSION_SAVE_INTERVAL_MS = 15_000;
 
 /** Build a verbose CueContext from the engine state for rich voice announcements. */
 function buildVerboseCueContext(
@@ -154,6 +174,11 @@ export interface WorkoutRunnerControls {
   workoutDistanceTarget: number | null; // workout-level target distance (meters)
   workoutDistanceRemaining: number | null; // meters remaining for workout target
 
+  /** Whether the current interval has no time or distance limit. */
+  isOpenEnded: boolean;
+  /** Time in the current interval, excluding pauses (seconds). */
+  intervalElapsedSeconds: number;
+
   start: () => void;
   pause: () => void;
   resume: () => void;
@@ -163,6 +188,7 @@ export interface WorkoutRunnerControls {
 
 /** Session metadata passed through from the temp cache to the history entry. */
 export interface SessionMeta {
+  source?: WorkoutSource;
   templateId?: string;
   planWorkoutId?: string;
   quickStartType?: QuickStartType;
@@ -172,9 +198,12 @@ export function useWorkoutRunner(
   workout: WorkoutDefinition,
   settings: AppSettings,
   sessionMeta?: SessionMeta,
+  /** A workout left unfinished when the app was closed; the runner starts paused where it left off. */
+  resumeFrom?: ActiveSessionSnapshot,
 ): WorkoutRunnerControls {
+  const [restored] = useState(() => (resumeFrom ? restoreSession(resumeFrom) : null));
   const [engine, setEngine] = useState<EngineState>(() =>
-    createEngineState(workout)
+    restored ? restored.engine : createEngineState(workout)
   );
 
   // Pace tracking
@@ -191,10 +220,10 @@ export function useWorkoutRunner(
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   /** Whether GPS tracking was started for this workout. */
-  const usesGpsRef = useRef(false);
+  const usesGpsRef = useRef(resumeFrom?.usesGps ?? false);
   /** Time spent paused, for the workout clock. */
-  const pausedMsRef = useRef(0);
-  const pausedAtRef = useRef<number | null>(null);
+  const pausedMsRef = useRef(restored?.pausedMs ?? 0);
+  const pausedAtRef = useRef<number | null>(restored?.pausedAt ?? null);
 
   // Track which warnings we've already fired to avoid duplicates
   const firedWarnings = useRef(new Set<number>());
@@ -204,9 +233,9 @@ export function useWorkoutRunner(
   /** Last announced step for pace cues (time or distance). */
   const lastPaceMark = useRef(0);
   /** Running time in the current interval, excluding pauses. Used when the interval has no duration. */
-  const intervalElapsedMsRef = useRef(0);
+  const intervalElapsedMsRef = useRef(resumeFrom?.intervalElapsedMs ?? 0);
   const lastRunningTickAtRef = useRef(0);
-  const lastIndex = useRef(-1);
+  const lastIndex = useRef(restored ? restored.engine.currentIndex : -1);
 
   const cueScheduleKey = [
     settings.progressCueBasis,
@@ -239,22 +268,37 @@ export function useWorkoutRunner(
   const backgroundCountRef = useRef(0);
   const backgroundMsRef = useRef(0);
   const backgroundedAtRef = useRef<number | null>(null);
+  const workoutRef = useRef(workout);
+  workoutRef.current = workout;
+  const sessionMetaRef = useRef(sessionMeta);
+  sessionMetaRef.current = sessionMeta;
+  /** Runs saved before this one, read before the run is saved to history. */
+  const runHistoryRef = useRef<Promise<RunHistoryContext> | null>(null);
+  if (!runHistoryRef.current) runHistoryRef.current = getRunHistoryContext();
 
-  /** Track a workout end event with battery use, time backgrounded and GPS quality. */
+  /** Track a workout end event with workout context, battery use, time backgrounded and GPS quality. */
   const trackRunEnd = useCallback(
-    (eventName: string, props: Record<string, unknown>) => {
+    (eventName: string, props: Record<string, unknown>, qualifies: boolean) => {
       const backgroundMs =
         backgroundMsRef.current +
         (backgroundedAtRef.current ? Date.now() - backgroundedAtRef.current : 0);
+      const workoutContext = {
+        ...buildWorkoutContext(workoutRef.current, settingsRef.current, sessionMetaRef.current),
+        gps_enabled: usesGpsRef.current,
+      };
       const context = {
         background_count: backgroundCountRef.current,
         background_ms: backgroundMs,
         ...gpsQuality(paceTrackerRef.current.getFullTrack()),
       };
       const batteryStart = batteryAtStartRef.current;
-      getPowerSnapshot().then((power) => {
+      Promise.all([getPowerSnapshot(), runHistoryRef.current!]).then(([power, history]) => {
         track(eventName, {
           ...props,
+          ...workoutContext,
+          ...history,
+          qualifies,
+          run_number: qualifies ? history.prior_run_count + 1 : null,
           ...context,
           battery_start: batteryStart,
           battery_end: power.batteryLevel,
@@ -263,15 +307,49 @@ export function useWorkoutRunner(
               ? Math.round((batteryStart - power.batteryLevel) * 100) / 100
               : null,
         });
+        if (qualifies && history.is_first_run) {
+          markFirstRunTracked().then((first) => {
+            if (first) {
+              track('first_run_completed', {
+                ...props,
+                ...workoutContext,
+                ...context,
+              });
+            }
+          });
+        }
       });
     },
     [],
   );
 
   // ── Per-interval split tracking ──────────────────────────────────
-  const splitsRef = useRef<IntervalSplit[]>([]);
-  const intervalStartedAtRef = useRef(0); // epoch ms when current interval began
-  const intervalStartDistanceRef = useRef(0); // distance (m) at interval start
+  const splitsRef = useRef<IntervalSplit[]>(resumeFrom?.splits ?? []);
+  const intervalStartedAtRef = useRef(restored?.intervalStartedAt ?? 0); // epoch ms when current interval began
+  const intervalStartDistanceRef = useRef(resumeFrom?.intervalStartDistance ?? 0); // distance (m) at interval start
+
+  const lastSessionSaveAtRef = useRef(0);
+  /** Save the in-progress workout so it can be resumed if the app is closed. */
+  const persistSession = useCallback(() => {
+    const s = engineRef.current;
+    if (s.phase !== 'running' && s.phase !== 'paused') return;
+    const tracker = paceTrackerRef.current;
+    lastSessionSaveAtRef.current = Date.now();
+    saveActiveSession({
+      workout,
+      sessionMeta,
+      engine: s,
+      pausedMs: pausedMsRef.current,
+      pausedAt: pausedAtRef.current,
+      splits: splitsRef.current,
+      intervalStartedAt: intervalStartedAtRef.current,
+      intervalStartDistance: intervalStartDistanceRef.current,
+      intervalElapsedMs: intervalElapsedMsRef.current,
+      usesGps: usesGpsRef.current,
+      totalDistanceMeters: tracker.getPaceState().totalDistanceMeters,
+      trackSegments: tracker.getTrackSegments(),
+    });
+  }, [workout, sessionMeta]);
 
   /** Snapshot the current interval's performance into a split record. */
   const captureSplit = useCallback((s: EngineState) => {
@@ -339,9 +417,11 @@ export function useWorkoutRunner(
     setCompletedEntryId(entryId);
     setCompletedRoute(entry.route ?? null);
     setCompletedSplits(entry.splits ?? null);
-    saveCompletedWorkout(entry).catch((e) =>
-      console.warn('Failed to save workout history:', e),
-    );
+    saveCompletedWorkout(entry)
+      .then(() =>
+        attachRunWeather(entry).catch((e) => console.warn('Failed to attach run weather:', e)),
+      )
+      .catch((e) => console.warn('Failed to save workout history:', e));
     return entryId;
   }, [workout.id, workout.name, sessionMeta]);
 
@@ -358,17 +438,20 @@ export function useWorkoutRunner(
         s.intervals.length > 0
           ? `${s.currentIndex + 1} / ${s.intervals.length}`
           : '';
-      const durationMs = ci ? ci.durationSeconds * 1000 : 0;
+      const untimed = !!ci && isUntimedInterval(ci);
+      const durationMs = untimed ? DISTANCE_INTERVAL_MAX_MS : ci ? ci.durationSeconds * 1000 : 0;
+      const startedAt = s.intervalEndsAt - durationMs;
+      // The widget's timer counts up from a past date, so untimed intervals show elapsed time.
       return {
         intervalLabel: ci?.label || '',
         intervalType: (ci?.type || 'easy') as IntervalType,
-        intervalEndsAt: s.intervalEndsAt,
-        intervalStartedAt: s.intervalEndsAt - durationMs,
+        intervalEndsAt: untimed ? startedAt : s.intervalEndsAt,
+        intervalStartedAt: startedAt,
         nextLabel: ni?.label || '',
         intervalNumber: intervalNum,
         workoutName: workout.name,
         isPaused,
-        pausedRemainingMs: isPaused ? s.pausedRemaining : 0,
+        pausedRemainingMs: !isPaused ? 0 : untimed ? durationMs - s.pausedRemaining : s.pausedRemaining,
       };
     },
     [workout.name]
@@ -416,7 +499,7 @@ export function useWorkoutRunner(
             workout_id: workout.id,
             workout_name: workout.name,
             total_duration_ms: next.totalElapsedMs,
-          });
+          }, true);
         } else {
           // New interval started — voice cue for the current interval only
           markIntervalStart();
@@ -453,7 +536,7 @@ export function useWorkoutRunner(
                 workout_id: workout.id,
                 workout_name: workout.name,
                 total_duration_ms: next.totalElapsedMs,
-              });
+              }, true);
             } else {
               markIntervalStart();
               const cueCtx = buildVerboseCueContext(next, 'intervalStart', settingsRef.current);
@@ -489,7 +572,7 @@ export function useWorkoutRunner(
             workout_id: workout.id,
             workout_name: workout.name,
             total_duration_ms: finished.totalElapsedMs,
-          });
+          }, true);
         }
 
         // Periodic progress and pace cues. Skip the tick that just ended an interval
@@ -599,11 +682,15 @@ export function useWorkoutRunner(
           updateLiveActivity(buildLAProps(s, false));
           lastLAUpdate.current = now;
         }
+
+        if (now - lastSessionSaveAtRef.current >= SESSION_SAVE_INTERVAL_MS) {
+          persistSession();
+        }
       }
 
       setTick((t) => t + 1);
     }
-  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd]);
+  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd, persistSession]);
 
   // Start/stop the tick loop based on engine phase.
   // Uses setInterval instead of requestAnimationFrame so ticks continue
@@ -672,6 +759,43 @@ export function useWorkoutRunner(
     return () => stopWorkoutSession(SESSION_END_GRACE_MS);
   }, [inWorkout, workout.name]);
 
+  // Pick a restored workout back up: GPS, background audio and the Live Activity.
+  // Declared before the save effect so the restored track is in place before it's re-saved.
+  useEffect(() => {
+    if (!resumeFrom) return;
+    const tracker = paceTrackerRef.current;
+    tracker.restore(resumeFrom.totalDistanceMeters, resumeFrom.trackSegments);
+    if (resumeFrom.usesGps) tracker.start();
+    startBackgroundLoop();
+    startLiveActivity(buildLAProps(engineRef.current, true), workout.id);
+    lastLAUpdate.current = Date.now();
+    lastLAIndex.current = engineRef.current.currentIndex;
+    track('workout_resumed_after_close', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      interval_index: engineRef.current.currentIndex,
+      closed_ms: Math.max(0, Date.now() - resumeFrom.savedAt),
+    });
+    // Mount only: the snapshot is consumed once.
+  }, []);
+
+  // Save on every phase or interval change; drop the saved session once the workout ends.
+  useEffect(() => {
+    if (engine.phase === 'finished') {
+      clearActiveSession();
+    } else {
+      persistSession();
+    }
+  }, [engine.phase, engine.currentIndex, persistSession]);
+
+  // Save when backgrounded, since the OS may kill the app without warning.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background') persistSession();
+    });
+    return () => sub.remove();
+  }, [persistSession]);
+
   // Clean up Live Activity and background loop on unmount
   useEffect(() => {
     return () => {
@@ -729,12 +853,13 @@ export function useWorkoutRunner(
       settings: settingsRef.current,
       template_id: sessionMeta?.templateId,
       plan_workout_id: sessionMeta?.planWorkoutId,
-      quick_start_type: sessionMeta?.quickStartType,
+      ...buildWorkoutContext(workout, settingsRef.current, sessionMeta),
     };
-    getPowerSnapshot().then((power) => {
+    Promise.all([getPowerSnapshot(), runHistoryRef.current!]).then(([power, history]) => {
       batteryAtStartRef.current = power.batteryLevel;
       track('workout_started', {
         ...startProps,
+        ...history,
         battery_level: power.batteryLevel,
         charging: power.charging,
         low_power_mode: power.lowPowerMode,
@@ -802,7 +927,7 @@ export function useWorkoutRunner(
         workout_id: workout.id,
         workout_name: workout.name,
         total_duration_ms: next.totalElapsedMs,
-      });
+      }, true);
     }
   }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd]);
 
@@ -837,7 +962,7 @@ export function useWorkoutRunner(
         completion_pct: plannedMs > 0
           ? Math.round((next.totalElapsedMs / plannedMs) * 100)
           : 0,
-      });
+      }, runQualifies(next.totalElapsedMs, plannedMs));
     }
   }, [workout.id, workout.name, captureSplit, saveHistoryEntry, trackRunEnd]);
 
@@ -853,6 +978,9 @@ export function useWorkoutRunner(
   const intervalDistProgress = ciIsDistance && ci!.distanceMeters! > 0
     ? Math.min(1, Math.max(0, (paceTracker.paceState.totalDistanceMeters - intervalStartDistanceRef.current) / ci!.distanceMeters!))
     : 0;
+  const ciIntervalMs = ci && isUntimedInterval(ci) ? DISTANCE_INTERVAL_MAX_MS : (ci?.durationSeconds ?? 0) * 1000;
+  const inProgress = engine.phase === 'running' || engine.phase === 'paused';
+  const intervalElapsedMs = inProgress ? ciIntervalMs - remainingMs(engine) : 0;
   const wkTargetDist = workout.targetDistanceMeters ?? null;
   const wkDistRemaining = wkTargetDist
     ? Math.max(0, wkTargetDist - paceTracker.paceState.totalDistanceMeters)
@@ -895,6 +1023,9 @@ export function useWorkoutRunner(
     intervalDistanceProgress: intervalDistProgress,
     workoutDistanceTarget: wkTargetDist,
     workoutDistanceRemaining: wkDistRemaining,
+
+    isOpenEnded: !!ci?.openEnded,
+    intervalElapsedSeconds: Math.max(0, Math.floor(intervalElapsedMs / 1000)),
 
     start,
     pause,

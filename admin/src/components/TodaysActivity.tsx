@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { UserEventBreakdown } from '@/lib/queries';
 
 type Props = { data: UserEventBreakdown[] };
@@ -53,6 +54,12 @@ export default function TodaysActivity({ data }: Props) {
                   </div>
                 </summary>
                 <div className="mt-1 flex flex-wrap gap-1 px-1 pb-1">
+                  <Link
+                    href={`/users/${encodeURIComponent(user.anonymous_user_id)}`}
+                    className="rounded bg-blue-900/40 px-1.5 py-0.5 text-[10px] text-blue-300 hover:bg-blue-900/60"
+                  >
+                    Timeline →
+                  </Link>
                   {user.events.map((evt) => (
                     <span
                       key={evt}

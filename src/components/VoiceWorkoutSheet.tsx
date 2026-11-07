@@ -438,7 +438,7 @@ function VoiceWorkoutSheetInner({
       const response = await generateWorkout(text, context, []);
 
       setAiMessage(response.message);
-      setProposedWorkout(response.workout);
+      setProposedWorkout({ ...response.workout, origin: 'ai_voice' });
       setPhase('review');
     } catch (err: any) {
       console.error('Voice workout generation failed:', err);
@@ -476,7 +476,7 @@ function VoiceWorkoutSheetInner({
       const context: AIContext = aiContext ?? { goals: [], preferences: [] };
       const response = await generateWorkout(text, context, []);
       setAiMessage(response.message);
-      setProposedWorkout(response.workout);
+      setProposedWorkout({ ...response.workout, origin: 'ai_voice' });
       setPhase('review');
     } catch (err: any) {
       console.error('Text workout generation failed:', err);

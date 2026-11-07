@@ -62,7 +62,7 @@ export default function ConfigureWorkoutScreen() {
         setWorkout(saved ?? quickStartFactory(quickStart));
       });
       setOriginal(null);
-      setMeta({ quickStartType: quickStart });
+      setMeta({ source: 'quick_start', quickStartType: quickStart });
       return;
     }
 
@@ -81,7 +81,7 @@ export default function ConfigureWorkoutScreen() {
         if (found) {
           setWorkout(found);
           setOriginal(found);
-          setMeta({ templateId: found.id });
+          setMeta({ source: 'saved_template', templateId: found.id });
         }
       });
     }

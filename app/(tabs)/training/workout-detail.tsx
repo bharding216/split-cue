@@ -22,6 +22,7 @@ import { WorkoutStructure } from '../../../src/components/WorkoutStructure';
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
 import { WorkoutDefinition, generateId, totalWorkoutSeconds, flattenWorkout } from '../../../src/workout/workoutTypes';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
+import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
@@ -98,9 +99,9 @@ export default function WorkoutDetailScreen() {
       id: workoutData.id || generateId(),
       updatedAt: Date.now(),
     };
-    setTempWorkout(workout, { planWorkoutId: planWorkout.id });
+    setTempWorkout(workout, { source: planWorkoutSource(ownerPlan), planWorkoutId: planWorkout.id });
     router.push(`/workout/run/${workout.id}`);
-  }, [workoutData, planWorkout, router]);
+  }, [workoutData, planWorkout, ownerPlan, router]);
 
   const handleEdit = useCallback(() => {
     if (!workoutData || !planWorkout) return;

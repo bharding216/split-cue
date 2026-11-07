@@ -14,8 +14,22 @@
 
 import type { WorkoutDefinition, QuickStartType } from './workoutTypes';
 
+/** How the runner got to the run screen, for analytics. */
+export type WorkoutSource =
+  | 'quick_start'
+  | 'recent_repeat'
+  | 'recent_edit'
+  | 'history_repeat'
+  | 'saved_template'
+  | 'calendar'
+  | 'ai_plan'
+  | 'reminder'
+  | 'home_next_run';
+
 /** Metadata that rides along with a cached workout draft. */
 export interface TempWorkoutMeta {
+  /** How the run was launched; see WorkoutSource. */
+  source?: WorkoutSource;
   /** Library template id when editing/starting a saved workout. */
   templateId?: string;
   /** plan_workouts.id when starting from the training calendar. */

@@ -15,6 +15,7 @@ import { track } from '../src/analytics/track';
 import { reportDevice } from '../src/analytics/deviceReport';
 import { decodeWorkoutLink, resolveShareCode } from '../src/sharing/shareWorkout';
 import { saveWorkout, clearAllUserData } from '../src/workout/workoutStorage';
+import { loadActiveSession, clearActiveSession } from '../src/workout/activeSession';
 import { AuthProvider, useAuth } from '../src/contexts/AuthContext';
 import { SubscriptionProvider, useSubscription } from '../src/contexts/SubscriptionContext';
 import { TrainingPlanProvider, useTrainingPlan } from '../src/contexts/TrainingPlanContext';
@@ -166,7 +167,7 @@ function RootLayoutInner() {
           {
             text: 'Import',
             onPress: async () => {
-              await saveWorkout(workout);
+              await saveWorkout({ ...workout, origin: 'imported' });
               track('workout_imported', {
                 workout_id: workout.id,
                 workout_name: workout.name,
@@ -191,10 +192,37 @@ function RootLayoutInner() {
     return () => subscription.remove();
   }, [router]);
 
-  // Show a single "what's new" alert to existing users on app open.
+  // On app open, offer to resume a workout left unfinished when the app was
+  // closed; otherwise show a single "what's new" alert to existing users.
   useEffect(() => {
     (async () => {
       await initInstallTimestamp();
+      const unfinished = loadActiveSession();
+      if (unfinished) {
+        const { workout } = unfinished;
+        Alert.alert(
+          'Resume Workout?',
+          `"${workout.name}" was still in progress when SplitCue closed. Pick up where you left off?`,
+          [
+            {
+              text: 'Discard',
+              style: 'destructive',
+              onPress: () => {
+                clearActiveSession();
+                track('workout_resume_declined', { workout_id: workout.id });
+              },
+            },
+            {
+              text: 'Resume',
+              style: 'default',
+              onPress: () => router.push(`/workout/run/${workout.id}?resume=1` as any),
+            },
+          ],
+          { cancelable: false },
+        );
+        return;
+      }
+
       const announcement = await getUnseenAnnouncement();
       if (announcement) {
         Alert.alert(announcement.title, announcement.body, [

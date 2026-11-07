@@ -60,6 +60,16 @@ function factoryDefault(type: QuickStartType): WorkoutDefinition {
   const base = { id: generateId(), createdAt: now, updatedAt: now };
 
   switch (type) {
+    case 'free_run':
+      return {
+        ...base,
+        name: 'Free Run',
+        category: 'easy',
+        blocks: [
+          seg('run', { type: 'manual' }, { label: 'Free Run', intensity: 'easy' }),
+        ],
+      };
+
     case 'distance':
       return {
         ...base,
@@ -182,4 +192,5 @@ export const QUICK_START_TILES: { type: QuickStartType; label: string; icon: str
   { type: 'tempo', label: 'Tempo', icon: 'speedometer-outline', color: '#FBBF24' },
   { type: 'easy_run', label: 'Easy Run', icon: 'leaf-outline', color: '#4ADE80' },
   { type: 'custom', label: 'Custom', icon: 'settings-outline', color: '#94A3B8' },
+  { type: 'free_run', label: 'Free Run', icon: 'footsteps-outline', color: '#A78BFA' },
 ];

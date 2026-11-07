@@ -50,6 +50,7 @@ import {
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
 import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
 import { RunSplits } from '../../src/components/RunSplits';
+import { RunWeatherCard } from '../../src/components/RunWeatherCard';
 import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
 import { StravaPushButton } from '../../src/strava/StravaPushButton';
@@ -267,6 +268,13 @@ export default function RunDetailsScreen() {
           )}
         </View>
 
+        {run.weather && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Conditions</Text>
+            <RunWeatherCard weather={run.weather} paceUnit={paceUnit} />
+          </View>
+        )}
+
         {/* Route map */}
         {run.route && run.route.length >= 2 && (
           <View style={styles.section}>
@@ -349,7 +357,7 @@ export default function RunDetailsScreen() {
             onPress={() => {
               if (run.configuration) {
                 const draft = { ...run.configuration, id: generateId(), updatedAt: Date.now() };
-                setTempWorkout(draft, { templateId: run.templateId });
+                setTempWorkout(draft, { source: 'history_repeat', templateId: run.templateId });
                 router.push(`/workout/run/${draft.id}`);
               } else {
                 router.push(`/workout/run/${run.workoutId}`);

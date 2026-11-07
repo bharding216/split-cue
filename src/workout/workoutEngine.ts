@@ -14,7 +14,7 @@ import {
   WorkoutDefinition,
   flattenWorkout,
   DISTANCE_INTERVAL_MAX_MS,
-  isDistanceInterval,
+  isUntimedInterval,
 } from './workoutTypes';
 
 /** Create a fresh engine state for a workout. */
@@ -33,9 +33,9 @@ export function createEngineState(
   };
 }
 
-/** Compute the engine duration for an interval (distance-based use a large sentinel). */
+/** Compute the engine duration for an interval (distance-based and open-ended use a large sentinel). */
 function intervalDurationMs(interval: FlatInterval): number {
-  if (isDistanceInterval(interval)) return DISTANCE_INTERVAL_MAX_MS;
+  if (isUntimedInterval(interval)) return DISTANCE_INTERVAL_MAX_MS;
   return interval.durationSeconds * 1000;
 }
 
@@ -109,10 +109,10 @@ export function advanceInterval(state: EngineState): EngineState {
   }
   const now = Date.now();
   const next = state.intervals[nextIndex];
-  const prevWasDistance = isDistanceInterval(state.intervals[state.currentIndex]);
+  const prevWasUntimed = isUntimedInterval(state.intervals[state.currentIndex]);
   // For time-based intervals, chain from the previous intervalEndsAt to prevent drift.
-  // For distance-based intervals, anchor to now since they end on distance, not time.
-  const anchor = prevWasDistance ? now : state.intervalEndsAt;
+  // For distance-based and open-ended intervals, anchor to now since they don't end on time.
+  const anchor = prevWasUntimed ? now : state.intervalEndsAt;
   return {
     ...state,
     phase: 'running',
@@ -177,11 +177,11 @@ export function intervalProgress(state: EngineState): number {
   return Math.max(0, Math.min(1, 1 - rem / totalMs));
 }
 
-/** Whether the current interval has expired by time. Distance-based intervals never expire by time. */
+/** Whether the current interval has expired by time. Distance-based and open-ended intervals never expire by time. */
 export function isIntervalExpired(state: EngineState): boolean {
   if (state.phase !== 'running') return false;
   const ci = currentInterval(state);
-  if (ci && isDistanceInterval(ci)) return false;
+  if (ci && isUntimedInterval(ci)) return false;
   return Date.now() >= state.intervalEndsAt;
 }
 
@@ -194,7 +194,8 @@ function getCurrentIntervalDuration(state: EngineState): number {
 /** Total remaining seconds for the entire workout from current position. */
 export function totalRemainingSeconds(state: EngineState): number {
   if (state.phase === 'finished' || state.phase === 'idle') return 0;
-  const currentRemaining = remainingSeconds(state);
+  const ci = currentInterval(state);
+  const currentRemaining = ci && isUntimedInterval(ci) ? 0 : remainingSeconds(state);
   let futureTotal = 0;
   for (let i = state.currentIndex + 1; i < state.intervals.length; i++) {
     futureTotal += state.intervals[i].durationSeconds;

@@ -37,15 +37,21 @@ import {
   generateId,
   totalWorkoutSeconds,
   formatTime,
+  type QuickStartType,
 } from '../../src/workout/workoutTypes';
 import { loadWorkouts, loadHistory, deleteWorkout, saveWorkouts } from '../../src/workout/workoutStorage';
-import { setTempWorkout } from '../../src/workout/tempWorkoutCache';
+import { setTempWorkout, type WorkoutSource } from '../../src/workout/tempWorkoutCache';
 import { WorkoutCard } from '../../src/components/WorkoutCard';
-import { QUICK_START_TILES } from '../../src/workout/quickStartDefaults';
+import { QUICK_START_TILES, quickStartFactory } from '../../src/workout/quickStartDefaults';
 import { hapticTap } from '../../src/audio/haptics';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../src/contexts/TrainingPlanContext';
 import { TodayWorkoutCard } from '../../src/components/TodayWorkoutCard';
+import { NextRunCard } from '../../src/components/NextRunCard';
+import { LapsedSurveySheet } from '../../src/components/LapsedSurveySheet';
+import { historyEntryQualifies } from '../../src/analytics/workoutContext';
+import { track } from '../../src/analytics/track';
+import type { PlanWorkout } from '../../src/types/database';
 import { RecentRunsSheet, formatRelativeDate } from '../../src/components/RecentRunsSheet';
 import { onSyncStatusChange } from '../../src/sync/cloudSync';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
@@ -553,18 +559,47 @@ function getRecentWorkouts(history: CompletedWorkout[], limit: number): Complete
   return result;
 }
 
-function todayDateKey(): string {
+function todayDateKey(offsetDays = 0): string {
   const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+/** The soonest planned calendar workout after today, within a week. */
+function nextUpcomingWorkout(planWorkouts: PlanWorkout[]): PlanWorkout | null {
+  const today = todayDateKey();
+  const weekOut = todayDateKey(7);
+  return (
+    planWorkouts
+      .filter(
+        (pw) =>
+          pw.status === 'planned' &&
+          pw.date > today &&
+          pw.date <= weekOut &&
+          !pw.day_label?.toLowerCase().includes('rest'),
+      )
+      .sort((a, b) => a.date.localeCompare(b.date))[0] ?? null
+  );
+}
+
+/** Whole days from today to a YYYY-MM-DD date. */
+function dayDiff(dateKey: string): number {
+  const target = new Date(dateKey + 'T12:00:00');
+  const today = new Date(todayDateKey() + 'T12:00:00');
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+/** Runs whose next-run card was already reported this session. */
+const nextRunCardTracked = new Set<string>();
 
 export default function HomeScreen() {
   const router = useRouter();
   const large = useLargeText();
   const { user } = useAuth();
-  const { dayEntries } = useTrainingPlan();
+  const { dayEntries, planWorkouts } = useTrainingPlan();
   const [workouts, setWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
+  const [lastRun, setLastRun] = useState<CompletedWorkout | null>(null);
   const [showRecentSheet, setShowRecentSheet] = useState(false);
   const [loading, setLoading] = useState(true);
   // Cards that mount after the screen's first paint animate in instead of popping.
@@ -595,19 +630,51 @@ export default function HomeScreen() {
     const [data, history] = await Promise.all([loadWorkouts(), loadHistory()]);
     setWorkouts(data);
     setRecentRuns(getRecentWorkouts(history, RECENT_SHEET_LIMIT));
+    setLastRun(history.find((r) => r.configuration && historyEntryQualifies(r)) ?? null);
     setLoading(false);
   }, []);
 
+  const upcomingWorkout = useMemo(() => nextUpcomingWorkout(planWorkouts), [planWorkouts]);
+  const showNextRunCard = !todayPlanWorkout && !!lastRun;
+  const lastRunKey = lastRun?.configuration ? structureKey(lastRun.configuration) : null;
+  const inlineRecentRuns = (
+    showNextRunCard ? recentRuns.filter((r) => structureKey(r.configuration!) !== lastRunKey) : recentRuns
+  ).slice(0, RECENT_INLINE_LIMIT);
+
+  useEffect(() => {
+    if (!showNextRunCard || !lastRun || nextRunCardTracked.has(lastRun.id)) return;
+    nextRunCardTracked.add(lastRun.id);
+    track('home_next_run_card_shown', {
+      days_since_last_run: Math.round(((Date.now() - lastRun.completedAt) / 86_400_000) * 10) / 10,
+      has_upcoming: !!upcomingWorkout,
+    });
+  }, [showNextRunCard, lastRun, upcomingWorkout]);
+
+  const openUpcoming = (pw: PlanWorkout) => {
+    track('home_next_run_card_tapped', { action: 'upcoming', days_out: dayDiff(pw.date) });
+    router.navigate({ pathname: '/(tabs)/training' as any, params: { date: pw.date } });
+  };
+
   const openRecentRun = (run: CompletedWorkout) => {
     const draft = { ...run.configuration!, id: generateId(), updatedAt: Date.now() };
-    setTempWorkout(draft, { templateId: run.templateId });
+    setTempWorkout(draft, { source: 'recent_edit', templateId: run.templateId });
     router.push({ pathname: '/workout/configure' as any, params: { id: draft.id } });
   };
 
-  const repeatRecentRun = (run: CompletedWorkout) => {
+  const repeatRecentRun = (run: CompletedWorkout, source: WorkoutSource = 'recent_repeat') => {
     const draft = { ...run.configuration!, id: generateId(), updatedAt: Date.now() };
-    setTempWorkout(draft, { templateId: run.templateId });
+    setTempWorkout(draft, { source, templateId: run.templateId });
     router.push(`/workout/run/${draft.id}`);
+  };
+
+  const openQuickStart = (type: QuickStartType) => {
+    if (type === 'free_run') {
+      const draft = quickStartFactory(type);
+      setTempWorkout(draft, { source: 'quick_start', quickStartType: type });
+      router.push(`/workout/run/${draft.id}`);
+      return;
+    }
+    router.push({ pathname: '/workout/configure' as any, params: { quickStart: type } });
   };
 
   useFocusEffect(
@@ -720,6 +787,20 @@ export default function HomeScreen() {
           </RevealOnMount>
         )}
 
+        {/* Next run: repeat the last one, or jump to the next calendar workout */}
+        {showNextRunCard && lastRun && (
+          <NextRunCard
+            lastRun={lastRun}
+            upcoming={upcomingWorkout}
+            onRepeat={() => {
+              hapticTap();
+              track('home_next_run_card_tapped', { action: 'repeat' });
+              repeatRecentRun(lastRun, 'home_next_run');
+            }}
+            onOpenUpcoming={() => upcomingWorkout && openUpcoming(upcomingWorkout)}
+          />
+        )}
+
         {/* Quick Start */}
         <View style={styles.quickStartSection}>
           <Text style={styles.sectionLabel}>QUICK START</Text>
@@ -729,7 +810,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={tile.type}
                 style={[styles.quickStartTile, large && styles.quickStartTileLarge]}
-                onPress={() => router.push({ pathname: '/workout/configure' as any, params: { quickStart: tile.type } })}
+                onPress={() => openQuickStart(tile.type)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
               >
@@ -743,11 +824,11 @@ export default function HomeScreen() {
         </View>
 
         {/* Recently Used */}
-        {recentRuns.length > 0 && (
+        {inlineRecentRuns.length > 0 && (
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
               <Text style={[styles.sectionLabel, styles.recentHeaderLabel]}>RECENTLY USED</Text>
-              {recentRuns.length > RECENT_INLINE_LIMIT && (
+              {recentRuns.length > inlineRecentRuns.length && (
                 <TouchableOpacity
                   onPress={() => setShowRecentSheet(true)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -757,7 +838,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            {recentRuns.slice(0, RECENT_INLINE_LIMIT).map((run) => {
+            {inlineRecentRuns.map((run) => {
               const config = run.configuration!;
               const secs = totalWorkoutSeconds(config);
               const ago = formatRelativeDate(run.completedAt);
@@ -856,6 +937,8 @@ export default function HomeScreen() {
           </Text>
         )}
       </ScrollView>
+
+      <LapsedSurveySheet />
 
       <RecentRunsSheet
         visible={showRecentSheet}

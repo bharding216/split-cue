@@ -29,18 +29,21 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter, useFocusEffect, type ErrorBoundaryProps } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams, type ErrorBoundaryProps } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { TrainingCalendar, CalendarViewMode } from '../../../src/components/TrainingCalendar';
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
 import { DayDetail } from '../../../src/components/DayDetail';
+import { NewlyPlannedHint } from '../../../src/components/NewlyPlannedHint';
 import { RunReviewCard } from '../../../src/components/RunReviewCard';
 import { resolvePhases } from '../../../src/components/TrainingPhases';
 import { WorkoutDefinition, generateId } from '../../../src/workout/workoutTypes';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
+import { planWorkoutSource } from '../../../src/analytics/workoutContext';
+import { track } from '../../../src/analytics/track';
 import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
 import { VoiceEditSheet } from '../../../src/components/VoiceEditSheet';
@@ -139,6 +142,26 @@ export default function TrainingScreen() {
   const [coachCollapsed, setCoachCollapsed] = useState(false);
   const returnToPickerDate = useRef<string | null>(null);
 
+  // Arriving from the post-run suggestion or a run reminder: jump to the day
+  // and call out the workout.
+  const params = useLocalSearchParams<{ date?: string; highlight?: string; from?: string; kind?: string }>();
+  const [highlight, setHighlight] = useState<{ id: string; from: 'suggestion' | 'reminder' } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const dayDetailY = useRef(0);
+
+  useEffect(() => {
+    const { date, highlight: highlightId, from, kind } = params;
+    if (!date && !highlightId) return;
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
+    if (highlightId) {
+      const source = from === 'reminder' ? 'reminder' : 'suggestion';
+      setHighlight({ id: highlightId, from: source });
+      if (source === 'reminder') track('run_reminder_opened', { kind: kind ?? 'morning' });
+      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, dayDetailY.current - Spacing.lg), animated: true }), 350);
+    }
+    router.setParams({ date: undefined, highlight: undefined, from: undefined, kind: undefined });
+  }, [params.date, params.highlight]);
+
 
   const HERO_COLLAPSED_KEY = 'training_hero_collapsed';
   const COACH_COLLAPSED_KEY = 'training_coach_collapsed';
@@ -205,6 +228,7 @@ export default function TrainingScreen() {
 
   // Selected day entry
   const selectedDayEntry = dayEntries[selectedDate];
+  const highlightedWorkout = highlight ? planWorkouts.find((pw) => pw.id === highlight.id) : undefined;
 
   // ── Swipe day detail left/right to change the selected day ──
   const { width: screenWidth } = useWindowDimensions();
@@ -257,9 +281,13 @@ export default function TrainingScreen() {
       id: workoutData.id || generateId(),
       updatedAt: Date.now(),
     };
-    setTempWorkout(workout, { planWorkoutId });
+    const pw = planWorkoutId ? planWorkouts.find((w) => w.id === planWorkoutId) : undefined;
+    const ownerPlan = pw ? plans.find((p) => p.id === pw.plan_id) : undefined;
+    const fromReminder = !!planWorkoutId && highlight?.id === planWorkoutId && highlight.from === 'reminder';
+    setTempWorkout(workout, { source: fromReminder ? 'reminder' : planWorkoutSource(ownerPlan), planWorkoutId });
+    if (planWorkoutId && highlight?.id === planWorkoutId) setHighlight(null);
     router.push(`/workout/run/${workout.id}`);
-  }, [router]);
+  }, [router, planWorkouts, plans, highlight]);
 
   const handleRemoveWorkout = useCallback(async (workoutId: string) => {
     await removeWorkout(workoutId);
@@ -288,7 +316,7 @@ export default function TrainingScreen() {
   const handleRunAgain = useCallback(async (run: import('../../../src/workout/workoutTypes').CompletedWorkout) => {
     if (run.configuration) {
       const draft = { ...run.configuration, id: generateId(), updatedAt: Date.now() };
-      setTempWorkout(draft, { templateId: run.templateId });
+      setTempWorkout(draft, { source: 'history_repeat', templateId: run.templateId });
       router.push(`/workout/run/${draft.id}`);
     } else {
       router.push(`/workout/run/${run.workoutId}`);
@@ -391,6 +419,7 @@ export default function TrainingScreen() {
   return (
     <View style={styles.container}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
@@ -611,7 +640,12 @@ export default function TrainingScreen() {
 
           {/* ─── Selected day detail ─── */}
           <GestureDetector gesture={daySwipeGesture}>
-            <Animated.View style={[styles.dayDetailSection, dayDetailAnimatedStyle]}>
+            <Animated.View
+              style={[styles.dayDetailSection, dayDetailAnimatedStyle]}
+              onLayout={(e) => {
+                dayDetailY.current = e.nativeEvent.layout.y;
+              }}
+            >
               <DayDetail
                 entry={selectedDayEntry}
                 selectedDate={selectedDate}
@@ -623,6 +657,21 @@ export default function TrainingScreen() {
                 onViewRun={handleViewRun}
                 onRunAgain={handleRunAgain}
                 onAddWorkout={handleAddWorkout}
+                highlightWorkoutId={highlight?.id}
+                highlightContent={
+                  highlightedWorkout && highlight?.from === 'suggestion' ? (
+                    <NewlyPlannedHint
+                      planWorkoutId={highlightedWorkout.id}
+                      date={highlightedWorkout.date}
+                      workoutName={
+                        (highlightedWorkout.workout_data as WorkoutDefinition | null)?.name ??
+                        highlightedWorkout.day_label ??
+                        'Your run'
+                      }
+                      onDismiss={() => setHighlight(null)}
+                    />
+                  ) : null
+                }
               />
             </Animated.View>
           </GestureDetector>

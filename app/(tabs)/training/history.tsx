@@ -160,7 +160,7 @@ export default function HistoryScreen() {
   const handleRunAgain = useCallback((item: CompletedWorkout) => {
     if (item.configuration) {
       const draft = { ...item.configuration, id: generateId(), updatedAt: Date.now() };
-      setTempWorkout(draft, { templateId: item.templateId });
+      setTempWorkout(draft, { source: 'history_repeat', templateId: item.templateId });
       router.push(`/workout/run/${draft.id}`);
     } else {
       router.push(`/workout/run/${item.workoutId}`);

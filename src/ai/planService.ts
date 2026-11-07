@@ -1066,6 +1066,7 @@ export async function addWorkoutToCalendar(
         id: workout.id,
         name: workout.name,
         category: workout.category,
+        origin: workout.origin,
         blocks: workout.blocks ?? [],
         targetDistanceMeters: workout.targetDistanceMeters ?? null,
         createdAt: workout.createdAt ?? Date.now(),
