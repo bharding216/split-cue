@@ -106,7 +106,7 @@ WorkoutBlock = Segment | RepeatGroup
 Segment = {
   "blockType": "segment",
   "segmentType": "warmup" | "run" | "recovery" | "rest" | "cooldown",
-  "label": "string (optional) — human-readable label e.g. 'Sprint', 'Recovery Jog'",
+  "label": "string (optional) — short 1–4 word label e.g. 'Sprint', 'Recovery Jog'; no pacing advice",
   "target": { "type": "time", "durationSeconds": number } | { "type": "distance", "distanceMeters": number },
   "intensity": "recovery" | "easy" | "moderate" | "tempo" | "hard" | "sprint" (optional),
   "targetPace": number (optional) — min/mile e.g. 8.5 = 8:30/mi
@@ -251,12 +251,15 @@ Deno.serve(async (req) => {
       maxCompletionTokens: 12000,
       validate: (result) => validateWorkout(result.workout, paces),
     });
+    const workout = normalizeWorkout(data.workout);
     if (problems.length) {
       console.warn("generate-workout: unresolved after retry", problems);
-      throw new Error("The coach couldn't build a valid workout for that. Try rephrasing your request.");
+      if (validateWorkout(workout, paces).length) {
+        throw new Error("The coach couldn't build a valid workout for that. Try rephrasing your request.");
+      }
     }
 
-    const result = { message: data.message, workout: normalizeWorkout(data.workout) };
+    const result = { message: data.message, workout };
 
     return new Response(JSON.stringify(result), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

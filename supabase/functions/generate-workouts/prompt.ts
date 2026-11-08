@@ -146,7 +146,7 @@ WorkoutBlock = Segment | RepeatGroup
 Segment = {
   "blockType": "segment",
   "segmentType": "warmup" | "run" | "recovery" | "rest" | "cooldown",
-  "label": "string (optional)",
+  "label": "string (optional) — short 1–4 word label e.g. 'Warm Up', '800m Repeat'; no pacing advice",
   "target": { "type": "time" | "distance", "durationSeconds": number, "distanceMeters": number },
   "intensity": "recovery" | "easy" | "moderate" | "tempo" | "hard" | "sprint" (optional),
   "targetPace": number (optional, min/mile e.g. 8.5 = 8:30/mi)
@@ -155,7 +155,7 @@ Segment = {
 RepeatGroup = {
   "blockType": "repeat",
   "repetitions": number,
-  "name": "string (optional)",
+  "name": "string (optional) — short 1–4 word name",
   "blocks": [WorkoutBlock]
 }
 

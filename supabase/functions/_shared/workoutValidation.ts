@@ -11,6 +11,11 @@ const SEGMENT_TYPES = ["warmup", "run", "recovery", "rest", "cooldown"];
 const INTENSITIES = ["recovery", "easy", "moderate", "tempo", "hard", "sprint"];
 export const WORKOUT_CATEGORIES = ["easy", "tempo", "intervals", "long_run", "race", "other"];
 
+/** Labels are shown on the run screen and spoken by voice cues, so they must stay short. */
+export const MAX_LABEL_LENGTH = 30;
+const SHORT_LABEL_DESCRIPTION =
+  "Short display name, 1–4 words, e.g. 'Warm Up', '800m Repeat', 'Recovery Jog'. No pacing advice or sentences.";
+
 /** `$defs` for the block model. Include in any schema that references `#/$defs/workout`. */
 export const WORKOUT_DEFS = {
   segment: {
@@ -20,7 +25,7 @@ export const WORKOUT_DEFS = {
     properties: {
       blockType: { type: "string", enum: ["segment"] },
       segmentType: { type: "string", enum: SEGMENT_TYPES },
-      label: { type: ["string", "null"] },
+      label: { type: ["string", "null"], description: SHORT_LABEL_DESCRIPTION },
       target: {
         type: "object",
         additionalProperties: false,
@@ -42,7 +47,7 @@ export const WORKOUT_DEFS = {
     properties: {
       blockType: { type: "string", enum: ["repeat"] },
       repetitions: { type: "integer" },
-      name: { type: ["string", "null"] },
+      name: { type: ["string", "null"], description: SHORT_LABEL_DESCRIPTION },
       blocks: { type: "array", items: { $ref: "#/$defs/block" } },
     },
   },
@@ -151,6 +156,10 @@ export function validateWorkout(workout: AIWorkout, ctx: PaceContext, where = "w
 function validateBlocks(blocks: AIBlock[], ctx: PaceContext, where: string, problems: string[]): void {
   blocks.forEach((block, i) => {
     const at = `${where} block ${i + 1}`;
+    const label = block.blockType === "repeat" ? block.name : block.label;
+    if (label && label.length > MAX_LABEL_LENGTH) {
+      problems.push(`${at}: "${label}" is too long; use a 1–4 word label like "Warm Up" or "800m Repeat".`);
+    }
     if (block.blockType === "repeat") {
       if (!Number.isInteger(block.repetitions) || block.repetitions < 1 || block.repetitions > 50) {
         problems.push(`${at}: repetitions must be a whole number between 1 and 50.`);
@@ -225,7 +234,7 @@ function normalizeBlock(block: AIBlock): AIBlock {
       repetitions: Math.max(1, Math.round(block.repetitions)),
       blocks: (block.blocks ?? []).map(normalizeBlock),
     };
-    if (block.name) rg.name = block.name;
+    if (block.name && block.name.length <= MAX_LABEL_LENGTH) rg.name = block.name;
     return rg;
   }
 
@@ -233,7 +242,7 @@ function normalizeBlock(block: AIBlock): AIBlock {
     ? { type: "time" as const, durationSeconds: block.target.durationSeconds ?? 0 }
     : { type: "distance" as const, distanceMeters: block.target.distanceMeters ?? 0 };
   const seg: AISegment = { blockType: "segment", segmentType: block.segmentType, target };
-  if (block.label) seg.label = block.label;
+  if (block.label && block.label.length <= MAX_LABEL_LENGTH) seg.label = block.label;
   if (block.intensity) seg.intensity = block.intensity;
   else if (block.targetPace != null) seg.targetPace = block.targetPace;
   return seg;

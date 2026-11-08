@@ -66,13 +66,18 @@ Deno.serve(async (req) => {
     });
     if (problems.length) console.warn("generate-workouts: unresolved after retry", problems);
 
-    // Only return workouts for requested dates that passed validation, so a bad
-    // day is regenerated later instead of being saved.
-    const badDates = new Set(problems.map((p) => p.match(/^(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean));
     const requested = new Set(body.workouts.map((w) => w.date));
-    const workouts = (data.workouts ?? [])
-      .filter((w) => requested.has(w.date) && !badDates.has(w.date))
-      .map((w) => ({ date: w.date, workout: normalizeWorkout(w.workout) }));
+    const normalized: WorkoutBatch = {
+      workouts: (data.workouts ?? [])
+        .filter((w) => requested.has(w.date))
+        .map((w) => ({ date: w.date, workout: normalizeWorkout(w.workout) })),
+    };
+
+    // Only return days that pass validation after normalization, so a bad day
+    // is regenerated later instead of being saved.
+    const remaining = problems.length ? validateBatch(normalized, body.workouts, paces) : [];
+    const badDates = new Set(remaining.map((p) => p.match(/^(\d{4}-\d{2}-\d{2})/)?.[1]).filter(Boolean));
+    const workouts = normalized.workouts.filter((w) => !badDates.has(w.date));
 
     return new Response(
       JSON.stringify({ workouts }),

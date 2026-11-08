@@ -265,7 +265,7 @@ const ADJUSTMENT_SCHEMA = {
             properties: {
               type: { type: "string", enum: ["warmup", "hard", "easy", "cooldown"] },
               durationSeconds: { type: "number", description: "SECONDS. 30 minutes = 1800." },
-              label: { type: ["string", "null"] },
+              label: { type: ["string", "null"], description: "Short 1–4 word label, e.g. 'Easy Run'. No pacing advice." },
               effort: { type: ["number", "null"], description: "RPE 1-10" },
               targetPace: { type: ["number", "null"], description: "Decimal min/mile" },
             },
