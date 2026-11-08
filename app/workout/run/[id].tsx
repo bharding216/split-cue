@@ -79,6 +79,7 @@ import { useStrava } from '../../../src/strava/useStrava';
 import { pushWorkoutToStrava } from '../../../src/strava/stravaService';
 import { useRunAnnotations } from '../../../src/hooks/useRunAnnotations';
 import { track } from '../../../src/analytics/track';
+import { requestCalendarDate } from '../../../src/navigation/calendarFocus';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { RunReviewCard } from '../../../src/components/RunReviewCard';
@@ -453,10 +454,8 @@ function ActiveWorkoutInner({
       });
       await refreshPlans().catch(() => {});
       leaveFinishedScreen();
-      router.navigate({
-        pathname: '/(tabs)/training' as any,
-        params: { date: nextRun.dateKey, highlight: added.id },
-      });
+      requestCalendarDate(nextRun.dateKey, added.id, 'suggestion');
+      router.navigate('/(tabs)/training' as any);
       track('calendar_opened_from_suggestion', { suggested_date: nextRun.dateKey });
     } catch (e) {
       console.warn('Failed to add suggested run to calendar:', e);
@@ -1322,15 +1321,21 @@ function MidRunSettingsSheet({
 
                 {/* Pace cue frequency */}
                 <Text style={sheetStyles.sectionSub}>
-                  {settings.paceCueBasis === 'distance'
-                    ? 'Announce pace each time you cover this distance'
-                    : 'Pace cue frequency'}
+                  {settings.paceCueBasis === 'auto'
+                    ? 'Pace by time in timed intervals, by distance in distance intervals'
+                    : settings.paceCueBasis === 'distance'
+                      ? 'Announce pace each time you cover this distance'
+                      : 'Pace cue frequency'}
                 </Text>
                 <CueBasisToggle
                   value={settings.paceCueBasis}
+                  options={PROGRESS_CUE_BASES}
                   onChange={(paceCueBasis) => onUpdate({ paceCueBasis })}
                 />
-                {settings.paceCueBasis === 'time' ? (
+                {settings.paceCueBasis === 'auto' && (
+                  <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+                )}
+                {settings.paceCueBasis !== 'distance' && (
                   <View style={sheetStyles.chipRow}>
                     {PACE_CUE_OPTIONS.map((opt) => (
                       <TouchableOpacity
@@ -1356,7 +1361,11 @@ function MidRunSettingsSheet({
                       </TouchableOpacity>
                     ))}
                   </View>
-                ) : (
+                )}
+                {settings.paceCueBasis === 'auto' && (
+                  <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+                )}
+                {settings.paceCueBasis !== 'time' && (
                   <CueDistanceChips
                     value={settings.paceCueDistance}
                     unit={settings.paceUnit}

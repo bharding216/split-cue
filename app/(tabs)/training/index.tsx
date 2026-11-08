@@ -44,6 +44,7 @@ import { loadHistory } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { track } from '../../../src/analytics/track';
+import { consumeCalendarRequest, type CalendarHighlightSource } from '../../../src/navigation/calendarFocus';
 import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
 import { VoiceEditSheet } from '../../../src/components/VoiceEditSheet';
@@ -145,20 +146,22 @@ export default function TrainingScreen() {
   // Arriving from the post-run suggestion or a run reminder: jump to the day
   // and call out the workout.
   const params = useLocalSearchParams<{ date?: string; highlight?: string; from?: string; kind?: string }>();
-  const [highlight, setHighlight] = useState<{ id: string; from: 'suggestion' | 'reminder' } | null>(null);
+  const [highlight, setHighlight] = useState<{ id: string; from: CalendarHighlightSource } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const dayDetailY = useRef(0);
+
+  const focusDay = useCallback((date: string | undefined, highlightId: string | undefined, source: CalendarHighlightSource) => {
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
+    setHighlight(highlightId ? { id: highlightId, from: source } : null);
+    setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, dayDetailY.current - Spacing.lg), animated: true }), 350);
+  }, []);
 
   useEffect(() => {
     const { date, highlight: highlightId, from, kind } = params;
     if (!date && !highlightId) return;
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
-    if (highlightId) {
-      const source = from === 'reminder' ? 'reminder' : 'suggestion';
-      setHighlight({ id: highlightId, from: source });
-      if (source === 'reminder') track('run_reminder_opened', { kind: kind ?? 'morning' });
-      setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, dayDetailY.current - Spacing.lg), animated: true }), 350);
-    }
+    const source = from === 'reminder' ? 'reminder' : 'suggestion';
+    focusDay(date, highlightId, source);
+    if (highlightId && source === 'reminder') track('run_reminder_opened', { kind: kind ?? 'morning' });
     router.setParams({ date: undefined, highlight: undefined, from: undefined, kind: undefined });
   }, [params.date, params.highlight]);
 
@@ -200,7 +203,9 @@ export default function TrainingScreen() {
         setPickerDate(returnToPickerDate.current);
         returnToPickerDate.current = null;
       }
-    }, [refresh])
+      const request = consumeCalendarRequest();
+      if (request) focusDay(request.date, request.highlightId, request.from ?? 'home');
+    }, [refresh, focusDay])
   );
 
   // Primary plan info

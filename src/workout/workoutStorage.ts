@@ -310,7 +310,6 @@ export async function clearAllUserData(): Promise<void> {
 
 // ── Settings ─────────────────────────────────────────────────────────
 
-const CUE_BASES = new Set(['time', 'distance']);
 const PROGRESS_CUE_BASES = new Set(['time', 'distance', 'auto']);
 const CUE_DISTANCE_PRESETS = new Set(['off', 'quarter', 'half', 'full']);
 const SPLIT_DISTANCE_PRESETS = new Set(['quarter', 'half', 'full']);
@@ -323,7 +322,7 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
     parsed.countdownWarningSeconds = [parsed.countdownWarningSeconds as unknown as number];
   }
   if (!PROGRESS_CUE_BASES.has(parsed.progressCueBasis)) parsed.progressCueBasis = 'time';
-  if (!CUE_BASES.has(parsed.paceCueBasis)) parsed.paceCueBasis = 'time';
+  if (!PROGRESS_CUE_BASES.has(parsed.paceCueBasis)) parsed.paceCueBasis = 'time';
   if (!CUE_DISTANCE_PRESETS.has(parsed.progressCueDistance)) parsed.progressCueDistance = 'full';
   if (!CUE_DISTANCE_PRESETS.has(parsed.paceCueDistance)) parsed.paceCueDistance = 'half';
   if (!SPLIT_DISTANCE_PRESETS.has(parsed.splitDistance)) parsed.splitDistance = DEFAULT_SETTINGS.splitDistance;

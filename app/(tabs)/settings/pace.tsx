@@ -31,7 +31,11 @@ import {
 } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
 import { paceCuesEnabled } from '../../../src/audio/cueSchedule';
-import { CueBasisToggle, CueDistanceChips } from '../../../src/components/CueScheduleControls';
+import {
+  CueBasisToggle,
+  CueDistanceChips,
+  PROGRESS_CUE_BASES,
+} from '../../../src/components/CueScheduleControls';
 
 const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
   { value: 0, label: 'Off' },
@@ -91,15 +95,21 @@ export default function PaceSettingsScreen() {
           {/* Cue Frequency */}
           <Text style={styles.sectionTitle}>Pace Cue Frequency</Text>
           <Text style={styles.sectionSub}>
-            {settings.paceCueBasis === 'distance'
-              ? 'Announce your pace each time you cover this distance'
-              : 'How often to announce your current pace during each interval'}
+            {settings.paceCueBasis === 'auto'
+              ? 'Announce pace by time in timed intervals and by distance in distance intervals'
+              : settings.paceCueBasis === 'distance'
+                ? 'Announce your pace each time you cover this distance'
+                : 'How often to announce your current pace during each interval'}
           </Text>
           <CueBasisToggle
             value={settings.paceCueBasis}
+            options={PROGRESS_CUE_BASES}
             onChange={(paceCueBasis) => update({ paceCueBasis })}
           />
-          {settings.paceCueBasis === 'time' ? (
+          {settings.paceCueBasis === 'auto' && (
+            <Text style={styles.stepLabel}>Timed intervals, every</Text>
+          )}
+          {settings.paceCueBasis !== 'distance' && (
             <View style={styles.row}>
               {CUE_FREQUENCY_OPTIONS.map((opt) => (
                 <TouchableOpacity
@@ -126,7 +136,11 @@ export default function PaceSettingsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          ) : (
+          )}
+          {settings.paceCueBasis === 'auto' && (
+            <Text style={styles.stepLabel}>Distance intervals, every</Text>
+          )}
+          {settings.paceCueBasis !== 'time' && (
             <CueDistanceChips
               value={settings.paceCueDistance}
               unit={settings.paceUnit}
@@ -234,6 +248,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     marginBottom: Spacing.sm,
+  },
+  stepLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+    marginTop: Spacing.md,
   },
   row: {
     flexDirection: 'row',

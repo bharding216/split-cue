@@ -10,8 +10,9 @@ import { CompletedWorkout, totalWorkoutSeconds, formatTime } from '../workout/wo
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 
 export function formatRelativeDate(epoch: number): string {
-  const diff = Date.now() - epoch;
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
+  // Round, not floor: a calendar day across a DST change is 23 or 25 hours.
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(epoch)) / (1000 * 60 * 60 * 24));
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days}d ago`;

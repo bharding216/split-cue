@@ -633,7 +633,11 @@ export function useWorkoutRunner(
             return paceCue(currentPace, settingsNow.paceUnit, !tracker.hasHadPace());
           };
           if (wantPace) {
-            if (settingsNow.paceCueBasis === 'distance') {
+            const paceBasis = settingsNow.paceCueBasis;
+            if (
+              paceBasis === 'distance' ||
+              (paceBasis === 'auto' && isDistanceInterval(ci))
+            ) {
               const step = cueDistanceMeters(settingsNow.paceCueDistance, settingsNow.paceUnit);
               const mark = nextCueMark(intervalDist, step, lastPaceMark.current);
               if (mark != null) {

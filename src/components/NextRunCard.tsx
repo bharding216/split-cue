@@ -11,9 +11,9 @@ import type { PlanWorkout } from '../types/database';
 import {
   type CompletedWorkout,
   type WorkoutDefinition,
-  flattenWorkout,
   formatTime,
   totalWorkoutSeconds,
+  workRepCount,
 } from '../workout/workoutTypes';
 import { formatRelativeDate } from './RecentRunsSheet';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
@@ -38,7 +38,7 @@ export function NextRunCard({ lastRun, upcoming, onRepeat, onOpenUpcoming }: Nex
   const large = useLargeText();
   const config = lastRun.configuration!;
   const secs = totalWorkoutSeconds(config);
-  const intervals = flattenWorkout(config).length;
+  const reps = workRepCount(config);
   const upcomingData = upcoming?.workout_data as WorkoutDefinition | null | undefined;
   const upcomingSecs = upcomingData ? totalWorkoutSeconds(upcomingData) : 0;
 
@@ -57,10 +57,10 @@ export function NextRunCard({ lastRun, upcoming, onRepeat, onOpenUpcoming }: Nex
             <Text style={styles.metaText}>{formatTime(secs)}</Text>
           </View>
         )}
-        {intervals > 1 && (
+        {reps > 1 && (
           <View style={styles.metaItem}>
             <Ionicons name="repeat-outline" size={14} color={Colors.textSecondary} />
-            <Text style={styles.metaText}>{intervals} intervals</Text>
+            <Text style={styles.metaText}>{reps} reps</Text>
           </View>
         )}
       </View>

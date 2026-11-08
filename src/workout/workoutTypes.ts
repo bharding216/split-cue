@@ -240,7 +240,6 @@ export type TimeRemainingInterval = 0 | 15 | 30 | 45 | 60 | 120;
 export type VoiceEngine = 'device' | 'premium';
 
 import type {
-  CueBasis,
   CueDistancePreset,
   PaceCueFrequency,
   ProgressCueBasis,
@@ -266,9 +265,9 @@ export interface AppSettings {
   duckOtherAudio: boolean;
   paceTrackingEnabled: boolean;
   paceCueFrequency: PaceCueFrequency;
-  /** Pace cues: every N seconds, or each time a distance is covered. */
-  paceCueBasis: CueBasis;
-  /** Distance step for pace cues. Used when paceCueBasis is 'distance'. */
+  /** Pace cues: every N seconds, each time a distance is covered, or whichever matches the interval's goal. */
+  paceCueBasis: ProgressCueBasis;
+  /** Distance step for pace cues. Used when paceCueBasis is 'distance' or 'auto'. */
   paceCueDistance: CueDistancePreset;
   paceWindow: PaceWindowSize;
   paceUnit: PaceUnit;
@@ -293,7 +292,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   duckOtherAudio: true,
   paceTrackingEnabled: true,
   paceCueFrequency: 30,
-  paceCueBasis: 'time',
+  paceCueBasis: 'auto',
   paceCueDistance: 'half',
   paceWindow: 30,
   paceUnit: 'minPerMile',
@@ -617,6 +616,18 @@ export function hasDistanceFeature(def: WorkoutDefinition): boolean {
     }
   });
   return found;
+}
+
+/**
+ * Number of work efforts in the workout: 'run' segments, counted once per
+ * repetition. Warmup, cooldown, recovery, and rest don't count.
+ */
+export function workRepCount(def: WorkoutDefinition): number {
+  let count = 0;
+  walkSegments(def.blocks, (seg, mult) => {
+    if (seg.segmentType === 'run') count += mult;
+  });
+  return count;
 }
 
 /** Total target distance for the workout (if any). */

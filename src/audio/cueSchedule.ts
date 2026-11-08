@@ -3,7 +3,7 @@
  * Distance steps follow the runner's pace unit.
  */
 
-import type { CueBasis, CueDistancePreset, PaceUnit, ProgressCueBasis } from '../pace/paceTypes';
+import type { CueDistancePreset, PaceUnit, ProgressCueBasis } from '../pace/paceTypes';
 import { METERS_PER_KM, METERS_PER_MILE } from '../workout/workoutTypes';
 
 export const CUE_DISTANCE_PRESETS: CueDistancePreset[] = ['off', 'quarter', 'half', 'full'];
@@ -45,12 +45,15 @@ export function nextCueMark(elapsed: number, step: number, lastMark: number): nu
 }
 
 export function paceCuesEnabled(settings: {
-  paceCueBasis: CueBasis;
+  paceCueBasis: ProgressCueBasis;
   paceCueDistance: CueDistancePreset;
   paceCueFrequency: number;
 }): boolean {
-  if (settings.paceCueBasis === 'distance') return settings.paceCueDistance !== 'off';
-  return settings.paceCueFrequency > 0;
+  const byDistance = settings.paceCueDistance !== 'off';
+  const byTime = settings.paceCueFrequency > 0;
+  if (settings.paceCueBasis === 'distance') return byDistance;
+  if (settings.paceCueBasis === 'time') return byTime;
+  return byDistance || byTime;
 }
 
 /**

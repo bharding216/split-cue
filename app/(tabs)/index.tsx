@@ -51,8 +51,10 @@ import { NextRunCard } from '../../src/components/NextRunCard';
 import { LapsedSurveySheet } from '../../src/components/LapsedSurveySheet';
 import { historyEntryQualifies } from '../../src/analytics/workoutContext';
 import { track } from '../../src/analytics/track';
+import { requestCalendarDate } from '../../src/navigation/calendarFocus';
 import type { PlanWorkout } from '../../src/types/database';
 import { RecentRunsSheet, formatRelativeDate } from '../../src/components/RecentRunsSheet';
+import { Running101Sheet } from '../../src/components/Running101Sheet';
 import { onSyncStatusChange } from '../../src/sync/cloudSync';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
 import { useLargeText } from '../../src/hooks/useLargeText';
@@ -486,35 +488,35 @@ const CATEGORIES: CategoryConfig[] = [
     key: 'easy',
     title: 'Easy / Recovery',
     icon: 'leaf-outline',
-    description: 'Easy-effort and recovery runs',
+    description: 'Conversational effort that builds your aerobic base',
     color: Colors.easy,
   },
   {
     key: 'tempo',
     title: 'Tempo',
     icon: 'speedometer-outline',
-    description: 'Sustained hard-effort runs',
+    description: 'Comfortably hard, sustained effort',
     color: Colors.warning,
   },
   {
     key: 'intervals',
     title: 'Intervals',
     icon: 'repeat',
-    description: 'Structured speed & interval sessions',
+    description: 'Hard efforts repeated with recovery between',
     color: Colors.danger,
   },
   {
     key: 'long_run',
     title: 'Long Runs',
     icon: 'trail-sign-outline',
-    description: 'Endurance-building long runs',
+    description: 'Your longest run of the week, mostly easy',
     color: Colors.accent,
   },
   {
     key: 'race',
     title: 'Race / Time Trial',
     icon: 'trophy-outline',
-    description: 'Race simulations and time trials',
+    description: 'Race-effort runs over a set distance or time',
     color: Colors.primary,
   },
   {
@@ -601,6 +603,11 @@ export default function HomeScreen() {
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
   const [lastRun, setLastRun] = useState<CompletedWorkout | null>(null);
   const [showRecentSheet, setShowRecentSheet] = useState(false);
+  const [showRunning101, setShowRunning101] = useState(false);
+  const openRunning101 = (source: 'section_header' | 'empty_state') => {
+    track('running101_opened', { source });
+    setShowRunning101(true);
+  };
   const [loading, setLoading] = useState(true);
   // Cards that mount after the screen's first paint animate in instead of popping.
   const [revealTodayCard, setRevealTodayCard] = useState(false);
@@ -652,7 +659,8 @@ export default function HomeScreen() {
 
   const openUpcoming = (pw: PlanWorkout) => {
     track('home_next_run_card_tapped', { action: 'upcoming', days_out: dayDiff(pw.date) });
-    router.navigate({ pathname: '/(tabs)/training' as any, params: { date: pw.date } });
+    requestCalendarDate(pw.date, pw.id, 'home');
+    router.navigate('/(tabs)/training' as any);
   };
 
   const openRecentRun = (run: CompletedWorkout) => {
@@ -876,7 +884,20 @@ export default function HomeScreen() {
 
         {/* Your Workouts */}
         {workouts.length > 0 && (
-          <Text style={[styles.sectionLabel, { marginTop: Spacing.lg }]}>YOUR WORKOUTS</Text>
+          <View style={[styles.recentHeader, { marginTop: Spacing.lg }]}>
+            <Text style={[styles.sectionLabel, styles.recentHeaderLabel]}>YOUR WORKOUTS</Text>
+            <TouchableOpacity
+              style={styles.running101Btn}
+              onPress={() => openRunning101('section_header')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Running 101: learn about workout types"
+            >
+              <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+              <Text style={styles.seeMoreText}>Running 101</Text>
+            </TouchableOpacity>
+          </View>
         )}
         {CATEGORIES.map((cat) => {
           const items = grouped[cat.key];
@@ -932,9 +953,20 @@ export default function HomeScreen() {
         })}
 
         {workouts.length === 0 && (
-          <Text style={styles.emptyText}>
-            No saved workouts yet. Tap Quick Start above to begin, or tap Save to My Workouts on any workout you want to keep.
-          </Text>
+          <>
+            <Text style={styles.emptyText}>
+              No saved workouts yet. Tap Quick Start above to begin, or tap Save to My Workouts on any workout you want to keep.
+            </Text>
+            <TouchableOpacity
+              style={styles.running101EmptyBtn}
+              onPress={() => openRunning101('empty_state')}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+              <Text style={styles.seeMoreText}>New to tempo and intervals? Read Running 101</Text>
+            </TouchableOpacity>
+          </>
         )}
       </ScrollView>
 
@@ -953,6 +985,8 @@ export default function HomeScreen() {
         }}
         onClose={() => setShowRecentSheet(false)}
       />
+
+      <Running101Sheet visible={showRunning101} onClose={() => setShowRunning101(false)} />
     </View>
   );
 }
@@ -1071,6 +1105,18 @@ const styles = StyleSheet.create({
   },
   recentHeaderLabel: {
     marginBottom: 0,
+  },
+  running101Btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  running101EmptyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: Spacing.md,
   },
   seeMoreText: {
     fontSize: FontSize.xs,

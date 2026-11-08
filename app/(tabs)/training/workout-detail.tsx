@@ -20,7 +20,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { WorkoutStructure } from '../../../src/components/WorkoutStructure';
 import { MoveWorkoutModal } from '../../../src/components/MoveWorkoutModal';
-import { WorkoutDefinition, generateId, totalWorkoutSeconds, flattenWorkout } from '../../../src/workout/workoutTypes';
+import { WorkoutDefinition, generateId, totalWorkoutSeconds, workRepCount } from '../../../src/workout/workoutTypes';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
@@ -78,10 +78,7 @@ export default function WorkoutDetailScreen() {
     return secs > 0 ? Math.round(secs / 60) : null;
   }, [workoutData]);
 
-  const intervalCount = useMemo(() => {
-    if (!workoutData) return 0;
-    return flattenWorkout(workoutData).length;
-  }, [workoutData]);
+  const repCount = useMemo(() => (workoutData ? workRepCount(workoutData) : 0), [workoutData]);
 
   const dayName = planWorkout
     ? DAY_NAMES[new Date(planWorkout.date + 'T12:00:00').getDay()]
@@ -195,10 +192,10 @@ export default function WorkoutDetailScreen() {
               <Text style={styles.statText}>{duration} min</Text>
             </View>
           )}
-          {intervalCount > 0 && (
+          {repCount > 1 && (
             <View style={styles.statChip}>
               <Ionicons name="layers-outline" size={14} color={Colors.textSecondary} />
-              <Text style={styles.statText}>{intervalCount} intervals</Text>
+              <Text style={styles.statText}>{repCount} reps</Text>
             </View>
           )}
           {intensity && (
