@@ -11,6 +11,13 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { chatJson, MODELS, type ChatMessage } from "../_shared/openai.ts";
+import {
+  WORKOUT_DEFS,
+  normalizeWorkout,
+  validateWorkout,
+  type AIWorkout,
+} from "../_shared/workoutValidation.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -149,7 +156,8 @@ Rules:
 - Convert distances to meters: 1 mile = 1609.344 m, 1 km = 1000 m (e.g. 4 miles = 6437.376).
 - When the runner asks for a total run distance, the run segments plus any warmup/cooldown must add up to that distance. If you add a warmup or cooldown, make them distance-based too and shorten the main segment accordingly.
 - Use distance-based targets for track repeats (400m, 800m, mile repeats) and race-distance runs even when the runner doesn't specify a unit.
-- For time-based targets, include only durationSeconds in the target object. For distance-based, include only distanceMeters.
+- For time-based targets, set durationSeconds and leave distanceMeters null. For distance-based, set distanceMeters and leave durationSeconds null.
+- Use null for any optional field you leave out.
 - blocks must have at least one block.
 - repetitions must be a positive integer (1 = no repeat, just use a Segment instead).
 - Use RepeatGroups for interval sets: e.g. 6× (3 min run + 2 min recovery).
@@ -182,6 +190,17 @@ interface RequestBody {
   history_summary?: string | null;
 }
 
+const RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["message", "workout"],
+  properties: {
+    message: { type: "string" },
+    workout: { $ref: "#/$defs/workout" },
+  },
+  $defs: WORKOUT_DEFS,
+};
+
 // ── Handler ──────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -207,7 +226,7 @@ Deno.serve(async (req) => {
     // Build the messages array for OpenAI
     const systemPrompt = buildSystemPrompt(body);
 
-    const messages: { role: string; content: string }[] = [
+    const messages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
     ];
 
@@ -221,37 +240,23 @@ Deno.serve(async (req) => {
     // Add the current user prompt
     messages.push({ role: "user", content: body.prompt });
 
-    // Call OpenAI
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages,
-        temperature: 0.7,
-        max_tokens: 2048,
-        response_format: { type: "json_object" },
-      }),
+    // No fast-pace ceiling here: the runner may explicitly ask for paces beyond their profile.
+    const paces = { easyPace: body.profile?.easy_pace };
+    const { data, problems } = await chatJson<{ message: string; workout: AIWorkout }>({
+      name: "workout",
+      model: MODELS.coach,
+      messages,
+      schema: RESPONSE_SCHEMA,
+      reasoningEffort: "low",
+      maxCompletionTokens: 12000,
+      validate: (result) => validateWorkout(result.workout, paces),
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI error:", response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+    if (problems.length) {
+      console.warn("generate-workout: unresolved after retry", problems);
+      throw new Error("The coach couldn't build a valid workout for that. Try rephrasing your request.");
     }
 
-    const completion = await response.json();
-    const content = completion.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("No response from OpenAI");
-    }
-
-    // Parse the JSON response
-    const result = JSON.parse(content);
+    const result = { message: data.message, workout: normalizeWorkout(data.workout) };
 
     return new Response(JSON.stringify(result), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

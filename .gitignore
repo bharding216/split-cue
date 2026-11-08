@@ -38,6 +38,9 @@ yarn-error.*
 # Apple Sign In team-transfer migration (contains user identifiers and emails)
 scripts/apple-migration/out/
 
+# AI eval output (generated plans for review)
+scripts/ai-evals/results/
+
 # admin dashboard
 admin/.next/
 admin/node_modules/

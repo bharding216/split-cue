@@ -50,7 +50,7 @@ export interface ChatMessage {
  * Ensure mutual exclusivity of intensity vs. targetPace on each segment,
  * and assign ids to blocks that the AI didn't include.
  */
-function sanitizeBlock(block: WorkoutBlock): WorkoutBlock {
+export function sanitizeBlock(block: WorkoutBlock): WorkoutBlock {
   if (block.blockType === 'segment') {
     const seg = { ...block };
     if (!seg.id) seg.id = generateId();

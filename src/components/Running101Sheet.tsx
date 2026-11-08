@@ -86,8 +86,8 @@ export function Running101Sheet({ visible, onClose }: Running101SheetProps) {
               {TEMPO_VS_INTERVALS.map((w) => (
                 <View key={w.title} style={styles.card}>
                   <Text style={styles.itemTitle}>{w.title}</Text>
-                  {w.steps.map((step) => (
-                    <Text key={step} style={styles.step}>{step}</Text>
+                  {w.steps.map((step, i) => (
+                    <Text key={i} style={styles.step}>{step}</Text>
                   ))}
                   <Text style={styles.example}>{w.note}</Text>
                 </View>

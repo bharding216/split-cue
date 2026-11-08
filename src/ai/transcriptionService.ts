@@ -1,6 +1,6 @@
 /**
  * Transcription service — sends recorded audio to the transcribe-audio
- * edge function (OpenAI Whisper API) and returns the text.
+ * edge function (OpenAI gpt-transcribe) and returns the text.
  */
 
 import { File } from 'expo-file-system';

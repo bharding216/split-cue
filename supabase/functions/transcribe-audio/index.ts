@@ -2,15 +2,24 @@
  * transcribe-audio — Supabase Edge Function
  *
  * Accepts a base64-encoded audio file and transcribes it
- * using OpenAI's Whisper API. Returns the transcribed text.
+ * using OpenAI's gpt-transcribe model. Returns the transcribed text.
  *
  * Deploy:  supabase functions deploy transcribe-audio
  * Secrets: supabase secrets set OPENAI_API_KEY=sk-...
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { MODELS } from "../_shared/openai.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+
+/** Running terms the model should recognize. Single-line, no `<` or `>` (the API rejects those). */
+const RUNNING_KEYWORDS = [
+  "tempo", "fartlek", "intervals", "strides", "long run", "easy run", "recovery run",
+  "threshold", "VO2 max", "negative split", "progression run", "time trial", "taper",
+  "warmup", "cooldown", "400s", "800s", "mile repeats", "5K", "10K", "half marathon",
+  "marathon", "PR", "per mile",
+];
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -60,12 +69,12 @@ Deno.serve(async (req) => {
     };
     const ext = extMap[mime_type] || "m4a";
 
-    // Build multipart form data for Whisper API
     const formData = new FormData();
     formData.append("file", new Blob([bytes], { type: mime_type }), `recording.${ext}`);
-    formData.append("model", "whisper-1");
-    formData.append("language", "en");
-    formData.append("prompt", "Running workout adjustment. The user is a runner describing changes to their training plan or workout.");
+    formData.append("model", MODELS.transcribe);
+    formData.append("languages[]", "en");
+    for (const keyword of RUNNING_KEYWORDS) formData.append("keywords[]", keyword);
+    formData.append("prompt", "A runner describing a workout or changes to their training plan.");
 
     const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
@@ -77,7 +86,7 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("Whisper API error:", errorBody);
+      console.error("Transcription API error:", errorBody);
       return new Response(
         JSON.stringify({ error: "Transcription failed" }),
         { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }

@@ -15,7 +15,7 @@ import { supabase } from '../analytics/supabaseClient';
 import { generateId, parseWorkoutCategory, type CompletedWorkout } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
-import type { AIContext } from './aiWorkoutService';
+import { sanitizeBlock, type AIContext } from './aiWorkoutService';
 import { buildHistorySummary, serializeHistorySummary } from './historySummary';
 
 // ── Types ────────────────────────────────────────────────────
@@ -84,9 +84,10 @@ export interface WorkoutDetailResult {
     workout: {
       name: string;
       category?: string;
-      warmup: unknown[];
+      warmup?: unknown[];
       blocks: unknown[];
-      cooldown: unknown[];
+      cooldown?: unknown[];
+      targetDistanceMeters?: number;
     };
   }[];
 }
@@ -321,9 +322,11 @@ export async function generateWorkoutDetails(
         warmup: detail.workout.warmup ?? [],
         blocks: detail.workout.blocks ?? [],
         cooldown: detail.workout.cooldown ?? [],
+        targetDistanceMeters: detail.workout.targetDistanceMeters,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
+      workoutData.blocks = workoutData.blocks.map(sanitizeBlock);
 
       return supabase
         .from('plan_workouts')
@@ -985,6 +988,7 @@ export async function applyPlanModifications(
               updatedAt: Date.now(),
             })
           : null;
+        if (workoutData) workoutData.blocks = workoutData.blocks.map(sanitizeBlock);
 
         console.log(`[applyMods] workout data:`, workoutData ? `name=${workoutData.name}, blocks=${workoutData.blocks.length}` : 'null');
 

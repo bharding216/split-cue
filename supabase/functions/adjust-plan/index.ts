@@ -10,6 +10,7 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { chatJson, MODELS, stripNulls, type ChatMessage } from "../_shared/openai.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -169,9 +170,168 @@ Rules:
 - action "skip" marks a workout as skipped (no workout data needed).
 - action "update" replaces the workout for that date.
 - If the user wants to swap two days, include both dates as "update" modifications.
-- warmup and cooldown should be empty arrays for simple runs. Only add warmup/cooldown for structured interval sessions.`);
+- warmup and cooldown should be empty arrays for simple runs. Only add warmup/cooldown for structured interval sessions.
+- Dates must be between ${plan.start_date} and ${plan.race_date}.
+- Use null for any optional field you leave out (and for "workout" on skips).`);
 
   return sections.join("\n\n");
+}
+
+// ── Output schema & validation ───────────────────────────────
+
+interface LegacyInterval {
+  type: "warmup" | "hard" | "easy" | "cooldown";
+  durationSeconds: number;
+  label: string | null;
+  effort: number | null;
+  targetPace: number | null;
+}
+
+interface LegacyRepeatBlock {
+  intervals: LegacyInterval[];
+  repeatCount: number;
+  name: string | null;
+}
+
+interface LegacyWorkout {
+  name: string;
+  warmup: LegacyRepeatBlock[];
+  blocks: LegacyRepeatBlock[];
+  cooldown: LegacyRepeatBlock[];
+}
+
+interface Adjustment {
+  message: string;
+  modifications: {
+    date: string;
+    action: "update" | "skip";
+    day_label: string | null;
+    description: string | null;
+    workout: LegacyWorkout | null;
+  }[];
+}
+
+const REPEAT_BLOCK_REF = { type: "array", items: { $ref: "#/$defs/repeatBlock" } };
+
+const ADJUSTMENT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["message", "modifications"],
+  properties: {
+    message: { type: "string" },
+    modifications: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["date", "action", "day_label", "description", "workout"],
+        properties: {
+          date: { type: "string", description: "YYYY-MM-DD" },
+          action: { type: "string", enum: ["update", "skip"] },
+          day_label: { type: ["string", "null"] },
+          description: { type: ["string", "null"] },
+          workout: {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: false,
+                required: ["name", "warmup", "blocks", "cooldown"],
+                properties: {
+                  name: { type: "string" },
+                  warmup: REPEAT_BLOCK_REF,
+                  blocks: REPEAT_BLOCK_REF,
+                  cooldown: REPEAT_BLOCK_REF,
+                },
+              },
+              { type: "null" },
+            ],
+          },
+        },
+      },
+    },
+  },
+  $defs: {
+    repeatBlock: {
+      type: "object",
+      additionalProperties: false,
+      required: ["intervals", "repeatCount", "name"],
+      properties: {
+        intervals: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "durationSeconds", "label", "effort", "targetPace"],
+            properties: {
+              type: { type: "string", enum: ["warmup", "hard", "easy", "cooldown"] },
+              durationSeconds: { type: "number", description: "SECONDS. 30 minutes = 1800." },
+              label: { type: ["string", "null"] },
+              effort: { type: ["number", "null"], description: "RPE 1-10" },
+              targetPace: { type: ["number", "null"], description: "Decimal min/mile" },
+            },
+          },
+        },
+        repeatCount: { type: "integer" },
+        name: { type: ["string", "null"] },
+      },
+    },
+  },
+};
+
+function legacyWorkoutSeconds(w: LegacyWorkout): number {
+  return [...w.warmup, ...w.blocks, ...w.cooldown].reduce(
+    (sum, b) => sum + Math.max(1, b.repeatCount) * b.intervals.reduce((s, i) => s + (i.durationSeconds || 0), 0),
+    0,
+  );
+}
+
+function validateAdjustment(adj: Adjustment, plan: RequestBody["plan_summary"]): string[] {
+  const problems: string[] = [];
+  for (const mod of adj.modifications ?? []) {
+    const at = `Modification for ${mod.date}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(mod.date) || isNaN(Date.parse(mod.date))) {
+      problems.push(`${at}: date must be a valid YYYY-MM-DD.`);
+      continue;
+    }
+    if (mod.date < plan.start_date || mod.date > plan.race_date) {
+      problems.push(`${at}: date is outside the plan (${plan.start_date} to ${plan.race_date}).`);
+    }
+    if (mod.action === "update" && !mod.day_label?.trim()) {
+      problems.push(`${at}: updates need a day_label.`);
+    }
+    const w = mod.workout;
+    if (mod.action !== "update" || !w) continue;
+
+    const blocks = [...w.warmup, ...w.blocks, ...w.cooldown];
+    if (w.blocks.length === 0) problems.push(`${at}: workout.blocks must not be empty.`);
+    for (const b of blocks) {
+      if (!Number.isInteger(b.repeatCount) || b.repeatCount < 1 || b.repeatCount > 50) {
+        problems.push(`${at}: repeatCount must be a whole number between 1 and 50.`);
+      }
+      if (b.intervals.length === 0) problems.push(`${at}: every block needs at least one interval.`);
+      if (b.intervals.some((i) => !(i.durationSeconds > 0))) {
+        problems.push(`${at}: every interval needs durationSeconds > 0.`);
+      }
+      if (b.intervals.some((i) => i.targetPace != null && !(i.targetPace >= 3 && i.targetPace <= 25))) {
+        problems.push(`${at}: targetPace must be a realistic decimal min/mile value.`);
+      }
+    }
+    const minutes = legacyWorkoutSeconds(w) / 60;
+    if (minutes < 5 || minutes > 300) {
+      problems.push(`${at}: workout totals ~${Math.round(minutes)} min, which isn't realistic. durationSeconds is in SECONDS.`);
+    }
+  }
+  return problems;
+}
+
+/** effort and targetPace are mutually exclusive; keep the pace. */
+function normalizeLegacyWorkout(w: LegacyWorkout): LegacyWorkout {
+  const fix = (blocks: LegacyRepeatBlock[]) =>
+    blocks.map((b) => ({
+      ...b,
+      intervals: b.intervals.map((i) => (i.targetPace != null ? { ...i, effort: null } : i)),
+    }));
+  return { ...w, warmup: fix(w.warmup), blocks: fix(w.blocks), cooldown: fix(w.cooldown) };
 }
 
 // ── Handler ──────────────────────────────────────────────────
@@ -196,7 +356,7 @@ Deno.serve(async (req) => {
     }
 
     const systemPrompt = buildSystemPrompt(body);
-    const messages: { role: string; content: string }[] = [
+    const messages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
     ];
 
@@ -208,35 +368,27 @@ Deno.serve(async (req) => {
 
     messages.push({ role: "user", content: body.prompt });
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages,
-        temperature: 0.3,
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
-      }),
+    const { data, problems } = await chatJson<Adjustment>({
+      name: "plan_adjustment",
+      model: MODELS.coach,
+      messages,
+      schema: ADJUSTMENT_SCHEMA,
+      reasoningEffort: "medium",
+      maxCompletionTokens: 16000,
+      validate: (adj) => validateAdjustment(adj, body.plan_summary),
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI error:", response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+    if (problems.length) {
+      console.warn("adjust-plan: unresolved after retry", problems);
+      throw new Error("The coach couldn't make that change cleanly. Try describing it a different way.");
     }
 
-    const completion = await response.json();
-    const content = completion.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("No response from OpenAI");
-    }
-
-    const result = JSON.parse(content);
+    const result = stripNulls({
+      message: data.message,
+      modifications: data.modifications.map((mod) => ({
+        ...mod,
+        workout: mod.action === "update" && mod.workout ? normalizeLegacyWorkout(mod.workout) : null,
+      })),
+    });
 
     return new Response(JSON.stringify(result), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
