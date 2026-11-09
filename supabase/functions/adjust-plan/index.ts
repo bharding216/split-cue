@@ -120,11 +120,14 @@ ${upcomingWorkouts.map((w) => `- ${w.date} (Week ${w.week_number}): ${w.day_labe
 
 1. durationSeconds is in SECONDS. 30 minutes = 1800 seconds. 40 minutes = 2400 seconds. 60 minutes = 3600 seconds.
 2. repeatCount means how many times to repeat the block. A simple run = repeatCount: 1. Only use repeatCount > 1 for actual interval repeats (e.g. "4 × 400m").
-3. For easy/recovery runs, tempo runs, long runs, or any single-effort workout: use exactly ONE block with ONE interval and repeatCount: 1.
+3. For easy/recovery runs, tempo runs, long runs, or any single-effort workout: the main effort in "blocks" is exactly ONE block with ONE interval and repeatCount: 1.
    - Example 30-minute easy run: blocks: [{"intervals": [{"type": "easy", "durationSeconds": 1800, "label": "Easy Run"}], "repeatCount": 1}]
    - Example 45-minute long run: blocks: [{"intervals": [{"type": "easy", "durationSeconds": 2700, "label": "Long Run"}], "repeatCount": 1}]
 4. ALWAYS verify: (sum of all durationSeconds across all intervals × their block's repeatCount) ≈ what the user requested.
 5. Do NOT over-structure simple workouts.
+6. Keep the three sections separate. Warmup goes only in "warmup", the main work only in "blocks", and cooldown only in "cooldown". Never combine a warmup or cooldown with the main effort in the same block or interval.
+   - Example tempo run with warmup and cooldown: warmup: [{"intervals": [{"type": "warmup", "durationSeconds": 600, "label": "Warm Up"}], "repeatCount": 1}], blocks: [{"intervals": [{"type": "hard", "durationSeconds": 1200, "label": "Tempo", "effort": 6}], "repeatCount": 1}], cooldown: [{"intervals": [{"type": "cooldown", "durationSeconds": 600, "label": "Cool Down"}], "repeatCount": 1}]
+7. When editing an existing workout, keep every part the user didn't ask to change (durations, paces, efforts).
 
 ## Output Schema
 
@@ -170,7 +173,7 @@ Rules:
 - action "skip" marks a workout as skipped (no workout data needed).
 - action "update" replaces the workout for that date.
 - If the user wants to swap two days, include both dates as "update" modifications.
-- warmup and cooldown should be empty arrays for simple runs. Only add warmup/cooldown for structured interval sessions.
+- warmup and cooldown default to empty arrays for simple easy runs and include them for structured sessions (intervals, tempo, threshold). If the user asks to add or remove a warmup or cooldown, always do what they ask.
 - Dates must be between ${plan.start_date} and ${plan.race_date}.
 - Use null for any optional field you leave out (and for "workout" on skips).`);
 
@@ -304,6 +307,15 @@ function validateAdjustment(adj: Adjustment, plan: RequestBody["plan_summary"]):
 
     const blocks = [...w.warmup, ...w.blocks, ...w.cooldown];
     if (w.blocks.length === 0) problems.push(`${at}: workout.blocks must not be empty.`);
+    if (w.blocks.some((b) => b.intervals.some((i) => i.type === "warmup" || i.type === "cooldown"))) {
+      problems.push(`${at}: warmup and cooldown intervals belong in workout.warmup and workout.cooldown, not in workout.blocks.`);
+    }
+    if (w.warmup.some((b) => b.intervals.some((i) => i.type !== "warmup" && i.type !== "easy"))) {
+      problems.push(`${at}: workout.warmup may only contain warmup intervals; put the main effort in workout.blocks.`);
+    }
+    if (w.cooldown.some((b) => b.intervals.some((i) => i.type !== "cooldown" && i.type !== "easy"))) {
+      problems.push(`${at}: workout.cooldown may only contain cooldown intervals; put the main effort in workout.blocks.`);
+    }
     for (const b of blocks) {
       if (!Number.isInteger(b.repeatCount) || b.repeatCount < 1 || b.repeatCount > 50) {
         problems.push(`${at}: repeatCount must be a whole number between 1 and 50.`);

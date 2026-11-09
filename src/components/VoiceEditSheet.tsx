@@ -81,6 +81,7 @@ type Phase =
 // ── Sound Bars ───────────────────────────────────────────────
 
 const BAR_COUNT = 7;
+const STOP_TAIL_MS = 400;
 
 function meterToLevel(db: number | undefined): number {
   if (db === undefined || db <= -50) return 0;
@@ -398,6 +399,26 @@ function buildCalendar(fromStr: string, toStr: string): string[] {
   return lines;
 }
 
+/** Plain-text outline of a workout's blocks so the coach can edit around what's already there. */
+function describeBlocks(blocks: WorkoutBlock[], indent = '  '): string[] {
+  return blocks.flatMap((block) => {
+    if (block.blockType === 'repeat') {
+      return [
+        `${indent}- ${block.repetitions} × ${block.name ?? 'repeat'}:`,
+        ...describeBlocks(block.blocks, indent + '  '),
+      ];
+    }
+    const target = block.target.type === 'time'
+      ? `${Math.round((block.target.durationSeconds ?? 0) / 60)} min`
+      : `${Math.round(block.target.distanceMeters ?? 0)} m`;
+    const effort = block.targetPace != null
+      ? `${formatTime(block.targetPace * 60)}/mi`
+      : block.intensity;
+    const label = block.label || defaultSegmentLabel(block.segmentType);
+    return [`${indent}- ${label} (${block.segmentType}): ${target}${effort ? `, ${effort}` : ''}`];
+  });
+}
+
 // ── Main Component ──────────────────────────────────────────
 
 export function VoiceEditSheet({
@@ -419,6 +440,21 @@ export function VoiceEditSheet({
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
+  const prepareRef = useRef<Promise<void> | null>(null);
+
+  const ensurePrepared = useCallback(() => {
+    if (!prepareRef.current) {
+      const prepared = (async () => {
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+        await recorder.prepareToRecordAsync();
+      })();
+      prepared.catch(() => {
+        if (prepareRef.current === prepared) prepareRef.current = null;
+      });
+      prepareRef.current = prepared;
+    }
+    return prepareRef.current;
+  }, [recorder]);
 
   useEffect(() => {
     if (!visible) return;
@@ -426,11 +462,16 @@ export function VoiceEditSheet({
       try {
         const result = await AudioModule.requestRecordingPermissionsAsync();
         setHasPermission(result.granted);
+        if (result.granted) {
+          // Prepare up front so the first words aren't lost to session setup after the tap.
+          prepareRef.current = null;
+          ensurePrepared().catch(() => {});
+        }
       } catch {
         setHasPermission(false);
       }
     })();
-  }, [visible]);
+  }, [visible, ensurePrepared]);
 
   useEffect(() => {
     if (visible) {
@@ -451,15 +492,15 @@ export function VoiceEditSheet({
       return;
     }
     try {
-      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-      await recorder.prepareToRecordAsync();
+      await ensurePrepared();
+      prepareRef.current = null;
       recorder.record();
       setPhase('recording');
     } catch (err) {
       console.error('Failed to start recording:', err);
       Alert.alert('Recording Error', 'Could not start recording. Please try again.');
     }
-  }, [hasPermission, recorder]);
+  }, [hasPermission, recorder, ensurePrepared]);
 
   const generateFromText = useCallback(async (text: string) => {
     setTranscription(text);
@@ -481,6 +522,9 @@ export function VoiceEditSheet({
       `- Date: ${weekdayName(workout.date)}, ${workout.date}`,
       `- Label: ${workout.day_label || 'Training'}`,
       workout.description ? `- Description: ${workout.description}` : null,
+      ...(workout.workout_data
+        ? ['- Current structure:', ...describeBlocks(migrateToBlockModel(workout.workout_data).blocks)]
+        : []),
       ``,
       `User's instruction: ${text}`,
       ``,
@@ -534,10 +578,13 @@ export function VoiceEditSheet({
     if (phase !== 'recording') return;
 
     try {
-      await recorder.stop();
       setPhase('transcribing');
+      // People often tap stop while still finishing the last word.
+      await new Promise((resolve) => setTimeout(resolve, STOP_TAIL_MS));
+      await recorder.stop();
 
       const uri = recorder.uri;
+      ensurePrepared().catch(() => {});
       if (!uri) {
         setPhase('idle');
         return;
@@ -561,7 +608,7 @@ export function VoiceEditSheet({
       );
       setPhase('idle');
     }
-  }, [phase, recorder, generateFromText]);
+  }, [phase, recorder, generateFromText, ensurePrepared]);
 
   const handleTextSubmit = useCallback(async () => {
     const text = textInput.trim();
