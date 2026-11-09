@@ -11,7 +11,8 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { chatJson, MODELS, type ChatMessage } from "../_shared/openai.ts";
+import { chatJson, MODELS, newChatStats, type ChatMessage } from "../_shared/openai.ts";
+import { startAiLog, type ClientMeta } from "../_shared/aiLog.ts";
 import {
   WORKOUT_DEFS,
   normalizeWorkout,
@@ -188,6 +189,7 @@ interface RequestBody {
   preferences?: string[];
   conversation?: ConversationMessage[];
   history_summary?: string | null;
+  client?: ClientMeta;
 }
 
 const RESPONSE_SCHEMA = {
@@ -242,26 +244,46 @@ Deno.serve(async (req) => {
 
     // No fast-pace ceiling here: the runner may explicitly ask for paces beyond their profile.
     const paces = { easyPace: body.profile?.easy_pace };
-    const { data, problems } = await chatJson<{ message: string; workout: AIWorkout }>({
-      name: "workout",
+    const { client, ...loggedRequest } = body;
+    const log = startAiLog(req, {
+      functionName: "generate-workout",
       model: MODELS.coach,
-      messages,
-      schema: RESPONSE_SCHEMA,
-      reasoningEffort: "low",
-      maxCompletionTokens: 12000,
-      validate: (result) => validateWorkout(result.workout, paces),
+      client,
+      request: loggedRequest,
+      fallbackUserText: body.prompt,
     });
+    const stats = newChatStats();
+
+    let data: { message: string; workout: AIWorkout };
+    let problems: string[];
+    try {
+      ({ data, problems } = await chatJson<{ message: string; workout: AIWorkout }>({
+        name: "workout",
+        model: MODELS.coach,
+        messages,
+        schema: RESPONSE_SCHEMA,
+        reasoningEffort: "low",
+        maxCompletionTokens: 12000,
+        validate: (result) => validateWorkout(result.workout, paces),
+        stats,
+      }));
+    } catch (err) {
+      log.finish({ status: "error", stats, error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
     const workout = normalizeWorkout(data.workout);
     if (problems.length) {
       console.warn("generate-workout: unresolved after retry", problems);
       if (validateWorkout(workout, paces).length) {
+        log.finish({ status: "invalid", stats, response: data });
         throw new Error("The coach couldn't build a valid workout for that. Try rephrasing your request.");
       }
     }
 
     const result = { message: data.message, workout };
+    log.finish({ status: "ok", stats, response: result });
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ ...result, request_id: log.id }), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   } catch (err: unknown) {

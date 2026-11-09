@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '../analytics/supabaseClient';
+import type { AiClientMeta } from '../analytics/aiOutcome';
 import { generateId, parseWorkoutCategory, type CompletedWorkout } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
@@ -95,6 +96,8 @@ export interface WorkoutDetailResult {
 export interface PlanAdjustmentResult {
   message: string;
   modifications: PlanModification[];
+  /** Links outcome events to the logged request. */
+  requestId?: string;
 }
 
 export interface PlanModification {
@@ -500,6 +503,7 @@ export interface PlanAdjustmentInput {
     race_times?: Record<string, { slow: number | null; avg: number | null; fast: number | null }> | null;
   };
   conversation?: { role: 'user' | 'assistant'; content: string }[];
+  client?: AiClientMeta;
 }
 
 export async function adjustPlan(input: PlanAdjustmentInput): Promise<PlanAdjustmentResult> {
@@ -518,6 +522,7 @@ export async function adjustPlan(input: PlanAdjustmentInput): Promise<PlanAdjust
     },
     profile: input.profile,
     conversation: input.conversation,
+    client: input.client,
   };
 
   console.log('[adjustPlan] prompt:', input.prompt);
@@ -549,7 +554,11 @@ export async function adjustPlan(input: PlanAdjustmentInput): Promise<PlanAdjust
     throw new Error(data.error);
   }
 
-  const result = data as PlanAdjustmentResult;
+  const result: PlanAdjustmentResult = {
+    message: data.message,
+    modifications: data.modifications,
+    requestId: data.request_id,
+  };
   console.log('[adjustPlan] response message:', result.message?.slice(0, 100));
   console.log('[adjustPlan] modifications count:', result.modifications?.length ?? 0);
   if (result.modifications?.length) {

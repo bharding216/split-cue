@@ -34,6 +34,20 @@ export interface JsonCallOptions<T> {
   maxCompletionTokens: number;
   /** Returns problems for the model to fix; an empty array means the output is acceptable. */
   validate?: (data: T) => string[];
+  /** Filled in as the call runs, so callers can log it even when the call throws. */
+  stats?: ChatStats;
+}
+
+export interface ChatStats {
+  attempts: number;
+  /** Validation problems from each attempt that had any. */
+  problems: string[][];
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export function newChatStats(): ChatStats {
+  return { attempts: 0, problems: [], inputTokens: 0, outputTokens: 0 };
 }
 
 export interface JsonCallResult<T> {
@@ -76,6 +90,7 @@ export async function chatJson<T>(opts: JsonCallOptions<T>): Promise<JsonCallRes
     const problems = opts.validate?.(data) ?? [];
     last = { data, problems };
     if (problems.length === 0) return last;
+    opts.stats?.problems.push(problems);
 
     console.warn(`[${opts.name}] attempt ${attempt}: ${problems.length} problem(s)`, problems);
     if (attempt === 2) break;
@@ -119,6 +134,11 @@ async function requestCompletion<T>(
 
     if (response.ok) {
       const completion = await response.json();
+      if (opts.stats) {
+        opts.stats.attempts += 1;
+        opts.stats.inputTokens += completion.usage?.prompt_tokens ?? 0;
+        opts.stats.outputTokens += completion.usage?.completion_tokens ?? 0;
+      }
       return completion.choices?.[0];
     }
 

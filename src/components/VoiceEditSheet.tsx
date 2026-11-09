@@ -51,6 +51,7 @@ import {
 } from '../workout/workoutTypes';
 import { migrateToBlockModel } from '../workout/workoutStorage';
 import { hapticTap } from '../audio/haptics';
+import { aiClientMeta, useAiOutcome, type AiInputMethod } from '../analytics/aiOutcome';
 import { useUnits } from '../hooks/useUnits';
 import { useLargeText } from '../hooks/useLargeText';
 import { formatDistance, formatPace, metersPerUnit } from '../units/format';
@@ -438,6 +439,7 @@ export function VoiceEditSheet({
   const [modifications, setModifications] = useState<PlanModification[]>([]);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
+  const outcome = useAiOutcome();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
   const prepareRef = useRef<Promise<void> | null>(null);
@@ -502,7 +504,8 @@ export function VoiceEditSheet({
     }
   }, [hasPermission, recorder, ensurePrepared]);
 
-  const generateFromText = useCallback(async (text: string) => {
+  const generateFromText = useCallback(async (text: string, inputMethod: AiInputMethod) => {
+    outcome.report('retried');
     setTranscription(text);
     setPhase('generating');
 
@@ -567,12 +570,14 @@ export function VoiceEditSheet({
         totalWeeks,
         workouts: workoutWindow,
       },
+      client: aiClientMeta('edit_sheet', inputMethod, text),
     });
 
+    outcome.begin(adjustResult.requestId);
     setAiMessage(adjustResult.message);
     setModifications(adjustResult.modifications ?? []);
     setPhase('review');
-  }, [plan, planWorkouts, workout]);
+  }, [plan, planWorkouts, workout, outcome]);
 
   const stopAndProcess = useCallback(async () => {
     if (phase !== 'recording') return;
@@ -599,7 +604,7 @@ export function VoiceEditSheet({
         return;
       }
 
-      await generateFromText(text);
+      await generateFromText(text, 'voice');
     } catch (err: any) {
       console.error('Voice edit failed:', err);
       Alert.alert(
@@ -617,7 +622,7 @@ export function VoiceEditSheet({
     hapticTap();
     setTextInput('');
     try {
-      await generateFromText(text);
+      await generateFromText(text, 'text');
     } catch (err: any) {
       console.error('Text edit failed:', err);
       Alert.alert(
@@ -646,18 +651,25 @@ export function VoiceEditSheet({
     setPhase('applying');
     try {
       await onApply(modifications);
+      outcome.report('applied', { modification_count: modifications.length });
     } catch (err: any) {
       Alert.alert('Apply Failed', err.message || 'Could not apply changes.');
       setPhase('review');
     }
-  }, [modifications, onApply]);
+  }, [modifications, onApply, outcome]);
 
   const handleClose = useCallback(() => {
     if (phase === 'recording') {
       recorder.stop().catch(() => {});
     }
+    outcome.report('closed');
     onClose();
-  }, [phase, recorder, onClose]);
+  }, [phase, recorder, onClose, outcome]);
+
+  const handleDiscard = useCallback(() => {
+    outcome.report('discarded');
+    handleClose();
+  }, [outcome, handleClose]);
 
   const metering = phase === 'recording' ? recorderState.metering : undefined;
   const workoutLabel = workout.day_label || 'Training';
@@ -912,7 +924,7 @@ export function VoiceEditSheet({
                 <View style={[styles.actionRow, large && styles.actionRowLarge]}>
                   <TouchableOpacity
                     style={styles.discardBtn}
-                    onPress={handleClose}
+                    onPress={handleDiscard}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.discardBtnText}>Discard</Text>

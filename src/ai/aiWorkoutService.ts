@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../analytics/supabaseClient';
+import type { AiClientMeta } from '../analytics/aiOutcome';
 import {
   WorkoutDefinition,
   WorkoutBlock,
@@ -36,6 +37,8 @@ export interface AIContext {
 export interface AIResponse {
   workout: WorkoutDefinition;
   message: string;
+  /** Links outcome events to the logged request. */
+  requestId?: string;
 }
 
 export interface ChatMessage {
@@ -119,6 +122,7 @@ export async function generateWorkout(
   prompt: string,
   context: AIContext,
   conversationHistory: ChatMessage[],
+  client?: AiClientMeta,
 ): Promise<AIResponse> {
   const enrichedConversation = conversationHistory.map((m) => ({
     role: m.role,
@@ -144,6 +148,7 @@ export async function generateWorkout(
       preferences: context.preferences,
       conversation: enrichedConversation,
       history_summary: historySummaryText,
+      client,
     },
   });
 
@@ -195,5 +200,6 @@ export async function generateWorkout(
   return {
     workout,
     message: data.message ?? 'Here\'s a workout for you!',
+    requestId: data.request_id,
   };
 }

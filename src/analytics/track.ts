@@ -98,6 +98,13 @@ export function deviceCountry(): string | null {
   return country;
 }
 
+export function appInfo(): { appVersion: string; environment: string } {
+  return {
+    appVersion: Constants.expoConfig?.version ?? 'unknown',
+    environment: (Constants.expoConfig?.extra?.appVariant as string) ?? 'production',
+  };
+}
+
 /**
  * Fire an analytics event. Non-blocking, never throws.
  */
@@ -105,8 +112,7 @@ export function track(
   eventName: string,
   metadata?: Record<string, unknown>,
 ): void {
-  const appVersion = Constants.expoConfig?.version ?? 'unknown';
-  const environment = (Constants.expoConfig?.extra?.appVariant as string) ?? 'production';
+  const { appVersion, environment } = appInfo();
   const country = deviceCountry();
   const device = eventDeviceFields();
 

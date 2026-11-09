@@ -10,7 +10,8 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { chatJson, MODELS, stripNulls, type ChatMessage } from "../_shared/openai.ts";
+import { chatJson, MODELS, newChatStats, stripNulls, type ChatMessage } from "../_shared/openai.ts";
+import { startAiLog, type ClientMeta } from "../_shared/aiLog.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -54,6 +55,7 @@ interface RequestBody {
     fast_pace?: number;
   };
   conversation?: ConversationMessage[];
+  client?: ClientMeta;
 }
 
 // ── System prompt ────────────────────────────────────────────
@@ -380,17 +382,36 @@ Deno.serve(async (req) => {
 
     messages.push({ role: "user", content: body.prompt });
 
-    const { data, problems } = await chatJson<Adjustment>({
-      name: "plan_adjustment",
+    const { client, ...loggedRequest } = body;
+    const log = startAiLog(req, {
+      functionName: "adjust-plan",
       model: MODELS.coach,
-      messages,
-      schema: ADJUSTMENT_SCHEMA,
-      reasoningEffort: "medium",
-      maxCompletionTokens: 16000,
-      validate: (adj) => validateAdjustment(adj, body.plan_summary),
+      client,
+      request: loggedRequest,
+      fallbackUserText: body.prompt,
     });
+    const stats = newChatStats();
+
+    let data: Adjustment;
+    let problems: string[];
+    try {
+      ({ data, problems } = await chatJson<Adjustment>({
+        name: "plan_adjustment",
+        model: MODELS.coach,
+        messages,
+        schema: ADJUSTMENT_SCHEMA,
+        reasoningEffort: "medium",
+        maxCompletionTokens: 16000,
+        validate: (adj) => validateAdjustment(adj, body.plan_summary),
+        stats,
+      }));
+    } catch (err) {
+      log.finish({ status: "error", stats, error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
     if (problems.length) {
       console.warn("adjust-plan: unresolved after retry", problems);
+      log.finish({ status: "invalid", stats, response: data });
       throw new Error("The coach couldn't make that change cleanly. Try describing it a different way.");
     }
 
@@ -401,8 +422,9 @@ Deno.serve(async (req) => {
         workout: mod.action === "update" && mod.workout ? normalizeLegacyWorkout(mod.workout) : null,
       })),
     });
+    log.finish({ status: "ok", stats, response: result });
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ ...result, request_id: log.id }), {
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   } catch (err: unknown) {

@@ -59,6 +59,7 @@ import {
 } from '../workout/workoutTypes';
 import { saveWorkout } from '../workout/workoutStorage';
 import { track } from '../analytics/track';
+import { aiClientMeta, useAiOutcome } from '../analytics/aiOutcome';
 import { WorkoutEditorForm } from './WorkoutEditorForm';
 import { hapticTap } from '../audio/haptics';
 
@@ -363,6 +364,7 @@ function VoiceWorkoutSheetInner({
     setSavedToLibrary(false);
   }, [proposedWorkout]);
 
+  const outcome = useAiOutcome();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
 
@@ -433,10 +435,12 @@ function VoiceWorkoutSheetInner({
 
       setTranscription(text);
       setPhase('generating');
+      outcome.report('retried');
 
       const context: AIContext = aiContext ?? { goals: [], preferences: [] };
-      const response = await generateWorkout(text, context, []);
+      const response = await generateWorkout(text, context, [], aiClientMeta('workout_builder', 'voice', text));
 
+      outcome.begin(response.requestId);
       setAiMessage(response.message);
       setProposedWorkout({ ...response.workout, origin: 'ai_voice' });
       setPhase('review');
@@ -448,7 +452,7 @@ function VoiceWorkoutSheetInner({
       );
       setPhase('idle');
     }
-  }, [phase, recorder, aiContext]);
+  }, [phase, recorder, aiContext, outcome]);
 
   const handleMicPress = useCallback(() => {
     hapticTap();
@@ -471,10 +475,12 @@ function VoiceWorkoutSheetInner({
     setAiMessage('');
     setTranscription(text);
     setPhase('generating');
+    outcome.report('retried');
 
     try {
       const context: AIContext = aiContext ?? { goals: [], preferences: [] };
-      const response = await generateWorkout(text, context, []);
+      const response = await generateWorkout(text, context, [], aiClientMeta('workout_builder', 'text', text));
+      outcome.begin(response.requestId);
       setAiMessage(response.message);
       setProposedWorkout({ ...response.workout, origin: 'ai_voice' });
       setPhase('review');
@@ -486,13 +492,14 @@ function VoiceWorkoutSheetInner({
       );
       setPhase('idle');
     }
-  }, [textInput, phase, aiContext]);
+  }, [textInput, phase, aiContext, outcome]);
 
   const handleAccept = useCallback(() => {
     if (!proposedWorkout) return;
     hapticTap();
+    outcome.report('applied');
     onAccept(proposedWorkout);
-  }, [proposedWorkout, onAccept]);
+  }, [proposedWorkout, onAccept, outcome]);
 
   const handleSaveToLibrary = useCallback(async () => {
     if (!proposedWorkout || savedToLibrary) return;
@@ -507,11 +514,12 @@ function VoiceWorkoutSheetInner({
         updatedAt: now,
       });
       track('workout_saved', { workout_id: newId, workout_name: proposedWorkout.name, is_copy: false });
+      outcome.note('saved_to_library');
       setSavedToLibrary(true);
     } catch {
       Alert.alert('Save Failed', 'Your workout could not be saved. Please try again.');
     }
-  }, [proposedWorkout, savedToLibrary]);
+  }, [proposedWorkout, savedToLibrary, outcome]);
 
   const handleEdit = useCallback(() => {
     hapticTap();
@@ -520,17 +528,19 @@ function VoiceWorkoutSheetInner({
 
   const handleEditSave = useCallback(
     (updated: WorkoutDefinition) => {
+      outcome.report('edited_and_applied');
       onAccept(updated);
     },
-    [onAccept],
+    [onAccept, outcome],
   );
 
   const handleClose = useCallback(() => {
     if (phase === 'recording') {
       recorder.stop().catch(() => {});
     }
+    outcome.report('closed');
     onClose();
-  }, [phase, recorder, onClose]);
+  }, [phase, recorder, onClose, outcome]);
 
   const metering = phase === 'recording' ? recorderState.metering : undefined;
   const flat = proposedWorkout ? flattenWorkout(proposedWorkout) : [];

@@ -48,6 +48,7 @@ import {
 } from '../ai/planService';
 import { ModificationReview, type ModificationItem } from './ModificationReview';
 import { hapticTap } from '../audio/haptics';
+import { aiClientMeta, useAiOutcome, type AiInputMethod } from '../analytics/aiOutcome';
 import type { TrainingPlan, PlanWorkout } from '../types/database';
 
 // ── Types ────────────────────────────────────────────────────
@@ -256,6 +257,7 @@ export function VoicePlanAdjustSheet({
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   const textInputRef = useRef<TextInput>(null);
+  const outcome = useAiOutcome();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 100);
 
@@ -286,7 +288,8 @@ export function VoicePlanAdjustSheet({
     [plan, planWorkouts],
   );
 
-  const processPrompt = useCallback(async (prompt: string) => {
+  const processPrompt = useCallback(async (prompt: string, inputMethod: AiInputMethod) => {
+    outcome.report('retried');
     setTranscription(prompt);
     setPhase('generating');
 
@@ -319,8 +322,10 @@ export function VoicePlanAdjustSheet({
           totalWeeks,
           workouts: relevantWorkouts,
         },
+        client: aiClientMeta('plan_adjust_sheet', inputMethod, prompt),
       });
 
+      outcome.begin(result.requestId);
       setAiMessage(result.message);
       setModifications(result.modifications ?? []);
       setPhase('review');
@@ -332,7 +337,7 @@ export function VoicePlanAdjustSheet({
       );
       setPhase('idle');
     }
-  }, [plan, planWorkouts]);
+  }, [plan, planWorkouts, outcome]);
 
   const startRecording = useCallback(async () => {
     if (hasPermission === false) {
@@ -375,7 +380,7 @@ export function VoicePlanAdjustSheet({
         return;
       }
 
-      await processPrompt(text);
+      await processPrompt(text, 'voice');
     } catch (err: any) {
       console.error('Voice plan adjustment failed:', err);
       Alert.alert(
@@ -404,7 +409,7 @@ export function VoicePlanAdjustSheet({
     Keyboard.dismiss();
     setTextInput('');
     hapticTap();
-    processPrompt(text);
+    processPrompt(text, 'text');
   }, [textInput, processPrompt]);
 
   const handleChipPress = useCallback((chip: QuickChip) => {
@@ -413,7 +418,7 @@ export function VoicePlanAdjustSheet({
       setTextInput(chip.prefill);
       setTimeout(() => textInputRef.current?.focus(), 100);
     } else {
-      processPrompt(chip.prompt);
+      processPrompt(chip.prompt, 'chip');
     }
   }, [processPrompt]);
 
@@ -421,14 +426,19 @@ export function VoicePlanAdjustSheet({
     setPhase('applying');
     try {
       await applyPlanModifications(plan.id, mods);
+      outcome.report(mods.length < modifications.length ? 'partially_applied' : 'applied', {
+        modification_count: modifications.length,
+        applied_count: mods.length,
+      });
       onApplied();
     } catch (err: any) {
       Alert.alert('Apply Failed', err.message || 'Could not apply changes.');
       setPhase('review');
     }
-  }, [plan.id, onApplied, onClose]);
+  }, [plan.id, onApplied, onClose, modifications.length, outcome]);
 
   const handleKeep = useCallback(() => {
+    outcome.report('discarded');
     setModifications([]);
     setAiMessage('');
     setTranscription('');
@@ -439,8 +449,9 @@ export function VoicePlanAdjustSheet({
     if (phase === 'recording') {
       recorder.stop().catch(() => {});
     }
+    outcome.report('closed');
     onClose();
-  }, [phase, recorder, onClose]);
+  }, [phase, recorder, onClose, outcome]);
 
   const metering = phase === 'recording' ? recorderState.metering : undefined;
 

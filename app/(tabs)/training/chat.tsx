@@ -24,6 +24,7 @@ import { useAuth } from '../../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { adjustPlan, applyPlanModifications, type PlanModification } from '../../../src/ai/planService';
 import { supabase } from '../../../src/analytics/supabaseClient';
+import { aiClientMeta, trackAiOutcome, type AiInputMethod, type AiOutcome } from '../../../src/analytics/aiOutcome';
 import { ContextualProPrompt } from '../../../src/components/ContextualProPrompt';
 import { ModificationReview, type ModificationItem } from '../../../src/components/ModificationReview';
 import { VoiceInput } from '../../../src/components/VoiceInput';
@@ -41,6 +42,8 @@ interface ChatMessage {
   modificationsApplied?: boolean;
   /** Pending modifications waiting for user review. */
   pendingModifications?: PlanModification[];
+  /** Logged AI request this response came from. */
+  requestId?: string;
 }
 
 interface QuickChip {
@@ -283,14 +286,37 @@ export default function PlanChatScreen() {
   const large = useLargeText();
   const inputMaxHeight = useScaledSize(100, 2);
 
+  // A proposal left pending when the runner asks something else may still be applied
+  // later, so "retried" can be followed by a final outcome but nothing follows a final one.
+  const reportedOutcomes = useRef(new Map<string, AiOutcome>());
+  const reportOutcome = useCallback((requestId: string | undefined, outcome: AiOutcome, detail?: Record<string, unknown>) => {
+    if (!requestId) return;
+    const previous = reportedOutcomes.current.get(requestId);
+    if (previous && (previous !== 'retried' || outcome === 'retried')) return;
+    reportedOutcomes.current.set(requestId, outcome);
+    trackAiOutcome(requestId, outcome, detail);
+  }, []);
+
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  useEffect(() => () => {
+    for (const m of messagesRef.current) {
+      if (m.pendingModifications?.length) reportOutcome(m.requestId, 'closed');
+    }
+  }, [reportOutcome]);
+
   // Build contextual quick chips based on current plan state
   const quickChips = useMemo(() => {
     if (!plan) return [];
     return buildQuickChips(plan, planWorkouts);
   }, [plan, planWorkouts]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, inputMethod: AiInputMethod) => {
     if (!text.trim() || loading || !plan || !user) return;
+
+    for (const m of messages) {
+      if (m.pendingModifications?.length) reportOutcome(m.requestId, 'retried');
+    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -360,6 +386,7 @@ export default function PlanChatScreen() {
           fast_pace: profileData.fast_pace,
         } : undefined,
         conversation: conversationHistory,
+        client: aiClientMeta('plan_chat', inputMethod, userMessage.content),
       });
 
       const hasMods = result.modifications && result.modifications.length > 0;
@@ -371,6 +398,7 @@ export default function PlanChatScreen() {
         content: result.message,
         timestamp: Date.now(),
         pendingModifications: hasMods ? result.modifications : undefined,
+        requestId: result.requestId,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -386,18 +414,18 @@ export default function PlanChatScreen() {
     } finally {
       setLoading(false);
     }
-  }, [loading, plan, planWorkouts, messages, user, refresh]);
+  }, [loading, plan, planWorkouts, messages, user, refresh, reportOutcome]);
 
   const handleSend = useCallback(() => {
-    sendMessage(input);
+    sendMessage(input, 'text');
   }, [input, sendMessage]);
 
   const handleChipPress = useCallback((prompt: string) => {
-    sendMessage(prompt);
+    sendMessage(prompt, 'chip');
   }, [sendMessage]);
 
   const handleVoiceTranscription = useCallback((text: string) => {
-    sendMessage(text);
+    sendMessage(text, 'voice');
   }, [sendMessage]);
 
   const handleApplyModifications = useCallback(async (messageId: string, mods: PlanModification[]) => {
@@ -410,6 +438,12 @@ export default function PlanChatScreen() {
 
     try {
       await applyPlanModifications(plan.id, mods);
+      const source = messagesRef.current.find((m) => m.id === messageId);
+      const proposedCount = source?.pendingModifications?.length ?? mods.length;
+      reportOutcome(source?.requestId, mods.length < proposedCount ? 'partially_applied' : 'applied', {
+        modification_count: proposedCount,
+        applied_count: mods.length,
+      });
       await refresh();
       console.log('[chat] Modifications applied and plan refreshed');
       setMessages((prev) =>
@@ -422,9 +456,10 @@ export default function PlanChatScreen() {
     } catch (err: any) {
       console.error('[chat] Apply failed:', err);
     }
-  }, [plan, refresh]);
+  }, [plan, refresh, reportOutcome]);
 
   const handleKeepOriginal = useCallback((messageId: string) => {
+    reportOutcome(messagesRef.current.find((m) => m.id === messageId)?.requestId, 'discarded');
     setMessages((prev) =>
       prev.map((m) =>
         m.id === messageId
@@ -432,7 +467,7 @@ export default function PlanChatScreen() {
           : m
       ),
     );
-  }, []);
+  }, [reportOutcome]);
 
   if (!plan) {
     return (
