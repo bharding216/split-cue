@@ -61,11 +61,10 @@ export type UserEventBreakdown = {
   events: string[];
 };
 
-export type RetentionCurvePoint = {
-  cohort: string;
-  workout_number: number;
-  user_count: number;
-  pct: number;
+export type RunLadderStep = {
+  step: number;
+  eligible: number;
+  reached: number;
 };
 
 export type CountryCount = {
@@ -376,14 +375,14 @@ export async function getTrainingPlansByUser(days = 30): Promise<TrainingPlanUse
 }
 
 /**
- * Workout retention curve: of users who completed 1 workout, what %
- * completed a 2nd, 3rd, 4th, 5th — cohorted by month of first completion.
+ * Run ladder: of runners whose first run was at least N days ago, how many
+ * reached run 2, 3, 4, 5 within N days (runs under 6 hours apart merge).
  */
-export async function getWorkoutRetentionCurve(months = 6): Promise<RetentionCurvePoint[]> {
+export async function getRunLadder(windowDays = 14): Promise<RunLadderStep[]> {
   const supabase = createServiceClient();
 
-  const { data } = await supabase.rpc('workout_retention_curve', { num_months: months });
-  return (data as RetentionCurvePoint[]) ?? [];
+  const { data } = await supabase.rpc('run_ladder', { window_days: windowDays });
+  return (data as RunLadderStep[]) ?? [];
 }
 
 /**

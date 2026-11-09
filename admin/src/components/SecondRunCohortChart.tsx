@@ -14,8 +14,13 @@ import type { SecondRunCohort } from '@/lib/queries';
 
 type Props = { data: SecondRunCohort[] };
 
+/** Points backed by fewer runners than this are hidden. */
+const MIN_SAMPLE = 10;
+
+const WINDOWS = [7, 14, 30] as const;
+
 function rate(returned: number, eligible: number): number | null {
-  return eligible > 0 ? Math.round((returned / eligible) * 1000) / 10 : null;
+  return eligible >= MIN_SAMPLE ? Math.round((returned / eligible) * 1000) / 10 : null;
 }
 
 export default function SecondRunCohortChart({ data }: Props) {
@@ -27,6 +32,9 @@ export default function SecondRunCohortChart({ data }: Props) {
     r7: rate(c.returned_7, c.eligible_7),
     r14: rate(c.returned_14, c.eligible_14),
     r30: rate(c.returned_30, c.eligible_30),
+    counts: Object.fromEntries(
+      WINDOWS.map((d) => [`r${d}`, `${c[`returned_${d}`]}/${c[`eligible_${d}`]}`]),
+    ) as Record<string, string>,
   }));
 
   return (
@@ -37,7 +45,8 @@ export default function SecondRunCohortChart({ data }: Props) {
       </div>
       <p className="mb-4 text-xs text-gray-600">
         % of first-time runners who logged another run within 7 / 14 / 30 days. A cohort
-        shows a rate only once every runner in it has had the full window.
+        shows a rate only once every runner in it has had the full window, and only with at
+        least {MIN_SAMPLE} runners.
       </p>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
@@ -57,8 +66,10 @@ export default function SecondRunCohortChart({ data }: Props) {
                 fontSize: 13,
               }}
               labelStyle={{ color: '#d1d5db' }}
-              formatter={(value, name) => [
-                value == null ? 'not mature' : `${value}%`,
+              formatter={(value, name, item) => [
+                value == null
+                  ? 'not mature'
+                  : `${item.payload.counts[item.dataKey as string]} (${value}%)`,
                 name,
               ]}
               labelFormatter={(label: string) => {
@@ -67,9 +78,9 @@ export default function SecondRunCohortChart({ data }: Props) {
               }}
             />
             <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
-            <Line type="monotone" dataKey="r7" name="Within 7 days" stroke="#06b6d4" strokeWidth={1.5} connectNulls={false} />
-            <Line type="monotone" dataKey="r14" name="Within 14 days" stroke="#f59e0b" strokeWidth={3} connectNulls={false} />
-            <Line type="monotone" dataKey="r30" name="Within 30 days" stroke="#8b5cf6" strokeWidth={1.5} connectNulls={false} />
+            <Line type="linear" dataKey="r7" name="Within 7 days" stroke="#06b6d4" strokeWidth={1.5} connectNulls={false} />
+            <Line type="linear" dataKey="r14" name="Within 14 days" stroke="#f59e0b" strokeWidth={3} connectNulls={false} />
+            <Line type="linear" dataKey="r30" name="Within 30 days" stroke="#8b5cf6" strokeWidth={1.5} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

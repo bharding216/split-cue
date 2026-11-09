@@ -29,16 +29,15 @@ export default function FirstRunUsersTable({ data }: Props) {
       {data.length === 0 ? (
         <p className="text-sm text-gray-600">No first runs yet.</p>
       ) : (
-        <div className="max-h-[560px] overflow-auto">
+        <div className="max-h-[560px] overflow-y-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-gray-900">
-              <tr className="text-left text-[11px] text-gray-600">
-                <th className="pb-2 font-normal">Runner</th>
-                <th className="pb-2 font-normal">First run</th>
-                <th className="pb-2 font-normal">Workout</th>
-                <th className="pb-2 font-normal">How</th>
-                <th className="pb-2 text-right font-normal">Min</th>
-                <th className="pb-2 font-normal">Came back</th>
+              <tr className="whitespace-nowrap text-left text-[11px] text-gray-600">
+                <th className="pb-2 pr-3 font-normal">Runner</th>
+                <th className="pb-2 pr-3 font-normal">First run</th>
+                <th className="pb-2 pr-3 font-normal">Workout</th>
+                <th className="pb-2 pr-3 text-right font-normal">Minutes</th>
+                <th className="pb-2 pr-3 font-normal">Came back</th>
                 <th className="pb-2 text-right font-normal">Runs</th>
               </tr>
             </thead>
@@ -61,16 +60,17 @@ export default function FirstRunUsersTable({ data }: Props) {
                   <td className="whitespace-nowrap py-1.5 pr-3 text-gray-400">
                     {formatDate(u.first_at)}
                   </td>
-                  <td className="py-1.5 pr-3 text-gray-300">
-                    {u.first_workout || '—'}
-                    <div className="text-[11px] text-gray-600">
-                      {u.first_category ?? ''}
+                  <td className="max-w-[220px] py-1.5 pr-3 text-gray-300">
+                    <div className="truncate" title={u.first_workout ?? undefined}>
+                      {u.first_workout || '—'}
+                    </div>
+                    <div className="truncate text-[11px] text-gray-600">
+                      {[u.first_category, u.first_source].filter(Boolean).join(' · ')}
                       {u.first_ended === 'stopped early' && (
                         <span className="ml-1 text-amber-400/70">stopped early</span>
                       )}
                     </div>
                   </td>
-                  <td className="py-1.5 pr-3 text-xs text-gray-400">{u.first_source ?? '—'}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums text-gray-400">
                     {u.first_minutes}
                   </td>
@@ -78,7 +78,12 @@ export default function FirstRunUsersTable({ data }: Props) {
                     {u.second_at ? (
                       <span className="text-emerald-400/90">
                         after {u.gap_days}d
-                        <div className="text-[11px] text-gray-600">{u.second_workout ?? ''}</div>
+                        <div
+                          className="max-w-[160px] truncate text-[11px] text-gray-600"
+                          title={u.second_workout ?? undefined}
+                        >
+                          {u.second_workout ?? ''}
+                        </div>
                       </span>
                     ) : (
                       <span className="text-gray-600">not yet</span>

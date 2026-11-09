@@ -650,9 +650,8 @@ grant select on public.first_run_returns to service_role;
 grant all on public.analytics_excluded_devices to service_role;
 
 -- ── Second-Run Retention ──────────────────────────────────────
--- By weekly cohort of first runs. eligible_N counts runners whose first run
--- was at least N days ago, so recent runners don't drag the rate down
--- before they've had the chance.
+-- By weekly cohort of first runs. A cohort only gets a 7 / 14 / 30-day rate
+-- once its whole week is that old; until then eligible_N and returned_N are 0.
 drop function if exists second_run_retention(int);
 create or replace function second_run_retention(cohort_weeks int default 12)
 returns table(
@@ -665,22 +664,26 @@ returns table(
   eligible_30 int,
   returned_30 int
 ) as $$
+  with f as (
+    select date_trunc('week', first_at) as wk, first_at, second_at
+    from first_run_returns
+    where first_at > date_trunc('week', now()) - (cohort_weeks || ' weeks')::interval
+  )
   select
-    to_char(date_trunc('week', first_at), 'YYYY-MM-DD') as cohort,
+    to_char(wk, 'YYYY-MM-DD') as cohort,
     count(*)::int as first_runners,
-    count(*) filter (where first_at <= now() - interval '7 days')::int,
-    count(*) filter (where first_at <= now() - interval '7 days'
-                       and second_at <= first_at + interval '7 days')::int,
-    count(*) filter (where first_at <= now() - interval '14 days')::int,
-    count(*) filter (where first_at <= now() - interval '14 days'
-                       and second_at <= first_at + interval '14 days')::int,
-    count(*) filter (where first_at <= now() - interval '30 days')::int,
-    count(*) filter (where first_at <= now() - interval '30 days'
-                       and second_at <= first_at + interval '30 days')::int
-  from first_run_returns
-  where first_at > date_trunc('week', now()) - (cohort_weeks || ' weeks')::interval
-  group by 1
-  order by 1;
+    (case when wk + interval '14 days' <= now() then count(*) else 0 end)::int,
+    (case when wk + interval '14 days' <= now()
+      then count(*) filter (where second_at <= first_at + interval '7 days') else 0 end)::int,
+    (case when wk + interval '21 days' <= now() then count(*) else 0 end)::int,
+    (case when wk + interval '21 days' <= now()
+      then count(*) filter (where second_at <= first_at + interval '14 days') else 0 end)::int,
+    (case when wk + interval '37 days' <= now() then count(*) else 0 end)::int,
+    (case when wk + interval '37 days' <= now()
+      then count(*) filter (where second_at <= first_at + interval '30 days') else 0 end)::int
+  from f
+  group by wk
+  order by wk;
 $$ language sql security definer;
 
 -- How first runs start, with 14-day return rates.
@@ -965,65 +968,50 @@ returns table(step text, user_count int) as $$
   order by s.ord;
 $$ language sql security definer;
 
--- ── Workout Retention Curve ───────────────────────────────────
--- For users with at least 1 qualifying run, what % went on to a 2nd, 3rd,
--- 4th, 5th. Cohorted by the month of their first run so we can see if
--- newer cohorts are "stickier".
+-- ── Run Ladder ────────────────────────────────────────────────
+-- Of runners whose first run was at least window_days ago, how many reached
+-- run 2, 3, 4, 5 within window_days. Runs less than 6 hours after the
+-- previous qualifying run merge into one session.
 drop function if exists workout_retention_curve(int);
-
-create or replace function workout_retention_curve(num_months int default 6)
-returns table(
-  cohort text,
-  workout_number int,
-  user_count int,
-  pct numeric
-) as $$
-  with user_completions as (
+drop function if exists run_ladder(int);
+create or replace function run_ladder(window_days int default 14)
+returns table(step int, eligible int, reached int) as $$
+  with q as (
     select
       anonymous_user_id,
-      max(run_number)::int as total_completions,
-      to_char(min(created_at), 'YYYY-MM') as first_month
+      created_at,
+      lag(created_at) over (partition by anonymous_user_id order by created_at) as prev_at
     from qualifying_runs
-    group by anonymous_user_id
   ),
-  workout_nums(n) as (
-    values (1), (2), (3), (4), (5)
-  ),
-  -- All-time aggregate
-  all_time as (
+  sessions as (
     select
-      'All'::text as cohort,
-      wn.n as workout_number,
-      count(*) filter (where uc.total_completions >= wn.n)::int as user_count,
-      round(
-        count(*) filter (where uc.total_completions >= wn.n)::numeric
-        / count(*)::numeric * 100, 1
-      ) as pct
-    from user_completions uc
-    cross join workout_nums wn
-    group by wn.n
+      anonymous_user_id,
+      created_at,
+      row_number() over (partition by anonymous_user_id order by created_at) as n
+    from q
+    where prev_at is null or created_at >= prev_at + interval '6 hours'
   ),
-  -- Per-month cohorts
-  monthly as (
-    select
-      uc.first_month as cohort,
-      wn.n as workout_number,
-      count(*) filter (where uc.total_completions >= wn.n)::int as user_count,
-      round(
-        count(*) filter (where uc.total_completions >= wn.n)::numeric
-        / count(*)::numeric * 100, 1
-      ) as pct
-    from user_completions uc
-    cross join workout_nums wn
-    where uc.first_month >= to_char(
-      now() - (num_months || ' months')::interval, 'YYYY-MM'
-    )
-    group by uc.first_month, wn.n
+  firsts as (
+    select anonymous_user_id, created_at as first_at
+    from sessions
+    where n = 1
+      and created_at <= now() - (window_days || ' days')::interval
+  ),
+  tops as (
+    select f.anonymous_user_id, max(s.n) as top
+    from firsts f
+    join sessions s on s.anonymous_user_id = f.anonymous_user_id
+    where s.created_at <= f.first_at + (window_days || ' days')::interval
+    group by f.anonymous_user_id
   )
-  select * from all_time
-  union all
-  select * from monthly
-  order by cohort, workout_number;
+  select
+    st.step,
+    (select count(*) from firsts)::int as eligible,
+    count(t.anonymous_user_id)::int as reached
+  from generate_series(1, 5) as st(step)
+  left join tops t on t.top >= st.step
+  group by st.step
+  order by st.step;
 $$ language sql security definer;
 
 -- ── Sharing Analytics ────────────────────────────────────────
@@ -1241,7 +1229,7 @@ begin
     'wau()',
     'week4_retention()',
     'workout_completion_stats(int)',
-    'workout_retention_curve(int)',
+    'run_ladder(int)',
     'workouts_per_day(int)',
     'second_run_retention(int)',
     'first_run_breakdown(int)',
@@ -1271,7 +1259,7 @@ begin
     'user_timeline(text, int)',
     'next_run_funnel(int)',
     'lapsed_survey_breakdown(int)',
-    'workout_retention_curve(int)',
+    'run_ladder(int)',
     'lapsed_survey_summary(int)',
     'lapsed_survey_comments(int, int)',
     'run_reminder_funnel(int)'

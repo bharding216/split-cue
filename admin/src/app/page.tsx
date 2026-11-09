@@ -12,7 +12,7 @@ import {
   getEventsOverTime,
   getTodaysEventsByUser,
   getTrainingPlansByUser,
-  getWorkoutRetentionCurve,
+  getRunLadder,
   getUsersByCountryPlatform,
   getUsersByAppVersion,
   getStravaStats,
@@ -24,7 +24,7 @@ import WorkoutsChart from '@/components/WorkoutsChart';
 import SignupsChart from '@/components/SignupsChart';
 import EventsChart from '@/components/EventsChart';
 import OnboardingFunnel from '@/components/OnboardingFunnel';
-import RetentionCurveChart from '@/components/RetentionCurveChart';
+import CountBars from '@/components/CountBars';
 import TodaysActivity from '@/components/TodaysActivity';
 import PlatformsSection from '@/components/PlatformsSection';
 import CountriesSection from '@/components/CountriesSection';
@@ -47,7 +47,7 @@ export default async function DashboardPage() {
     funnel,
     aiAdoption,
     planStats,
-    retentionCurve,
+    runLadder,
     dau,
     workouts,
     signups,
@@ -65,7 +65,7 @@ export default async function DashboardPage() {
     getOnboardingFunnel(30),
     getAIAdoptionRate(30),
     getTrainingPlanStats(30),
-    getWorkoutRetentionCurve(6),
+    getRunLadder(14),
     getDAUOverTime(30),
     getWorkoutsOverTime(30),
     getSignupsOverTime(30),
@@ -260,7 +260,14 @@ export default async function DashboardPage() {
         Workout Retention
       </h2>
       <section className="mb-8">
-        <RetentionCurveChart data={retentionCurve} />
+        <CountBars
+          title="Run Ladder"
+          subtitle={`${runLadder[0]?.eligible ?? 0} runners, first run ≥ 14 days ago`}
+          description="How many first-time runners reached each run within 14 days of their first. Runs less than 6 hours apart count as one."
+          mode="funnel"
+          rows={runLadder.map((s) => ({ label: `Run ${s.step}`, count: s.reached }))}
+          emptyText="No runners are 14 days past their first run yet."
+        />
       </section>
 
       {/* ── Trends ────────────────────────────────────────── */}

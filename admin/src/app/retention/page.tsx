@@ -9,7 +9,6 @@ import {
   getLapsedSurveySummary,
   getLapsedSurveyComments,
   getRunReminderFunnel,
-  getWorkoutRetentionCurve,
   type SecondRunCohort,
 } from '@/lib/queries';
 import StatCard from '@/components/StatCard';
@@ -17,7 +16,6 @@ import SignOutButton from '@/components/SignOutButton';
 import SecondRunCohortChart from '@/components/SecondRunCohortChart';
 import FirstRunBreakdown from '@/components/FirstRunBreakdown';
 import FirstRunUsersTable from '@/components/FirstRunUsersTable';
-import RetentionCurveChart from '@/components/RetentionCurveChart';
 import CountBars from '@/components/CountBars';
 import SurveyCommentsTable from '@/components/SurveyCommentsTable';
 
@@ -34,15 +32,24 @@ const SURVEY_LABELS: Record<string, string> = {
 
 type Window = 7 | 14 | 30;
 
-/** Pooled rate over every runner old enough for the window. */
+/** Rates from fewer eligible runners than this show as "—". */
+const MIN_SAMPLE = 10;
+
+/** Pooled rate over every cohort old enough for the window. */
 function pooled(cohorts: SecondRunCohort[], days: Window) {
   const eligible = cohorts.reduce((s, c) => s + c[`eligible_${days}`], 0);
   const returned = cohorts.reduce((s, c) => s + c[`returned_${days}`], 0);
   return {
     eligible,
     returned,
-    pct: eligible > 0 ? Math.round((returned / eligible) * 1000) / 10 : null,
+    pct: eligible >= MIN_SAMPLE ? Math.round((returned / eligible) * 1000) / 10 : null,
   };
+}
+
+function cardDetail(p: ReturnType<typeof pooled>, days: Window) {
+  return p.pct == null
+    ? `Not enough data yet (${p.eligible} eligible)`
+    : `${p.returned}/${p.eligible} first runners, cohorts ≥ ${days} days old`;
 }
 
 export default async function RetentionPage() {
@@ -51,7 +58,7 @@ export default async function RetentionPage() {
     data: { user },
   } = await auth.auth.getUser();
 
-  const [cohorts, breakdown, newRunners, funnel, reminders, survey, surveySummary, surveyComments, curve] =
+  const [cohorts, breakdown, newRunners, funnel, reminders, survey, surveySummary, surveyComments] =
     await Promise.all([
       getSecondRunRetention(12),
       getFirstRunBreakdown(90),
@@ -61,7 +68,6 @@ export default async function RetentionPage() {
       getLapsedSurveyBreakdown(90),
       getLapsedSurveySummary(90),
       getLapsedSurveyComments(90),
-      getWorkoutRetentionCurve(6),
     ]);
 
   const r7 = pooled(cohorts, 7);
@@ -101,19 +107,19 @@ export default async function RetentionPage() {
           label="Came Back in 14 Days"
           value={fmt(r14)}
           format={r14.pct == null ? 'number' : 'percent'}
-          detail={`${r14.returned}/${r14.eligible} first runners ≥ 14 days ago`}
+          detail={cardDetail(r14, 14)}
         />
         <StatCard
           label="Came Back in 7 Days"
           value={fmt(r7)}
           format={r7.pct == null ? 'number' : 'percent'}
-          detail={`${r7.returned}/${r7.eligible} first runners ≥ 7 days ago`}
+          detail={cardDetail(r7, 7)}
         />
         <StatCard
           label="Came Back in 30 Days"
           value={fmt(r30)}
           format={r30.pct == null ? 'number' : 'percent'}
-          detail={`${r30.returned}/${r30.eligible} first runners ≥ 30 days ago`}
+          detail={cardDetail(r30, 30)}
         />
         <StatCard
           label="First Runners"
@@ -178,10 +184,6 @@ export default async function RetentionPage() {
 
       <section className="mb-8">
         <FirstRunUsersTable data={newRunners} />
-      </section>
-
-      <section className="mb-8">
-        <RetentionCurveChart data={curve} />
       </section>
     </div>
   );
