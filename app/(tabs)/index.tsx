@@ -42,7 +42,8 @@ import {
 import { loadWorkouts, loadHistory, deleteWorkout, saveWorkouts } from '../../src/workout/workoutStorage';
 import { setTempWorkout, type WorkoutSource } from '../../src/workout/tempWorkoutCache';
 import { WorkoutCard } from '../../src/components/WorkoutCard';
-import { QUICK_START_TILES, quickStartFactory } from '../../src/workout/quickStartDefaults';
+import { QUICK_START_TILES, quickStartFactory, firstRunWorkout } from '../../src/workout/quickStartDefaults';
+import { FirstRunCard } from '../../src/components/FirstRunCard';
 import { hapticTap } from '../../src/audio/haptics';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useTrainingPlan } from '../../src/contexts/TrainingPlanContext';
@@ -593,6 +594,8 @@ function dayDiff(dateKey: string): number {
 
 /** Runs whose next-run card was already reported this session. */
 const nextRunCardTracked = new Set<string>();
+/** Whether the first-run card was already reported this session. */
+let firstRunCardTracked = false;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -602,6 +605,7 @@ export default function HomeScreen() {
   const [workouts, setWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
   const [lastRun, setLastRun] = useState<CompletedWorkout | null>(null);
+  const [isNewRunner, setIsNewRunner] = useState(false);
   const [showRecentSheet, setShowRecentSheet] = useState(false);
   const [showRunning101, setShowRunning101] = useState(false);
   const openRunning101 = (source: 'section_header' | 'empty_state') => {
@@ -638,11 +642,28 @@ export default function HomeScreen() {
     setWorkouts(data);
     setRecentRuns(getRecentWorkouts(history, RECENT_SHEET_LIMIT));
     setLastRun(history.find((r) => r.configuration && historyEntryQualifies(r)) ?? null);
+    setIsNewRunner(!history.some(historyEntryQualifies));
     setLoading(false);
   }, []);
 
   const upcomingWorkout = useMemo(() => nextUpcomingWorkout(planWorkouts), [planWorkouts]);
   const showNextRunCard = !todayPlanWorkout && !!lastRun;
+  const showFirstRunCard = !todayPlanWorkout && isNewRunner;
+  const firstRun = useMemo(() => firstRunWorkout(), []);
+
+  useEffect(() => {
+    if (!showFirstRunCard || firstRunCardTracked) return;
+    firstRunCardTracked = true;
+    track('first_run_card_shown', { history_runs: recentRuns.length });
+  }, [showFirstRunCard, recentRuns.length]);
+
+  const startFirstRun = () => {
+    hapticTap();
+    track('first_run_card_tapped');
+    const draft = { ...firstRun, id: generateId(), createdAt: Date.now(), updatedAt: Date.now() };
+    setTempWorkout(draft, { source: 'first_run_card', quickStartType: 'easy_run' });
+    router.push(`/workout/run/${draft.id}`);
+  };
   const lastRunKey = lastRun?.configuration ? structureKey(lastRun.configuration) : null;
   const inlineRecentRuns = (
     showNextRunCard ? recentRuns.filter((r) => structureKey(r.configuration!) !== lastRunKey) : recentRuns
@@ -809,10 +830,14 @@ export default function HomeScreen() {
           />
         )}
 
+        {showFirstRunCard && <FirstRunCard workout={firstRun} onStart={startFirstRun} />}
+
         {/* Quick Start */}
         <View style={styles.quickStartSection}>
           <Text style={styles.sectionLabel}>QUICK START</Text>
-          <Text style={styles.sectionSubtext}>What kind of run are you doing today?</Text>
+          <Text style={styles.sectionSubtext}>
+            {showFirstRunCard ? 'Or pick another kind of run' : 'What kind of run are you doing today?'}
+          </Text>
           <View style={styles.quickStartGrid}>
             {QUICK_START_TILES.map((tile) => (
               <TouchableOpacity

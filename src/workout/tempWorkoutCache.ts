@@ -24,7 +24,8 @@ export type WorkoutSource =
   | 'calendar'
   | 'ai_plan'
   | 'reminder'
-  | 'home_next_run';
+  | 'home_next_run'
+  | 'first_run_card';
 
 /** Metadata that rides along with a cached workout draft. */
 export interface TempWorkoutMeta {

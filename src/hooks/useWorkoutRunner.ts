@@ -90,6 +90,7 @@ import {
   markFirstRunTracked,
   type RunHistoryContext,
 } from '../analytics/workoutContext';
+import { rememberFalseStart, takeRestartContext } from '../analytics/falseStarts';
 import type { WorkoutSource } from '../workout/tempWorkoutCache';
 import {
   startLiveActivity,
@@ -184,6 +185,10 @@ export interface WorkoutRunnerControls {
   resume: () => void;
   skip: () => void;
   stop: () => void;
+  /** End the run without saving it and return to the pre-run screen. */
+  discard: () => void;
+  /** Record that the run settings sheet was opened mid-run. */
+  noteSettingsOpened: () => void;
 }
 
 /** Session metadata passed through from the temp cache to the history entry. */
@@ -218,6 +223,18 @@ export function useWorkoutRunner(
   const engineRef = useRef(engine);
   engineRef.current = engine;
   const settingsRef = useRef(settings);
+  /** Settings changed while the run was in progress, for analytics. */
+  const midRunSettingsChangedRef = useRef(new Set<string>());
+  if (settingsRef.current !== settings) {
+    const phase = engineRef.current.phase;
+    if (phase === 'running' || phase === 'paused') {
+      for (const key of Object.keys(settings) as (keyof AppSettings)[]) {
+        if (JSON.stringify(settingsRef.current[key]) !== JSON.stringify(settings[key])) {
+          midRunSettingsChangedRef.current.add(key);
+        }
+      }
+    }
+  }
   settingsRef.current = settings;
   /** Whether GPS tracking was started for this workout. */
   const usesGpsRef = useRef(resumeFrom?.usesGps ?? false);
@@ -268,6 +285,9 @@ export function useWorkoutRunner(
   const backgroundCountRef = useRef(0);
   const backgroundMsRef = useRef(0);
   const backgroundedAtRef = useRef<number | null>(null);
+  const pauseCountRef = useRef(0);
+  const skipCountRef = useRef(0);
+  const settingsOpenedCountRef = useRef(0);
   const workoutRef = useRef(workout);
   workoutRef.current = workout;
   const sessionMetaRef = useRef(sessionMeta);
@@ -289,6 +309,10 @@ export function useWorkoutRunner(
       const context = {
         background_count: backgroundCountRef.current,
         background_ms: backgroundMs,
+        pause_count: pauseCountRef.current,
+        skip_count: skipCountRef.current,
+        mid_run_settings_opened: settingsOpenedCountRef.current,
+        mid_run_settings_changed: [...midRunSettingsChangedRef.current],
         ...gpsQuality(paceTrackerRef.current.getFullTrack()),
       };
       const batteryStart = batteryAtStartRef.current;
@@ -824,6 +848,10 @@ export function useWorkoutRunner(
     backgroundCountRef.current = 0;
     backgroundMsRef.current = 0;
     backgroundedAtRef.current = null;
+    pauseCountRef.current = 0;
+    skipCountRef.current = 0;
+    settingsOpenedCountRef.current = 0;
+    midRunSettingsChangedRef.current = new Set();
     const startCueCtx = buildVerboseCueContext(next, 'intervalStart', settingsRef.current);
     playCue('intervalStart', settingsRef.current.audioCueMode, startCueCtx);
     if (settingsRef.current.hapticEnabled) hapticIntervalChange();
@@ -848,6 +876,7 @@ export function useWorkoutRunner(
     lastLAUpdate.current = Date.now();
     lastLAIndex.current = 0;
 
+    const workoutContext = buildWorkoutContext(workout, settingsRef.current, sessionMeta);
     const startProps = {
       workout_id: workout.id,
       workout_name: workout.name,
@@ -857,7 +886,7 @@ export function useWorkoutRunner(
       settings: settingsRef.current,
       template_id: sessionMeta?.templateId,
       plan_workout_id: sessionMeta?.planWorkoutId,
-      ...buildWorkoutContext(workout, settingsRef.current, sessionMeta),
+      ...workoutContext,
     };
     Promise.all([getPowerSnapshot(), runHistoryRef.current!]).then(([power, history]) => {
       batteryAtStartRef.current = power.batteryLevel;
@@ -869,6 +898,16 @@ export function useWorkoutRunner(
         low_power_mode: power.lowPowerMode,
       });
     });
+    takeRestartContext(workout.name, workoutContext, settingsRef.current).then((restart) => {
+      if (restart) {
+        track('workout_restarted', {
+          workout_id: workout.id,
+          workout_name: workout.name,
+          ...workoutContext,
+          ...restart,
+        });
+      }
+    });
   }, [buildLAProps, markIntervalStart, sessionMeta]);
 
   const pause = useCallback(() => {
@@ -878,6 +917,7 @@ export function useWorkoutRunner(
     setEngine(next);
     if (next.phase === 'paused') {
       pausedAtRef.current = Date.now();
+      pauseCountRef.current += 1;
       paceTrackerRef.current.pause();
     }
 
@@ -908,6 +948,7 @@ export function useWorkoutRunner(
     engineRef.current = next;
     setEngine(next);
     if (next.phase !== 'finished') {
+      skipCountRef.current += 1;
       firedWarnings.current.clear();
       firedCountdowns.current.clear();
       markIntervalStart();
@@ -959,6 +1000,7 @@ export function useWorkoutRunner(
         onWorkoutCompleted();
       }
 
+      const qualifies = runQualifies(next.totalElapsedMs, plannedMs);
       trackRunEnd('workout_abandoned', {
         workout_id: workout.id,
         workout_name: workout.name,
@@ -966,9 +1008,55 @@ export function useWorkoutRunner(
         completion_pct: plannedMs > 0
           ? Math.round((next.totalElapsedMs / plannedMs) * 100)
           : 0,
-      }, runQualifies(next.totalElapsedMs, plannedMs));
+      }, qualifies);
+      if (!qualifies) {
+        rememberFalseStart({
+          stoppedAt: Date.now(),
+          elapsedMs: next.totalElapsedMs,
+          ended: 'stopped',
+          workoutName: workout.name,
+          workoutContext: buildWorkoutContext(workout, settingsRef.current, sessionMetaRef.current),
+          settings: settingsRef.current,
+        });
+      }
     }
-  }, [workout.id, workout.name, captureSplit, saveHistoryEntry, trackRunEnd]);
+  }, [workout, captureSplit, saveHistoryEntry, trackRunEnd]);
+
+  const discard = useCallback(() => {
+    const s = engineRef.current;
+    const elapsedMs =
+      s.startedAt > 0
+        ? Math.max(0, (pausedAtRef.current ?? Date.now()) - s.startedAt - pausedMsRef.current)
+        : 0;
+    stopBackgroundLoop();
+    endLiveActivity();
+    paceTrackerRef.current.stop();
+
+    trackRunEnd('workout_discarded', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      elapsed_ms: elapsedMs,
+      interval_index: s.currentIndex,
+      was_paused: s.phase === 'paused',
+    }, false);
+    rememberFalseStart({
+      stoppedAt: Date.now(),
+      elapsedMs,
+      ended: 'discarded',
+      workoutName: workout.name,
+      workoutContext: buildWorkoutContext(workout, settingsRef.current, sessionMetaRef.current),
+      settings: settingsRef.current,
+    });
+
+    const fresh = createEngineState(workout);
+    engineRef.current = fresh;
+    setEngine(fresh);
+    clearActiveSession();
+  }, [workout, trackRunEnd]);
+
+  const noteSettingsOpened = useCallback(() => {
+    settingsOpenedCountRef.current += 1;
+  }, []);
 
   // Derived display values
   const ci = currentInterval(engine);
@@ -1036,5 +1124,7 @@ export function useWorkoutRunner(
     resume: resume_,
     skip: skip_,
     stop: stop_,
+    discard,
+    noteSettingsOpened,
   };
 }

@@ -146,12 +146,92 @@ function factoryDefault(type: QuickStartType): WorkoutDefinition {
 }
 
 /**
- * Return a workout draft for a Quick Start type.
- * Uses the last-used configuration for this type if available,
- * otherwise the factory default.
+ * Shorter versions of the factory defaults for someone who hasn't finished
+ * a run yet, so the first one is easy to complete. Types not listed here
+ * use the regular default.
  */
-export function quickStartFactory(type: QuickStartType): WorkoutDefinition {
-  return factoryDefault(type);
+function newRunnerDefault(type: QuickStartType): WorkoutDefinition | null {
+  const now = Date.now();
+  const base = { id: generateId(), createdAt: now, updatedAt: now };
+
+  switch (type) {
+    case 'distance':
+      return {
+        ...base,
+        name: 'Distance Run',
+        category: 'easy',
+        blocks: [
+          seg('run', dist(3219), { label: 'Easy Run', intensity: 'easy' }),
+        ],
+        targetDistanceMeters: 3219,
+      };
+
+    case 'timed':
+      return {
+        ...base,
+        name: 'Timed Run',
+        category: 'easy',
+        blocks: [
+          seg('run', time(1200), { label: 'Run', intensity: 'easy' }),
+        ],
+      };
+
+    case 'intervals':
+      return {
+        ...base,
+        name: 'Intervals',
+        category: 'intervals',
+        blocks: [
+          seg('warmup', time(300)),
+          repeat(4, [
+            seg('run', time(120), { label: 'Hard', intensity: 'hard' }),
+            seg('recovery', time(120), { label: 'Easy' }),
+          ]),
+          seg('cooldown', time(300)),
+        ],
+      };
+
+    case 'tempo':
+      return {
+        ...base,
+        name: 'Tempo Run',
+        category: 'tempo',
+        blocks: [
+          seg('warmup', time(300)),
+          seg('run', time(600), { label: 'Tempo', intensity: 'tempo' }),
+          seg('cooldown', time(300)),
+        ],
+      };
+
+    case 'easy_run':
+      return {
+        ...base,
+        name: 'Easy Run',
+        category: 'easy',
+        blocks: [
+          seg('run', time(1200), { label: 'Easy Run', intensity: 'easy' }),
+        ],
+      };
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Return a factory workout draft for a Quick Start type, shortened for
+ * runners who haven't finished a run yet.
+ */
+export function quickStartFactory(
+  type: QuickStartType,
+  opts?: { newRunner?: boolean },
+): WorkoutDefinition {
+  return (opts?.newRunner && newRunnerDefault(type)) || factoryDefault(type);
+}
+
+/** The run offered on the home screen to someone who hasn't finished a run yet. */
+export function firstRunWorkout(): WorkoutDefinition {
+  return { ...newRunnerDefault('easy_run')!, name: 'Your First Run' };
 }
 
 /**

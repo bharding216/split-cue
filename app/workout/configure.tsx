@@ -43,6 +43,7 @@ import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src
 import { track } from '../../src/analytics/track';
 import { prepareWorkoutAudio } from '../../src/audio/prepareVoice';
 import { hapticSuccess, hapticTap, hapticWarning } from '../../src/audio/haptics';
+import { getRunHistoryContext } from '../../src/analytics/workoutContext';
 
 export default function ConfigureWorkoutScreen() {
   const { id, quickStart } = useLocalSearchParams<{
@@ -54,12 +55,19 @@ export default function ConfigureWorkoutScreen() {
   const [meta, setMeta] = useState<TempWorkoutMeta>({});
   const [original, setOriginal] = useState<WorkoutDefinition | null>(null);
   const latestRef = useRef<WorkoutDefinition | null>(null);
+  const newRunnerRef = useRef(false);
+
+  useEffect(() => {
+    getRunHistoryContext().then((h) => {
+      newRunnerRef.current = h.is_first_run;
+    });
+  }, []);
 
   useEffect(() => {
     if (quickStart) {
       // Try last-used defaults first, then fall back to factory
-      loadQuickStartDefault(quickStart).then((saved) => {
-        setWorkout(saved ?? quickStartFactory(quickStart));
+      Promise.all([loadQuickStartDefault(quickStart), getRunHistoryContext()]).then(([saved, history]) => {
+        setWorkout(saved ?? quickStartFactory(quickStart, { newRunner: history.is_first_run }));
       });
       setOriginal(null);
       setMeta({ source: 'quick_start', quickStartType: quickStart });
@@ -127,8 +135,26 @@ export default function ConfigureWorkoutScreen() {
     } catch {
       hapticWarning();
       Alert.alert('Save Failed', 'Your workout could not be saved. Please try again.');
+      return;
     }
-  }, []);
+    // Saving is often where a new runner stops, so offer the run right away.
+    if (!newRunnerRef.current) return;
+    track('save_start_prompt_shown', { screen: 'configure' });
+    Alert.alert('Saved to My Workouts', 'Want to head out and run it now?', [
+      {
+        text: 'Later',
+        style: 'cancel',
+        onPress: () => track('save_start_prompt_answered', { screen: 'configure', start: false }),
+      },
+      {
+        text: 'Start Now',
+        onPress: () => {
+          track('save_start_prompt_answered', { screen: 'configure', start: true });
+          handleStartWorkout();
+        },
+      },
+    ]);
+  }, [handleStartWorkout]);
 
   const handleSaveChanges = useCallback(() => {
     const w = latestRef.current ?? workout;

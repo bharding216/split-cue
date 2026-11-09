@@ -35,7 +35,10 @@ import {
   categorizeWorkout,
   type CompletedWorkout,
 } from '../../../src/workout/workoutTypes';
-import { resolveWorkoutSource, runQualifies } from '../../../src/analytics/workoutContext';
+import { resolveWorkoutSource, runQualifies, getRunHistoryContext } from '../../../src/analytics/workoutContext';
+import { FirstRunCheck } from '../../../src/components/FirstRunCheck';
+import { buildCueContext } from '../../../src/audio/cuePhrases';
+import { DISCARD_WINDOW_MS } from '../../../src/analytics/falseStarts';
 import { suggestNextRun } from '../../../src/workout/nextRunSuggestion';
 import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/components/NextRunSuggestionCard';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
@@ -67,7 +70,7 @@ import {
 } from '../../../src/constants/theme';
 import { useLargeText, useScaledSize } from '../../../src/hooks/useLargeText';
 import { hapticTap } from '../../../src/audio/haptics';
-import { setDuckingEnabled, setVoiceIdentifier } from '../../../src/audio/audioManager';
+import { setDuckingEnabled, setVoiceIdentifier, playCue } from '../../../src/audio/audioManager';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
 import { PreRunSettings } from '../../../src/components/PreRunSettings';
 import { PreRunLocationCard, BackgroundLocationCard } from '../../../src/components/LocationPermissionCards';
@@ -258,6 +261,37 @@ function ActiveWorkoutInner({
     requestLocation().catch(() => {});
   }, [requestLocation]);
 
+  const [isFirstRun, setIsFirstRun] = useState(false);
+  useEffect(() => {
+    if (resumeFrom) return;
+    getRunHistoryContext().then((h) => setIsFirstRun(h.is_first_run));
+  }, [resumeFrom]);
+
+  const firstRunCheckTracked = useRef(false);
+  useEffect(() => {
+    if (!isFirstRun || state.phase !== 'idle' || locationAccess == null || firstRunCheckTracked.current) return;
+    firstRunCheckTracked.current = true;
+    track('first_run_check_shown', {
+      needs_gps: needsGps,
+      location_access: locationAccess,
+      audio_cue_mode: settings.audioCueMode,
+    });
+  }, [isFirstRun, state.phase, locationAccess, needsGps, settings.audioCueMode]);
+
+  const handleTurnOnVoice = useCallback(() => {
+    hapticTap();
+    track('first_run_check_voice_turned_on', { previous_mode: settings.audioCueMode });
+    onUpdateSettings({ audioCueMode: settings.audioCueMode === 'beeps' ? 'both' : 'voice' });
+  }, [settings.audioCueMode, onUpdateSettings]);
+
+  const handleTestCue = useCallback(() => {
+    hapticTap();
+    track('first_run_check_test_cue', { audio_cue_mode: settings.audioCueMode });
+    const [first, second] = state.intervals;
+    if (!first) return;
+    playCue('intervalStart', settings.audioCueMode, buildCueContext(first, second ?? null, settings.paceUnit));
+  }, [state.intervals, settings.audioCueMode, settings.paceUnit]);
+
   const handleStart = async () => {
     hapticTap();
     // Ask before the timer starts if the user skipped the pre-run card.
@@ -366,6 +400,13 @@ function ActiveWorkoutInner({
   const finishesRun = runner.isOpenEnded && state.currentIndex === state.intervals.length - 1;
 
   const handleStop = () => {
+    if (runner.elapsedSeconds * 1000 < DISCARD_WINDOW_MS) {
+      Alert.alert('Discard Run?', "Runs under a minute aren't saved.", [
+        { text: 'Keep Going', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => runner.discard() },
+      ]);
+      return;
+    }
     if (finishesRun) {
       Alert.alert('Finish Run', 'Done running?', [
         { text: 'Keep Going', style: 'cancel' },
@@ -538,6 +579,15 @@ function ActiveWorkoutInner({
 
     const preRunPanel = (
       <View style={[styles.preRunPanel, large && styles.preRunPanelLarge]}>
+        {isFirstRun && (
+          <FirstRunCheck
+            needsGps={needsGps}
+            locationAccess={locationAccess}
+            audioCueMode={settings.audioCueMode}
+            onTurnOnVoice={handleTurnOnVoice}
+            onTestCue={handleTestCue}
+          />
+        )}
         {needsGps && locationAccess && (
           <PreRunLocationCard access={locationAccess} onAllow={handleAllowLocation} />
         )}
@@ -800,6 +850,7 @@ function ActiveWorkoutInner({
           <TouchableOpacity
             onPress={() => {
               hapticTap();
+              runner.noteSettingsOpened();
               setSettingsVisible(true);
             }}
             hitSlop={12}
