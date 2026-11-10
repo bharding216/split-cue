@@ -15,6 +15,7 @@ import { requestBluetoothAccess, retryHeartRateConnection } from '../heartRate/h
 import { NO_READINGS_TIP } from '../heartRate/deviceGuides';
 import { openHeartRateHelp } from '../heartRate/openHeartRateHelp';
 import { hrConnectionLabel } from './HeartRateBadge';
+import { HrCloudConsentCard } from './HrCloudConsentCard';
 
 /** Show troubleshooting tips once connecting has taken this long. */
 const SLOW_CONNECT_MS = 10_000;
@@ -98,6 +99,7 @@ export function PreRunHeartRateCard() {
           <HelpLink section="troubleshooting" />
         </>
       )}
+      <HrCloudConsentCard source="pre_run" compact />
     </View>
   );
 }

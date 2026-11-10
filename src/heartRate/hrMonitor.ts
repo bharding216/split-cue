@@ -14,7 +14,7 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BleManager, State, type Subscription } from 'react-native-ble-plx';
-import { track } from '../analytics/track';
+import { trackHr } from '../analytics/hrEvents';
 import { base64ToBytes, parseHeartRateMeasurement } from './hrParser';
 import type { DiscoveredHrDevice, HrConnection, PairedHrDevice } from './hrTypes';
 
@@ -31,7 +31,7 @@ const POWER_ON_WAIT_MS = 3000;
  * screens that both hold (pre-run panel to the running workout) doesn't reconnect.
  */
 const RELEASE_GRACE_MS = 5000;
-/** Failed attempts, without ever connecting, before reporting `hr_connect_failed`. */
+/** Failed attempts, without ever connecting, before reporting `hr_connection_failed`. */
 const REPORT_FAILURE_AFTER_ATTEMPTS = 3;
 /** A reading older than this is no longer shown as the current heart rate. */
 const STALE_BPM_MS = 5000;
@@ -367,7 +367,7 @@ async function attemptConnect(id: string, gen: number) {
     lastError = e instanceof Error ? e.message : String(e);
     if (!everConnected && !failureReported && reconnectAttempt + 1 >= REPORT_FAILURE_AFTER_ATTEMPTS) {
       failureReported = true;
-      track('hr_connect_failed', {
+      trackHr('hr_connection_failed', {
         device_name: pairedDevice?.name ?? null,
         error: lastError.slice(0, 200),
         attempts: reconnectAttempt + 1,

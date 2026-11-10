@@ -12,6 +12,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  Switch,
+  Alert,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
@@ -35,6 +37,15 @@ import type { DiscoveredHrDevice } from '../../../src/heartRate/hrTypes';
 import { useHeartRateMonitor } from '../../../src/hooks/useHeartRateMonitor';
 import { hrConnectionLabel } from '../../../src/components/HeartRateBadge';
 import { openSupportEmail } from '../../../src/support/supportEmail';
+import { useAuth } from '../../../src/contexts/AuthContext';
+import {
+  PRIVACY_POLICY_URL,
+  revokeHrCloudConsent,
+  setHrCloudConsent,
+  useHrCloudConsent,
+} from '../../../src/heartRate/hrConsent';
+import { HrCloudConsentCard } from '../../../src/components/HrCloudConsentCard';
+import { syncAll } from '../../../src/sync/cloudSync';
 
 const SCAN_DURATION_MS = 15_000;
 
@@ -46,6 +57,8 @@ const ACCESS_MESSAGES: Record<Exclude<BluetoothStatus, 'ready'>, string> = {
 
 export default function HeartRateSettingsScreen() {
   const { device, connection, bpm, noReadings } = useHeartRateMonitor();
+  const { user } = useAuth();
+  const consent = useHrCloudConsent();
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<DiscoveredHrDevice[]>([]);
   const [accessIssue, setAccessIssue] = useState<Exclude<BluetoothStatus, 'ready'> | null>(null);
@@ -151,6 +164,30 @@ export default function HeartRateSettingsScreen() {
     });
   };
 
+  const toggleCloudSaving = (enabled: boolean) => {
+    hapticTap();
+    if (!user) return;
+    if (enabled) {
+      setHrCloudConsent(true, 'settings').then(() => syncAll(user.id));
+      return;
+    }
+    const revoke = async (deleteCloudCopies: boolean) => {
+      const { error } = await revokeHrCloudConsent(deleteCloudCopies);
+      if (error) {
+        Alert.alert('Couldn’t Delete', 'Your saved heart rate couldn’t be deleted. Please try again.');
+      }
+    };
+    Alert.alert(
+      'Stop Saving Heart Rate?',
+      'New runs’ heart rate readings will stay on this phone only. You can also delete the readings already saved to your account. Averages and per-interval stats stay with your runs.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep Saved Readings', onPress: () => revoke(false) },
+        { text: 'Delete Saved Readings', style: 'destructive', onPress: () => revoke(true) },
+      ],
+    );
+  };
+
   const visibleFound = found.filter((d) => d.id !== device?.id);
   const showGuides = !device || guidesOpen;
 
@@ -198,6 +235,7 @@ export default function HeartRateSettingsScreen() {
             </Text>
           )}
           {noReadings && <Text style={styles.hint}>{NO_READINGS_TIP}</Text>}
+          <HrCloudConsentCard source="paired" />
         </>
       )}
 
@@ -347,6 +385,39 @@ export default function HeartRateSettingsScreen() {
           your watch. No need to pair in your phone’s Bluetooth settings.
         </Text>
       )}
+
+      <Text style={styles.sectionTitle}>Your Heart Rate Data</Text>
+      {user ? (
+        <View style={styles.settingRow}>
+          <View style={styles.settingBody}>
+            <Text style={styles.settingLabel}>Save heart rate to my account</Text>
+            <Text style={styles.settingHint}>
+              Backs up each run’s readings and shows your graphs on your other devices. Averages
+              and per-interval stats are saved with your runs either way.
+            </Text>
+          </View>
+          <Switch
+            value={consent === 'granted'}
+            onValueChange={toggleCloudSaving}
+            disabled={consent == null}
+            trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+            thumbColor={Colors.white}
+            accessibilityLabel="Save heart rate to my account"
+          />
+        </View>
+      ) : (
+        <Text style={styles.hint}>
+          Your heart rate readings are stored on this phone. Sign in to choose whether to back them
+          up to your account.
+        </Text>
+      )}
+      <Text style={styles.hint}>
+        Your heart rate is private and never used for advertising. Deleting a run deletes its heart
+        rate, on this phone and in your account.{' '}
+        <Text style={styles.linkText} onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+          Privacy Policy
+        </Text>
+      </Text>
 
       <View style={styles.infoBox}>
         <Ionicons name="information-circle-outline" size={18} color={Colors.accent} />
@@ -582,6 +653,26 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.primary,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  settingBody: { flex: 1 },
+  settingLabel: {
+    fontSize: FontSize.md,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  settingHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
+    lineHeight: 18,
   },
   infoBox: {
     flexDirection: 'row',

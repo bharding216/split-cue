@@ -15,6 +15,7 @@ import { updateHistoryEntry, loadSettings, saveSettings } from '../workout/worko
 import type { CompletedWorkout, RoutePoint } from '../workout/workoutTypes';
 import type { HrSample } from '../heartRate/hrTypes';
 import { heartRateAtTime } from '../heartRate/hrStats';
+import { loadHeartRateSamples } from '../heartRate/hrSampleStore';
 
 // ── Redirect URI ─────────────────────────────────────────────
 // Strava's callback domain field only accepts a bare domain, so we
@@ -385,10 +386,13 @@ async function uploadWorkout(
 ): Promise<PushResult> {
   try {
     let gpx: string | undefined;
+    let hasHr = false;
 
     if (completed.route && completed.route.length >= 2) {
       const startTime = completed.completedAt - completed.totalDurationMs;
-      gpx = buildGpx(completed.route, completed.workoutName, startTime, completed.heartRate?.samples);
+      const hrSamples = completed.heartRate ? loadHeartRateSamples(completed.id) : null;
+      gpx = buildGpx(completed.route, completed.workoutName, startTime, hrSamples ?? undefined);
+      hasHr = !!hrSamples;
     }
 
     const { data, error } = await supabase.functions.invoke('strava-push', {
@@ -434,7 +438,7 @@ async function uploadWorkout(
     track('strava_workout_pushed', {
       workout_id: completed.workoutId,
       has_gpx: !!gpx,
-      has_hr: !!gpx && !!completed.heartRate,
+      has_hr: hasHr,
       activity_id: activityId,
       trigger,
     });

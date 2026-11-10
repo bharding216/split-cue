@@ -11,12 +11,14 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { IntervalSplit } from '../workout/workoutTypes';
-import type { WorkoutHeartRate } from '../heartRate/hrTypes';
+import type { HrSample, WorkoutHeartRate } from '../heartRate/hrTypes';
 import { HeartRateChart } from './HeartRateChart';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale, intervalColor } from '../constants/theme';
 
 interface Props {
   heartRate: WorkoutHeartRate;
+  /** Null when the readings aren't stored on this device; the graph is hidden. */
+  samples: HrSample[] | null;
   splits: IntervalSplit[] | undefined;
   width: number;
   isPro: boolean;
@@ -26,7 +28,7 @@ interface Props {
 const HIDDEN = '•••';
 const CELL_FONT_SCALE = MaxFontScale.display;
 
-export function HeartRateSection({ heartRate, splits, width, isPro, onUpgrade }: Props) {
+export function HeartRateSection({ heartRate, samples, splits, width, isPro, onUpgrade }: Props) {
   const intervalRows = (splits ?? []).filter((s) => s.avgHr != null);
   const showIntervals = intervalRows.length > 1;
 
@@ -46,7 +48,7 @@ export function HeartRateSection({ heartRate, splits, width, isPro, onUpgrade }:
         <Stat label="Max" value={heartRate.max} />
       </View>
 
-      <HeartRateChart samples={heartRate.samples} splits={splits} width={width} />
+      {samples && <HeartRateChart samples={samples} splits={splits} width={width} />}
 
       {showIntervals && (
         <View style={styles.tableCard}>

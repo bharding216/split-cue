@@ -17,6 +17,7 @@ import {
   holdHeartRateConnection,
 } from '../heartRate/hrMonitor';
 import type { HrConnection, HrSample } from '../heartRate/hrTypes';
+import { trackHr } from '../analytics/hrEvents';
 
 export interface HeartRateRecorder {
   /** Latest reading while recording, null when there's no recent one. */
@@ -64,6 +65,15 @@ export function useHeartRate(getElapsedMs: () => number): HeartRateRecorder {
     deviceNameRef.current = device.name;
     setDeviceName(device.name);
 
+    const startedAt = Date.now();
+    let connectReported = false;
+    const onConnection = (c: HrConnection) => {
+      setConnection(c);
+      if (c !== 'connected' || connectReported) return;
+      connectReported = true;
+      trackHr('hr_device_connected', { wait_seconds: Math.round((Date.now() - startedAt) / 1000) });
+    };
+
     const offBpm = addHeartRateListener((bpm, at) => {
       setLastBpm(bpm);
       if (pausedRef.current) return;
@@ -73,13 +83,13 @@ export function useHeartRate(getElapsedMs: () => number): HeartRateRecorder {
       if (last && t <= last.t) return;
       samples.push({ t, ts: at, bpm });
     });
-    const offConnection = addHrConnectionListener(setConnection);
+    const offConnection = addHrConnectionListener(onConnection);
     unsubscribeRef.current = () => {
       offBpm();
       offConnection();
     };
     releaseRef.current = holdHeartRateConnection();
-    setConnection(getHrConnection());
+    onConnection(getHrConnection());
   }, []);
 
   const pause = useCallback(() => {

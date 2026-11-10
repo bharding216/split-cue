@@ -66,6 +66,7 @@ import { usePaceTracker, type PaceTrackerResult } from './usePaceTracker';
 import { useHeartRate } from './useHeartRate';
 import {
   downsampleHeartRate,
+  heartRateCoverage,
   recoveryDrop,
   sliceHeartRate,
   summarizeHeartRate,
@@ -80,6 +81,10 @@ import {
   hapticWorkoutComplete,
 } from '../audio/haptics';
 import { saveCompletedWorkout } from '../workout/workoutStorage';
+import { saveHeartRateSamples } from '../heartRate/hrSampleStore';
+import { getHrCloudConsent } from '../heartRate/hrConsent';
+import { getHrConnection } from '../heartRate/hrMonitor';
+import { trackHr } from '../analytics/hrEvents';
 import { attachRunWeather } from '../weather/weatherService';
 import {
   saveActiveSession,
@@ -473,14 +478,16 @@ export function useWorkoutRunner(
   }, []);
 
   /** Save a completed workout to history and expose its ID for tag editing. */
-  const saveHistoryEntry = useCallback((elapsedMs: number) => {
+  const saveHistoryEntry = useCallback((elapsedMs: number, finished = true) => {
     if (historySaved.current) return;
     historySaved.current = true;
     const ps = paceTrackerRef.current.getPaceState();
     const trackSegments = paceTrackerRef.current.getTrackSegments();
-    const hrSamples = heartRateRef.current.getSamples();
-    const hrSummary = summarizeHeartRate(hrSamples);
+    const allHrSamples = heartRateRef.current.getSamples();
+    const hrSummary = summarizeHeartRate(allHrSamples);
+    const hrSamples = downsampleHeartRate(allHrSamples);
     const entryId = generateId();
+    if (hrSummary) saveHeartRateSamples(entryId, hrSamples);
     const entry: CompletedWorkout = {
       id: entryId,
       workoutId: workout.id,
@@ -496,10 +503,10 @@ export function useWorkoutRunner(
       quickStartType: sessionMeta?.quickStartType,
       heartRate: hrSummary
         ? {
-            samples: downsampleHeartRate(hrSamples),
             avg: hrSummary.avg,
             max: hrSummary.max,
             deviceName: heartRateRef.current.getDeviceName() ?? undefined,
+            sampleCount: hrSamples.length,
           }
         : undefined,
     };
@@ -507,11 +514,20 @@ export function useWorkoutRunner(
     setCompletedRoute(entry.route ?? null);
     setCompletedSplits(entry.splits ?? null);
     setCompletedHeartRate(entry.heartRate ?? null);
-    if (entry.heartRate && entry.heartRate.samples.length >= MIN_CONFIRMED_HR_SAMPLES) {
-      track('hr_recording_saved', {
+    if (entry.heartRate && finished) {
+      const coverage = heartRateCoverage(hrSamples, elapsedMs);
+      getHrCloudConsent().then((consent) => {
+        trackHr('hr_workout_completed', {
+          coverage_pct: Math.floor(coverage.fraction * 10) * 10,
+          dropout_count: coverage.dropouts,
+          cloud_consent: consent,
+        });
+      });
+    }
+    if (entry.heartRate && entry.heartRate.sampleCount >= MIN_CONFIRMED_HR_SAMPLES) {
+      trackHr('hr_recording_saved', {
         device_name: entry.heartRate.deviceName ?? null,
-        sample_count: entry.heartRate.samples.length,
-        avg_bpm: entry.heartRate.avg,
+        sample_count: entry.heartRate.sampleCount,
       });
     }
     saveCompletedWorkout(entry)
@@ -942,7 +958,10 @@ export function useWorkoutRunner(
       paceTrackerRef.current.start();
     }
     heartRateRef.current.reset();
-    heartRateRef.current.start();
+    heartRateRef.current.start().then(() => {
+      if (heartRateRef.current.getDeviceName() == null) return;
+      trackHr('hr_workout_started', { connected_at_start: getHrConnection() === 'connected' });
+    });
 
     // Mark first interval start for split tracking
     intervalStartElapsedRef.current = 0;
@@ -1069,7 +1088,7 @@ export function useWorkoutRunner(
 
     // Save partial workout to history
     if (next.totalElapsedMs > 0) {
-      saveHistoryEntry(next.totalElapsedMs);
+      saveHistoryEntry(next.totalElapsedMs, false);
 
       // Still prompt for review if the user completed a good chunk of the
       // workout (e.g. skipped the cooldown). 50% threshold avoids prompting

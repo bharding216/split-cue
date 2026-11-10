@@ -86,6 +86,26 @@ export function downsampleHeartRate(samples: HrSample[], stepMs = 1000): HrSampl
   return result;
 }
 
+export interface HrCoverage {
+  /** Share of the workout (0–1) with readings, counting gaps shorter than a dropout. */
+  fraction: number;
+  /** Times the recording dropped out after it started. */
+  dropouts: number;
+}
+
+/** How much of a workout the recording covers, for measuring connection reliability. */
+export function heartRateCoverage(samples: HrSample[], totalMs: number): HrCoverage {
+  if (samples.length === 0 || totalMs <= 0) return { fraction: 0, dropouts: 0 };
+  let covered = NOMINAL_SAMPLE_MS;
+  let dropouts = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const dt = samples[i].t - samples[i - 1].t;
+    if (dt > HR_MAX_GAP_MS) dropouts++;
+    else covered += dt;
+  }
+  return { fraction: Math.min(1, covered / totalMs), dropouts };
+}
+
 /** Split samples into continuous runs, breaking at dropouts. */
 export function splitAtDropouts(samples: HrSample[]): HrSample[][] {
   const runs: HrSample[][] = [];

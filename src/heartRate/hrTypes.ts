@@ -30,13 +30,16 @@ export interface DiscoveredHrDevice {
  */
 export type HrConnection = 'off' | 'connecting' | 'connected' | 'lost';
 
-/** Heart rate recorded with a completed workout. */
+/**
+ * Heart rate summary saved with a completed workout. The readings themselves
+ * are kept in a separate file per run (see hrSampleStore).
+ */
 export interface WorkoutHeartRate {
-  /** Downsampled to at most one reading per second. */
-  samples: HrSample[];
   avg: number;
   max: number;
   deviceName?: string;
+  /** Readings saved for the run, at most one per second. */
+  sampleCount: number;
 }
 
 /** Readings outside this range are sensor noise, not a runner's heart rate. */

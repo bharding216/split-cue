@@ -17,7 +17,10 @@ import {
   getUsersByAppVersion,
   getStravaStats,
   getStravaUsers,
+  getHeartRateFeatureStats,
+  getHeartRateRetention,
 } from '@/lib/queries';
+import HeartRateFeatureSection from '@/components/HeartRateFeatureSection';
 import StatCard from '@/components/StatCard';
 import DAUChart from '@/components/DAUChart';
 import WorkoutsChart from '@/components/WorkoutsChart';
@@ -58,6 +61,8 @@ export default async function DashboardPage() {
     appVersions,
     stravaStats,
     stravaUsers,
+    hrStats,
+    hrRetention,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -76,6 +81,8 @@ export default async function DashboardPage() {
     getUsersByAppVersion(30),
     getStravaStats(30),
     getStravaUsers(30),
+    getHeartRateFeatureStats(30),
+    getHeartRateRetention(90),
   ]);
 
   return (
@@ -237,6 +244,9 @@ export default async function DashboardPage() {
       <section className="mb-8">
         <StravaUsersBreakdown data={stravaUsers} />
       </section>
+
+      {/* ── Heart Rate ────────────────────────────────────── */}
+      <HeartRateFeatureSection stats={hrStats} retention={hrRetention} days={30} retentionDays={90} />
 
       {/* ── Platforms ─────────────────────────────────────── */}
       <PlatformsSection data={countries} />

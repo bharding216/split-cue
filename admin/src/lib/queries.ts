@@ -101,6 +101,32 @@ export type StravaStats = {
   uniquePushers: number;
 };
 
+export type HeartRateFeatureStats = {
+  activeDevices: number;
+  hrDevices: number;
+  adoptionPct: number;
+  hrWorkoutsStarted: number;
+  hrWorkoutsCompleted: number;
+  completionPct: number;
+  hrCompleters: number;
+  analysisViewers: number;
+  analysisPct: number;
+  upgradeClickers: number;
+  upgradeConverted: number;
+  conversionPct: number;
+  consentGranted: number;
+  consentDeclined: number;
+  connectionFailures: number;
+};
+
+export type HeartRateRetentionRow = {
+  cohort: string;
+  runners: number;
+  second_run_pct: number;
+  runs_per_active_week: number | null;
+  pro_pct: number;
+};
+
 export type StravaUser = {
   user_id: string;
   display_name: string;
@@ -495,6 +521,45 @@ export async function getRunReminderFunnel(days = 30): Promise<FunnelCount[]> {
 
   const { data } = await supabase.rpc('run_reminder_funnel', { num_days: days });
   return (data as FunnelCount[]) ?? [];
+}
+
+/**
+ * Heart rate feature adoption, completion, analysis views, upgrades, consent
+ * and connection failures (last N days). Built from usage events only.
+ */
+export async function getHeartRateFeatureStats(days = 30): Promise<HeartRateFeatureStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_feature_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    activeDevices: row?.active_devices ?? 0,
+    hrDevices: row?.hr_devices ?? 0,
+    adoptionPct: Number(row?.adoption_pct ?? 0),
+    hrWorkoutsStarted: row?.hr_workouts_started ?? 0,
+    hrWorkoutsCompleted: row?.hr_workouts_completed ?? 0,
+    completionPct: Number(row?.completion_pct ?? 0),
+    hrCompleters: row?.hr_completers ?? 0,
+    analysisViewers: row?.analysis_viewers ?? 0,
+    analysisPct: Number(row?.analysis_pct ?? 0),
+    upgradeClickers: row?.upgrade_clickers ?? 0,
+    upgradeConverted: row?.upgrade_converted ?? 0,
+    conversionPct: Number(row?.conversion_pct ?? 0),
+    consentGranted: row?.consent_granted ?? 0,
+    consentDeclined: row?.consent_declined ?? 0,
+    connectionFailures: row?.connection_failures ?? 0,
+  };
+}
+
+/**
+ * Runners who recorded heart rate vs. those who didn't, for runners whose
+ * first qualifying run was in the last N days.
+ */
+export async function getHeartRateRetention(days = 90): Promise<HeartRateRetentionRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_retention_comparison', { num_days: days });
+  return (data as HeartRateRetentionRow[]) ?? [];
 }
 
 /**

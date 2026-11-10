@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   downsampleHeartRate,
   heartRateAtTime,
+  heartRateCoverage,
   recoveryDrop,
   sliceHeartRate,
   splitAtDropouts,
@@ -71,6 +72,14 @@ test('splits the line at dropouts', () => {
   const samples = [...series([100, 101, 102]), ...series([110, 111], 1000, 30_000)];
   assert.deepEqual(splitAtDropouts(samples).map((run) => run.length), [3, 2]);
   assert.deepEqual(splitAtDropouts([]), []);
+});
+
+test('measures coverage and dropouts', () => {
+  const samples = [...series([100, 101, 102]), ...series([110, 111], 1000, 30_000)];
+  const coverage = heartRateCoverage(samples, 40_000);
+  assert.equal(coverage.dropouts, 1);
+  assert.equal(coverage.fraction, 4000 / 40_000);
+  assert.deepEqual(heartRateCoverage([], 40_000), { fraction: 0, dropouts: 0 });
 });
 
 test('finds the nearest reading by wall-clock time within tolerance', () => {

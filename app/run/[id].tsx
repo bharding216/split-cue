@@ -4,7 +4,7 @@
  * tags and notes), achievements, and sharing (Strava, Challenge a Friend).
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -52,7 +52,7 @@ import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
 import { RunSplits } from '../../src/components/RunSplits';
 import { HeartRateSection } from '../../src/components/HeartRateSection';
 import { useSubscription } from '../../src/contexts/SubscriptionContext';
-import { track } from '../../src/analytics/track';
+import { trackHr } from '../../src/analytics/hrEvents';
 import { RunWeatherCard } from '../../src/components/RunWeatherCard';
 import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
@@ -60,6 +60,7 @@ import { StravaPushButton } from '../../src/strava/StravaPushButton';
 import { shareWorkoutResults } from '../../src/sharing/shareWorkout';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
 import { useLargeText } from '../../src/hooks/useLargeText';
+import { useHeartRateSamples } from '../../src/hooks/useHeartRateSamples';
 
 function formatDateFull(epoch: number): string {
   return new Date(epoch).toLocaleDateString(undefined, {
@@ -133,7 +134,7 @@ export default function RunDetailsScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const large = useLargeText();
-  const { tier } = useSubscription();
+  const { tier, loading: subscriptionLoading } = useSubscription();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
   const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
@@ -145,6 +146,15 @@ export default function RunDetailsScreen() {
   const [runRecords, setRunRecords] = useState<PersonalRecord[]>([]);
   const [runAwards, setRunAwards] = useState<AwardBadge[]>([]);
   const [annotations, setAnnotations] = useState<Annotations>({ tags: [], notes: '' });
+  const hrSamples = useHeartRateSamples(run?.heartRate ? run.id : null);
+  const isPro = tier === 'pro';
+
+  const hrViewedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!run?.heartRate || subscriptionLoading || hrViewedRef.current === run.id) return;
+    hrViewedRef.current = run.id;
+    trackHr('hr_analysis_viewed', { is_pro: isPro, has_graph: !!hrSamples });
+  }, [run, hrSamples, isPro, subscriptionLoading]);
 
   useEffect(() => {
     // The lock waits for any write still in flight, such as the feeling
@@ -308,15 +318,16 @@ export default function RunDetailsScreen() {
           </View>
         )}
 
-        {run.heartRate && run.heartRate.samples.length >= 2 && (
+        {run.heartRate && (
           <View style={styles.section}>
             <HeartRateSection
               heartRate={run.heartRate}
+              samples={hrSamples}
               splits={run.splits}
               width={chartWidth}
-              isPro={tier === 'pro'}
+              isPro={isPro}
               onUpgrade={() => {
-                track('hr_pro_preview_tapped', { run_id: run.id });
+                trackHr('hr_pro_upgrade_clicked', { source: 'run_details' });
                 router.push('/paywall');
               }}
             />

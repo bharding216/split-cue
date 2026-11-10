@@ -18,6 +18,7 @@ import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
 import { sanitizeBlock, type AIContext } from './aiWorkoutService';
 import { buildHistorySummary, serializeHistorySummary } from './historySummary';
+import { buildCompletedWorkoutPayload } from './runPayload';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -614,29 +615,8 @@ export async function reviewCompletedRun(input: {
     )
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const distance = completedRun.totalDistanceMeters ?? null;
-  const averagePace = distance && distance > 0
-    ? (completedRun.totalDurationMs / 60_000) / (distance / 1609.344)
-    : null;
-
-  const splits = (completedRun.splits ?? [])
-    .filter((s) => s.avgPaceMinPerMile != null && isFinite(s.avgPaceMinPerMile) && s.distanceMeters)
-    .map((s) => ({
-      label: s.label,
-      type: s.type,
-      pace_min_per_mile: s.avgPaceMinPerMile!,
-      distance_meters: s.distanceMeters!,
-      target_pace: s.targetPace ?? null,
-    }));
-
   const analysis = await analyzeCompletedWorkout({
-    completed_workout: {
-      name: completedRun.workoutName,
-      total_duration_ms: completedRun.totalDurationMs,
-      total_distance_meters: distance,
-      splits: splits.length > 0 ? splits : undefined,
-      average_pace_min_per_mile: averagePace,
-    },
+    completed_workout: buildCompletedWorkoutPayload(completedRun),
     planned_workout: {
       day_label: plannedWorkout.day_label ?? 'Training',
       description: plannedWorkout.description ?? undefined,
