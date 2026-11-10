@@ -35,6 +35,8 @@ import {
   CueBasisToggle,
   CueDistanceChips,
   PROGRESS_CUE_BASES,
+  AUTO_TIME_STEP_LABEL,
+  AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 
 const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
@@ -96,10 +98,10 @@ export default function PaceSettingsScreen() {
           <Text style={styles.sectionTitle}>Pace Cue Frequency</Text>
           <Text style={styles.sectionSub}>
             {settings.paceCueBasis === 'auto'
-              ? 'Announce pace by time in timed intervals and by distance in distance intervals'
+              ? 'Announce pace by time in timed intervals and Free Runs, and by distance in distance intervals. To hear pace every distance on every run, choose By distance.'
               : settings.paceCueBasis === 'distance'
-                ? 'Announce your pace each time you cover this distance'
-                : 'How often to announce your current pace during each interval'}
+                ? 'Announce your pace each time you cover this distance, on every run'
+                : 'How often to announce your current pace, on every run'}
           </Text>
           <CueBasisToggle
             value={settings.paceCueBasis}
@@ -107,7 +109,7 @@ export default function PaceSettingsScreen() {
             onChange={(paceCueBasis) => update({ paceCueBasis })}
           />
           {settings.paceCueBasis === 'auto' && (
-            <Text style={styles.stepLabel}>Timed intervals, every</Text>
+            <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
           )}
           {settings.paceCueBasis !== 'distance' && (
             <View style={styles.row}>
@@ -138,7 +140,7 @@ export default function PaceSettingsScreen() {
             </View>
           )}
           {settings.paceCueBasis === 'auto' && (
-            <Text style={styles.stepLabel}>Distance intervals, every</Text>
+            <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
           )}
           {settings.paceCueBasis !== 'time' && (
             <CueDistanceChips

@@ -49,6 +49,8 @@ import {
   CueBasisToggle,
   CueDistanceChips,
   PROGRESS_CUE_BASES,
+  AUTO_TIME_STEP_LABEL,
+  AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 import { loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../../src/workout/tempWorkoutCache';
@@ -1258,10 +1260,10 @@ function MidRunSettingsSheet({
             <Text style={sheetStyles.sectionTitle}>Interval Progress</Text>
             <Text style={sheetStyles.sectionSub}>
               {settings.progressCueBasis === 'auto'
-                ? 'Elapsed time in timed intervals, distance and time in distance intervals'
+                ? 'Elapsed time in timed intervals and Free Runs, distance and time in distance intervals. Pace is set separately below.'
                 : settings.progressCueBasis === 'distance'
-                  ? 'Announce distance covered during each interval'
-                  : 'Announce elapsed time during intervals'}
+                  ? 'Announce distance covered during each interval. Pace is set separately below.'
+                  : 'Announce elapsed time during intervals. Pace is set separately below.'}
             </Text>
             <CueBasisToggle
               value={settings.progressCueBasis}
@@ -1269,7 +1271,7 @@ function MidRunSettingsSheet({
               onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
             />
             {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+              <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
             )}
             {settings.progressCueBasis !== 'distance' && (
               <View style={sheetStyles.chipRow}>
@@ -1299,7 +1301,7 @@ function MidRunSettingsSheet({
               </View>
             )}
             {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+              <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
             )}
             {settings.progressCueBasis !== 'time' && (
               <CueDistanceChips
@@ -1373,10 +1375,10 @@ function MidRunSettingsSheet({
                 {/* Pace cue frequency */}
                 <Text style={sheetStyles.sectionSub}>
                   {settings.paceCueBasis === 'auto'
-                    ? 'Pace by time in timed intervals, by distance in distance intervals'
+                    ? 'Pace by time in timed intervals and Free Runs, by distance in distance intervals. Choose By distance to hear pace every distance on every run.'
                     : settings.paceCueBasis === 'distance'
-                      ? 'Announce pace each time you cover this distance'
-                      : 'Pace cue frequency'}
+                      ? 'Announce pace each time you cover this distance, on every run'
+                      : 'Announce pace on this timer, on every run'}
                 </Text>
                 <CueBasisToggle
                   value={settings.paceCueBasis}
@@ -1384,7 +1386,7 @@ function MidRunSettingsSheet({
                   onChange={(paceCueBasis) => onUpdate({ paceCueBasis })}
                 />
                 {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+                  <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
                 )}
                 {settings.paceCueBasis !== 'distance' && (
                   <View style={sheetStyles.chipRow}>
@@ -1414,7 +1416,7 @@ function MidRunSettingsSheet({
                   </View>
                 )}
                 {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+                  <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
                 )}
                 {settings.paceCueBasis !== 'time' && (
                   <CueDistanceChips

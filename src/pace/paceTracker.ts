@@ -14,6 +14,8 @@ import {
   MIN_SAMPLES_FOR_PACE,
   MIN_PACE_SPAN_SECONDS,
   Odometer,
+  PositionCheck,
+  createOdometer,
   createPaceState,
 } from './paceTypes';
 
@@ -99,11 +101,21 @@ export function advanceOdometer(
   odo: Odometer,
   sample: GpsSample,
 ): { odometer: Odometer; meters: number } {
+  const step = advanceFix(odo, sample);
+  const { check, extra } = advancePositionCheck(odo.check, sample, step.meters);
+  return {
+    odometer: { prev: sample, anchor: step.anchor, speedReported: step.speedReported, check },
+    meters: step.meters + extra,
+  };
+}
+
+function advanceFix(
+  odo: Odometer,
+  sample: GpsSample,
+): { anchor: GpsSample; speedReported: boolean; meters: number } {
   const speedReported = odo.speedReported || (sample.speed != null && sample.speed > 0);
   const { prev } = odo;
-  if (!prev) {
-    return { odometer: { prev: sample, anchor: sample, speedReported }, meters: 0 };
-  }
+  if (!prev) return { anchor: sample, speedReported, meters: 0 };
 
   const dtMs = sample.timestamp - prev.timestamp;
   if (
@@ -114,15 +126,62 @@ export function advanceOdometer(
     hasSpeed(sample)
   ) {
     const meters = ((prev.speed + sample.speed) / 2) * (dtMs / 1000);
-    return { odometer: { prev: sample, anchor: sample, speedReported }, meters };
+    return { anchor: sample, speedReported, meters };
   }
 
   const anchor = odo.anchor ?? prev;
   const straight = haversineMeters(anchor, sample);
   if (straight > Math.max(anchor.accuracy + sample.accuracy, MIN_JITTER_METERS)) {
-    return { odometer: { prev: sample, anchor: sample, speedReported }, meters: straight };
+    return { anchor: sample, speedReported, meters: straight };
   }
-  return { odometer: { prev: sample, anchor, speedReported }, meters: 0 };
+  return { anchor, speedReported, meters: 0 };
+}
+
+/** Length of each span whose mean position the check compares. */
+const CHECK_SPAN_MS = 10_000;
+/** Allowance for the residual jitter between two spans' mean positions. */
+const CHECK_JITTER_METERS = 3;
+
+/**
+ * Some phones report speed well below the true pace for a whole run (one
+ * logged run read 13% short with good fixes every second). Each time a span
+ * closes, top up the distance counted in it to the straight line from the
+ * previous span's mean position, less a jitter allowance.
+ */
+function advancePositionCheck(
+  check: PositionCheck,
+  sample: GpsSample,
+  meters: number,
+): { check: PositionCheck; extra: number } {
+  if (check.startedAt == null || sample.timestamp - check.startedAt < CHECK_SPAN_MS) {
+    return {
+      check: {
+        startedAt: check.startedAt ?? sample.timestamp,
+        latSum: check.latSum + sample.latitude,
+        lngSum: check.lngSum + sample.longitude,
+        count: check.count + 1,
+        meters: check.meters + meters,
+        prevCentroid: check.prevCentroid,
+      },
+      extra: 0,
+    };
+  }
+
+  const centroid = { latitude: check.latSum / check.count, longitude: check.lngSum / check.count };
+  const extra = check.prevCentroid
+    ? Math.max(0, haversineMeters(check.prevCentroid, centroid) - CHECK_JITTER_METERS - check.meters)
+    : 0;
+  return {
+    check: {
+      startedAt: sample.timestamp,
+      latSum: sample.latitude,
+      lngSum: sample.longitude,
+      count: 1,
+      meters,
+      prevCentroid: centroid,
+    },
+    extra,
+  };
 }
 
 /**
@@ -163,7 +222,7 @@ export function resumePaceState(state: PaceState): PaceState {
   return {
     ...clearPace(state),
     samples: [],
-    odometer: { prev: null, anchor: null, speedReported: state.odometer.speedReported },
+    odometer: { ...createOdometer(), speedReported: state.odometer.speedReported },
   };
 }
 
@@ -189,6 +248,25 @@ function averageReportedSpeed(samples: GpsSample[]): number | null {
     return null;
   }
   return speeds.reduce((sum, v) => sum + v, 0) / speeds.length;
+}
+
+/**
+ * Lower bound on speed from position: the straight line between the mean
+ * positions of the window's earlier and later halves, less the same jitter
+ * allowance the odometer uses. Guards against under-reported speed.
+ */
+function positionSpeedFloor(samples: GpsSample[]): number {
+  const mid = (samples[0].timestamp + samples[samples.length - 1].timestamp) / 2;
+  const halves = [samples.filter((s) => s.timestamp < mid), samples.filter((s) => s.timestamp >= mid)];
+  if (halves.some((h) => h.length === 0)) return 0;
+  const [a, b] = halves.map((h) => ({
+    latitude: h.reduce((sum, s) => sum + s.latitude, 0) / h.length,
+    longitude: h.reduce((sum, s) => sum + s.longitude, 0) / h.length,
+    timestamp: h.reduce((sum, s) => sum + s.timestamp, 0) / h.length,
+  }));
+  const seconds = (b.timestamp - a.timestamp) / 1000;
+  if (!(seconds > 0)) return 0;
+  return Math.max(0, haversineMeters(a, b) - CHECK_JITTER_METERS) / seconds;
 }
 
 /** Compute pace over a rolling time window. */
@@ -231,6 +309,8 @@ function computeRollingPace(
       return { paceMps: null, paceMinPerMile: null, paceMinPerKm: null };
     }
     mps = distance / elapsed;
+  } else {
+    mps = Math.max(mps, positionSpeedFloor(windowSamples));
   }
 
   // Guard against unrealistically slow or fast readings
