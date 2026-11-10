@@ -112,6 +112,8 @@ const SESSION_END_GRACE_MS = 10_000;
 
 /** How often the in-progress workout is saved while running, for resume after the app is closed. */
 const SESSION_SAVE_INTERVAL_MS = 15_000;
+/** Saved 1 Hz samples needed before a recording counts toward the website's "Confirmed working" list. */
+const MIN_CONFIRMED_HR_SAMPLES = 60;
 
 /** Build a verbose CueContext from the engine state for rich voice announcements. */
 function buildVerboseCueContext(
@@ -505,6 +507,13 @@ export function useWorkoutRunner(
     setCompletedRoute(entry.route ?? null);
     setCompletedSplits(entry.splits ?? null);
     setCompletedHeartRate(entry.heartRate ?? null);
+    if (entry.heartRate && entry.heartRate.samples.length >= MIN_CONFIRMED_HR_SAMPLES) {
+      track('hr_recording_saved', {
+        device_name: entry.heartRate.deviceName ?? null,
+        sample_count: entry.heartRate.samples.length,
+        avg_bpm: entry.heartRate.avg,
+      });
+    }
     saveCompletedWorkout(entry)
       .then(() =>
         attachRunWeather(entry).catch((e) => console.warn('Failed to attach run weather:', e)),

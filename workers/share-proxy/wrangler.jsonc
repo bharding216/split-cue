@@ -8,5 +8,9 @@
   },
   "routes": [
     { "pattern": "splitcue.app/*", "zone_name": "splitcue.app" }
-  ]
+  ],
+  "vars": {
+    // Publishable (client-safe) key; only grants what the anon role can do.
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_6nGFQBroiJHgyCAt8Oo8fA_YqWvEs_I"
+  }
 }

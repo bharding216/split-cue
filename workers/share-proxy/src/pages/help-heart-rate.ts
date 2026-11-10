@@ -35,7 +35,37 @@ function guideSection(g: DeviceGuide): string {
         ${g.note ? `<p class="hr-note">${esc(g.note)}</p>` : ''}`;
 }
 
-export function helpHeartRatePage(): string {
+/**
+ * Models confirmed by real recordings (see `confirmed_hr_devices()` in Supabase), plus
+ * any added by hand. Cached at the edge for an hour; falls back to the hand-added list.
+ */
+export async function fetchConfirmedHrDevices(supabaseUrl: string, apiKey: string | undefined): Promise<string[]> {
+  let fetched: string[] = [];
+  if (apiKey) {
+    try {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/confirmed_hr_devices`, {
+        headers: { apikey: apiKey, Accept: 'application/json' },
+        signal: AbortSignal.timeout(2000),
+        cf: { cacheTtl: 3600, cacheEverything: true },
+      });
+      if (resp.ok) {
+        const rows = (await resp.json()) as { model: string }[];
+        fetched = rows.map((r) => r.model).filter(Boolean);
+      }
+    } catch {
+      // Leave the list to the hand-added models.
+    }
+  }
+  const seen = new Set<string>();
+  return [...CONFIRMED_DEVICES, ...fetched].filter((m) => {
+    const key = m.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function helpHeartRatePage(confirmedDevices: string[] = CONFIRMED_DEVICES): string {
   const supported = DEVICE_GUIDES.filter((g) => g.kind !== 'limited');
   const limited = DEVICE_GUIDES.filter((g) => g.kind === 'limited');
 
@@ -106,10 +136,10 @@ export function helpHeartRatePage(): string {
         <p>Heart rate is included when you upload a GPS run to Strava. Treadmill (non-GPS) workouts don’t include heart rate on Strava yet.</p>
 
         ${
-          CONFIRMED_DEVICES.length > 0
+          confirmedDevices.length > 0
             ? `<h2 id="confirmed">Confirmed working</h2>
-        <p>Models runners have recorded successfully with SplitCue:</p>
-        ${list(CONFIRMED_DEVICES)}`
+        <p>Models runners have recorded workouts with in SplitCue. This list updates automatically as more runners connect their monitors.</p>
+        ${list(confirmedDevices)}`
             : ''
         }
 

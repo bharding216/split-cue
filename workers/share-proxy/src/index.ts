@@ -33,11 +33,15 @@ import { paceCalculatorPage } from './pages/pace-calculator';
 import { beginnerRunWalkPage } from './pages/beginner-run-walk';
 import { audioVsWatchesPage } from './pages/audio-vs-watches';
 import { deleteAccountPage } from './pages/delete-account';
-import { helpHeartRatePage } from './pages/help-heart-rate';
+import { fetchConfirmedHrDevices, helpHeartRatePage } from './pages/help-heart-rate';
 import { robotsTxt, sitemapXml, llmsTxt } from './static';
 
-const SUPABASE_SHARE_FN =
-  'https://oakhqqrxsavmoeqlzcny.supabase.co/functions/v1/share';
+const SUPABASE_URL = 'https://oakhqqrxsavmoeqlzcny.supabase.co';
+const SUPABASE_SHARE_FN = `${SUPABASE_URL}/functions/v1/share`;
+
+interface Env {
+  SUPABASE_PUBLISHABLE_KEY?: string;
+}
 
 const BUNDLE_ID = 'com.toddly.runningintervals';
 // Production is signed by Surmount; dev/preview are still signed by Toddly.
@@ -106,13 +110,12 @@ const PAGE_ROUTES: Record<string, () => string> = {
   '/compare/pacecue-vs-runna': compareRunnaPage,
   '/tools/pace-calculator': paceCalculatorPage,
   '/delete-account': deleteAccountPage,
-  '/help/heart-rate-monitors': helpHeartRatePage,
 };
 
 // ── Worker ───────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     let { pathname } = url;
 
@@ -201,6 +204,12 @@ export default {
       });
     }
 
+    // ── Help pages with live data ────────────────────────────────
+    if (pathname === '/help/heart-rate-monitors') {
+      const confirmed = await fetchConfirmedHrDevices(SUPABASE_URL, env.SUPABASE_PUBLISHABLE_KEY);
+      return htmlResponse(helpHeartRatePage(confirmed));
+    }
+
     // ── Marketing pages ──────────────────────────────────────────
     const pageGenerator = PAGE_ROUTES[pathname];
     if (pageGenerator) {
@@ -210,7 +219,7 @@ export default {
     // ── 404 ──────────────────────────────────────────────────────
     return htmlResponse(notFoundPage(), 404);
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Env>;
 
 const APP_STORE_URL = 'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
