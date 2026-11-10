@@ -128,7 +128,7 @@ async function ensureClipsNow(
   for (let i = 0; i < missing.length; i += BATCH_SIZE) {
     const batch = missing.slice(i, i + BATCH_SIZE);
     const { data, error } = await supabase.functions.invoke('voice-clips', {
-      body: { voiceId, clips: batch.map(([, clip]) => toClipRequest(clip)) },
+      body: { voiceId, clips: batch.map(([, clip]) => toClipRequest(clip)), clipFormat: 'stitched' },
     });
     if (error || data?.error) {
       throw new Error(data?.error ?? error?.message ?? 'Voice clip request failed');
