@@ -152,6 +152,10 @@ export function renderPage(meta: PageMeta, body: string): string {
           <ul class="footer-links">
             <li><a href="${APP_STORE_URL}" rel="noopener">App Store (iPhone)</a></li>
           </ul>
+          <h3 class="footer-heading" style="margin-top: 24px;">Help</h3>
+          <ul class="footer-links">
+            <li><a href="/help/heart-rate-monitors">Heart Rate Monitors</a></li>
+          </ul>
         </div>
       </div>
       <p class="footer-copy">&copy; ${new Date().getFullYear()} SplitCue. All rights reserved.</p>

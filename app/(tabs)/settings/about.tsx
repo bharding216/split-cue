@@ -19,6 +19,7 @@ import * as StoreReview from 'expo-store-review';
 import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
+import { openSupportEmail } from '../../../src/support/supportEmail';
 
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
@@ -58,12 +59,7 @@ export default function AboutSettingsScreen() {
         onPress={() => {
           hapticTap();
           const version = Constants.expoConfig?.version ?? '?';
-          const subject = encodeURIComponent(
-            `SplitCue Feedback (v${version})`,
-          );
-          Linking.openURL(
-            `mailto:brandon@getsurmount.com?subject=${subject}`,
-          );
+          openSupportEmail({ subject: `SplitCue Feedback (v${version})` });
         }}
         activeOpacity={0.7}
       >

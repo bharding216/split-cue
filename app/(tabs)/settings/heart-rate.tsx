@@ -1,5 +1,6 @@
 /**
- * Heart rate monitor settings — pair, check, and forget a Bluetooth heart rate monitor.
+ * Heart rate monitor settings — pair, check, and forget a Bluetooth heart rate monitor,
+ * with setup steps by device and help when nothing is found.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,9 +24,17 @@ import {
   setPairedHrDevice,
   type BluetoothStatus,
 } from '../../../src/heartRate/hrMonitor';
+import {
+  DEVICE_GUIDES,
+  NOT_FOUND_TIPS,
+  NO_READINGS_TIP,
+  type DeviceGuide,
+} from '../../../src/heartRate/deviceGuides';
+import { openHeartRateHelp } from '../../../src/heartRate/openHeartRateHelp';
 import type { DiscoveredHrDevice } from '../../../src/heartRate/hrTypes';
 import { useHeartRateMonitor } from '../../../src/hooks/useHeartRateMonitor';
 import { hrConnectionLabel } from '../../../src/components/HeartRateBadge';
+import { openSupportEmail } from '../../../src/support/supportEmail';
 
 const SCAN_DURATION_MS = 15_000;
 
@@ -36,13 +45,20 @@ const ACCESS_MESSAGES: Record<Exclude<BluetoothStatus, 'ready'>, string> = {
 };
 
 export default function HeartRateSettingsScreen() {
-  const { device, connection, bpm } = useHeartRateMonitor();
+  const { device, connection, bpm, noReadings } = useHeartRateMonitor();
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<DiscoveredHrDevice[]>([]);
   const [accessIssue, setAccessIssue] = useState<Exclude<BluetoothStatus, 'ready'> | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanEmpty, setScanEmpty] = useState(false);
+  const [guide, setGuide] = useState<DeviceGuide | null>(null);
+  const [guidesOpen, setGuidesOpen] = useState(false);
   const stopScanRef = useRef<(() => void) | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanStartedAtRef = useRef(0);
+  const foundCountRef = useRef(0);
+  const guideRef = useRef<DeviceGuide | null>(null);
+  guideRef.current = guide;
 
   const stopScan = useCallback(() => {
     stopScanRef.current?.();
@@ -54,9 +70,26 @@ export default function HeartRateSettingsScreen() {
 
   useEffect(() => stopScan, [stopScan]);
 
+  /** End the scan; if nothing turned up, show help and record it. */
+  const finishScan = useCallback(
+    (endedBy: 'timeout' | 'user') => {
+      if (!stopScanRef.current) return;
+      stopScan();
+      if (foundCountRef.current > 0) return;
+      setScanEmpty(true);
+      track('hr_scan_empty', {
+        ended_by: endedBy,
+        duration_ms: Date.now() - scanStartedAtRef.current,
+        guide: guideRef.current?.id ?? null,
+      });
+    },
+    [stopScan],
+  );
+
   const startScan = async () => {
     hapticTap();
     setScanError(null);
+    setScanEmpty(false);
     const status = await requestBluetoothAccess();
     if (status !== 'ready') {
       setAccessIssue(status);
@@ -65,15 +98,20 @@ export default function HeartRateSettingsScreen() {
     setAccessIssue(null);
     retryHeartRateConnection();
     setFound([]);
+    foundCountRef.current = 0;
+    scanStartedAtRef.current = Date.now();
     setScanning(true);
     stopScanRef.current = scanForHeartRateMonitors(
-      (d) => setFound((prev) => [...prev, d]),
+      (d) => {
+        foundCountRef.current++;
+        setFound((prev) => [...prev, d]);
+      },
       (message) => {
         setScanError(message);
         stopScan();
       },
     );
-    scanTimerRef.current = setTimeout(stopScan, SCAN_DURATION_MS);
+    scanTimerRef.current = setTimeout(() => finishScan('timeout'), SCAN_DURATION_MS);
   };
 
   const pair = async (d: DiscoveredHrDevice) => {
@@ -81,7 +119,13 @@ export default function HeartRateSettingsScreen() {
     stopScan();
     await setPairedHrDevice({ id: d.id, name: d.name });
     setFound([]);
-    track('hr_device_paired', { device_name: d.name, replaced_device: !!device });
+    setScanEmpty(false);
+    setGuidesOpen(false);
+    track('hr_device_paired', {
+      device_name: d.name,
+      replaced_device: !!device,
+      guide: guide?.id ?? null,
+    });
   };
 
   const forget = async () => {
@@ -90,7 +134,25 @@ export default function HeartRateSettingsScreen() {
     track('hr_device_forgotten', {});
   };
 
+  const selectGuide = (g: DeviceGuide) => {
+    hapticTap();
+    const next = guide?.id === g.id ? null : g;
+    setGuide(next);
+    if (next) track('hr_guide_viewed', { guide: next.id });
+  };
+
+  const emailSupport = (source: string) => {
+    hapticTap();
+    track('hr_support_email', { source });
+    openSupportEmail({
+      subject: 'Heart rate monitor help',
+      prompt: ['Monitor or watch (brand and model):', 'What happened:'],
+      scanResults: scanEmpty || found.length > 0 ? found.map((d) => d.name) : undefined,
+    });
+  };
+
   const visibleFound = found.filter((d) => d.id !== device?.id);
+  const showGuides = !device || guidesOpen;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -113,8 +175,10 @@ export default function HeartRateSettingsScreen() {
                 {device.name}
               </Text>
               <Text style={styles.deviceStatus}>
-                {connection === 'connected' && bpm != null
-                  ? `Connected · ${bpm} bpm`
+                {connection === 'connected'
+                  ? bpm != null
+                    ? `Connected · ${bpm} bpm`
+                    : 'Connected · waiting for heart rate'
                   : hrConnectionLabel(connection)}
               </Text>
             </View>
@@ -133,13 +197,80 @@ export default function HeartRateSettingsScreen() {
               rate broadcasting on your watch, and keep it near your phone.
             </Text>
           )}
+          {noReadings && <Text style={styles.hint}>{NO_READINGS_TIP}</Text>}
         </>
       )}
 
       <Text style={styles.sectionTitle}>{device ? 'Use a Different Monitor' : 'Find Your Monitor'}</Text>
+
+      {device && (
+        <TouchableOpacity
+          onPress={() => setGuidesOpen((open) => !open)}
+          style={styles.guidesToggle}
+          accessibilityRole="button"
+        >
+          <Text style={styles.linkText}>
+            {guidesOpen ? 'Hide setup steps' : 'Show setup steps by device'}
+          </Text>
+          <Ionicons
+            name={guidesOpen ? 'chevron-up' : 'chevron-down'}
+            size={14}
+            color={Colors.accent}
+          />
+        </TouchableOpacity>
+      )}
+
+      {showGuides && (
+        <>
+          <Text style={styles.stepLabel}>1. Choose your device</Text>
+          <View style={styles.tileGrid}>
+            {DEVICE_GUIDES.map((g) => {
+              const selected = guide?.id === g.id;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[styles.tile, selected && styles.tileSelected]}
+                  onPress={() => selectGuide(g)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.tileName, selected && styles.tileNameSelected]} numberOfLines={1}>
+                    {g.name}
+                  </Text>
+                  <Text style={styles.tileExamples} numberOfLines={1}>
+                    {g.examples}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {guide && (
+            <View style={styles.guideCard}>
+              {guide.steps.map((step, i) => (
+                <View key={i} style={styles.guideStep}>
+                  <Text style={styles.guideStepNum}>{i + 1}</Text>
+                  <Text style={styles.guideStepText}>{step}</Text>
+                </View>
+              ))}
+              {guide.note && <Text style={styles.guideNote}>{guide.note}</Text>}
+              <TouchableOpacity
+                onPress={() => openHeartRateHelp('settings_guide', guide.id)}
+                accessibilityRole="link"
+              >
+                <Text style={styles.linkText}>Full {guide.name} guide</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.stepLabel}>2. Search for it</Text>
+        </>
+      )}
+
       <TouchableOpacity
         style={[styles.scanButton, scanning && styles.scanButtonActive]}
-        onPress={scanning ? stopScan : startScan}
+        onPress={scanning ? () => finishScan('user') : startScan}
         activeOpacity={0.7}
         accessibilityRole="button"
       >
@@ -156,7 +287,7 @@ export default function HeartRateSettingsScreen() {
           <Text style={styles.issueText}>{ACCESS_MESSAGES[accessIssue]}</Text>
           {accessIssue === 'unauthorized' && (
             <TouchableOpacity onPress={() => Linking.openSettings()} accessibilityRole="link">
-              <Text style={styles.issueLink}>Open Settings</Text>
+              <Text style={styles.linkText}>Open Settings</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -183,22 +314,58 @@ export default function HeartRateSettingsScreen() {
           <Text style={styles.connectText}>Connect</Text>
         </TouchableOpacity>
       ))}
-      {!scanning && found.length === 0 && !accessIssue && !scanError && (
+
+      {scanEmpty && !scanning && (
+        <View style={styles.issueBox}>
+          <Text style={styles.issueTitle}>Didn’t find your monitor?</Text>
+          {NOT_FOUND_TIPS.map((tip, i) => (
+            <View key={i} style={styles.tipRow}>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>{tip}</Text>
+            </View>
+          ))}
+          <View style={styles.linkRow}>
+            <TouchableOpacity onPress={startScan} accessibilityRole="button">
+              <Text style={styles.linkText}>Search Again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => openHeartRateHelp('scan_empty', 'troubleshooting')}
+              accessibilityRole="link"
+            >
+              <Text style={styles.linkText}>More Help</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => emailSupport('scan_empty')} accessibilityRole="button">
+              <Text style={styles.linkText}>Email Support</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {!scanning && found.length === 0 && !scanEmpty && !accessIssue && !scanError && (
         <Text style={styles.hint}>
-          Wear your strap while searching so it’s awake. Watches work too once heart rate
-          broadcasting is on, such as Amazfit’s “Heart Rate Push” or Garmin’s “Broadcast Heart
-          Rate”. No need to pair in your phone’s Bluetooth settings.
+          Wear your strap while searching so it’s awake, or turn on heart rate broadcasting on
+          your watch. No need to pair in your phone’s Bluetooth settings.
         </Text>
       )}
 
       <View style={styles.infoBox}>
         <Ionicons name="information-circle-outline" size={18} color={Colors.accent} />
-        <Text style={styles.infoText}>
-          Works with any Bluetooth heart rate monitor, including chest straps and armbands from
-          Polar, Garmin, Wahoo, and COROS. SplitCue remembers your monitor and reconnects before
-          each run. Many monitors connect to only one app at a time, so disconnect apps like
-          Pulsoid or Zwift if yours doesn’t appear.
-        </Text>
+        <View style={styles.infoBody}>
+          <Text style={styles.infoText}>
+            Works with any Bluetooth heart rate monitor, plus watches that broadcast heart rate.
+            SplitCue remembers your monitor and reconnects before each run. Many monitors connect
+            to only one app at a time, so disconnect apps like Pulsoid or Zwift if yours doesn’t
+            appear.
+          </Text>
+          <View style={styles.linkRow}>
+            <TouchableOpacity onPress={() => openHeartRateHelp('settings')} accessibilityRole="link">
+              <Text style={styles.linkText}>Heart Rate Help</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => emailSupport('settings')} accessibilityRole="button">
+              <Text style={styles.linkText}>Email Support</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
@@ -217,6 +384,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
     marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  stepLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
   },
   deviceCard: {
@@ -253,6 +427,78 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     lineHeight: 18,
   },
+  guidesToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: Spacing.sm,
+  },
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  tile: {
+    width: '48.5%',
+    flexGrow: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.surface,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  tileSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '12',
+  },
+  tileName: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  tileNameSelected: {
+    color: Colors.primary,
+  },
+  tileExamples: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  guideCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  guideStep: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  guideStepNum: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    overflow: 'hidden',
+    textAlign: 'center',
+    lineHeight: 20,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.background,
+    backgroundColor: Colors.primary,
+  },
+  guideStepText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  guideNote: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    lineHeight: 18,
+  },
   scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,11 +527,39 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     gap: Spacing.xs,
   },
+  issueTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
   issueText: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
+    lineHeight: 20,
   },
-  issueLink: {
+  tipText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  tipBullet: {
+    fontSize: FontSize.sm,
+    color: Colors.warning,
+    lineHeight: 20,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.lg,
+    marginTop: Spacing.xs,
+  },
+  linkText: {
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.accent,
@@ -320,8 +594,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.accent + '33',
   },
+  infoBody: { flex: 1 },
   infoText: {
-    flex: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
     lineHeight: 20,

@@ -14,6 +14,7 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BleManager, State, type Subscription } from 'react-native-ble-plx';
+import { track } from '../analytics/track';
 import { base64ToBytes, parseHeartRateMeasurement } from './hrParser';
 import type { DiscoveredHrDevice, HrConnection, PairedHrDevice } from './hrTypes';
 
@@ -30,6 +31,8 @@ const POWER_ON_WAIT_MS = 3000;
  * screens that both hold (pre-run panel to the running workout) doesn't reconnect.
  */
 const RELEASE_GRACE_MS = 5000;
+/** Failed attempts, without ever connecting, before reporting `hr_connect_failed`. */
+const REPORT_FAILURE_AFTER_ATTEMPTS = 3;
 /** A reading older than this is no longer shown as the current heart rate. */
 const STALE_BPM_MS = 5000;
 
@@ -224,6 +227,8 @@ let monitorSub: Subscription | null = null;
 let disconnectSub: Subscription | null = null;
 let lastBpm: number | null = null;
 let lastBpmAt = 0;
+let lastError: string | null = null;
+let failureReported = false;
 
 const bpmListeners = new Set<(bpm: number, at: number) => void>();
 const connectionListeners = new Set<(connection: HrConnection) => void>();
@@ -251,6 +256,18 @@ export function addHeartRateListener(listener: (bpm: number, at: number) => void
 export function addHrConnectionListener(listener: (connection: HrConnection) => void): () => void {
   connectionListeners.add(listener);
   return () => connectionListeners.delete(listener);
+}
+
+export interface HrDiagnostics {
+  connection: HrConnection;
+  lastError: string | null;
+  /** Epoch ms of the most recent reading this session, or null if none arrived. */
+  lastReadingAt: number | null;
+}
+
+/** Connection details for support emails. */
+export function getHrDiagnostics(): HrDiagnostics {
+  return { connection, lastError, lastReadingAt: lastBpmAt || null };
 }
 
 /**
@@ -297,6 +314,7 @@ function connectTo(id: string) {
   targetId = id;
   reconnectAttempt = 0;
   everConnected = false;
+  failureReported = false;
   const gen = ++generation;
   setConnection('connecting');
   attemptConnect(id, gen);
@@ -342,9 +360,20 @@ async function attemptConnect(id: string, gen: number) {
     });
     reconnectAttempt = 0;
     everConnected = true;
+    lastError = null;
     setConnection('connected');
-  } catch {
-    if (isCurrent()) handleDrop(id, gen);
+  } catch (e) {
+    if (!isCurrent()) return;
+    lastError = e instanceof Error ? e.message : String(e);
+    if (!everConnected && !failureReported && reconnectAttempt + 1 >= REPORT_FAILURE_AFTER_ATTEMPTS) {
+      failureReported = true;
+      track('hr_connect_failed', {
+        device_name: pairedDevice?.name ?? null,
+        error: lastError.slice(0, 200),
+        attempts: reconnectAttempt + 1,
+      });
+    }
+    handleDrop(id, gen);
   } finally {
     attemptInFlight = false;
   }

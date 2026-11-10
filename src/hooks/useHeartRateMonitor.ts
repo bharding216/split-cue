@@ -18,12 +18,16 @@ import type { HrConnection, PairedHrDevice } from '../heartRate/hrTypes';
 
 /** Clear the shown reading if the monitor goes quiet for this long. */
 const STALE_CHECK_MS = 5000;
+/** Connected this long with no reading suggests a loose strap or dry electrodes. */
+const NO_READINGS_MS = 8000;
 
 export interface HeartRateMonitorStatus {
   /** undefined while loading. */
   device: PairedHrDevice | null | undefined;
   connection: HrConnection;
   bpm: number | null;
+  /** Connected, but no reading has arrived for a while. */
+  noReadings: boolean;
 }
 
 export function useHeartRateMonitor(connect = true): HeartRateMonitorStatus {
@@ -58,5 +62,14 @@ export function useHeartRateMonitor(connect = true): HeartRateMonitorStatus {
     };
   }, [connect]);
 
-  return { device, connection, bpm };
+  const [noReadings, setNoReadings] = useState(false);
+  const silent = connection === 'connected' && bpm == null;
+  useEffect(() => {
+    setNoReadings(false);
+    if (!silent) return;
+    const timer = setTimeout(() => setNoReadings(true), NO_READINGS_MS);
+    return () => clearTimeout(timer);
+  }, [silent]);
+
+  return { device, connection, bpm, noReadings: silent && noReadings };
 }

@@ -12,14 +12,29 @@ import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../consta
 import { hapticTap } from '../audio/haptics';
 import { useHeartRateMonitor } from '../hooks/useHeartRateMonitor';
 import { requestBluetoothAccess, retryHeartRateConnection } from '../heartRate/hrMonitor';
+import { NO_READINGS_TIP } from '../heartRate/deviceGuides';
+import { openHeartRateHelp } from '../heartRate/openHeartRateHelp';
 import { hrConnectionLabel } from './HeartRateBadge';
 
 /** Show troubleshooting tips once connecting has taken this long. */
 const SLOW_CONNECT_MS = 10_000;
 
+function HelpLink({ section }: { section: string }) {
+  return (
+    <TouchableOpacity
+      onPress={() => openHeartRateHelp('pre_run', section)}
+      accessibilityRole="link"
+      hitSlop={8}
+      style={styles.helpLink}
+    >
+      <Text style={styles.helpLinkText}>Get help</Text>
+    </TouchableOpacity>
+  );
+}
+
 export function PreRunHeartRateCard() {
   const router = useRouter();
-  const { device, connection, bpm } = useHeartRateMonitor();
+  const { device, connection, bpm, noReadings } = useHeartRateMonitor();
   const [slow, setSlow] = useState(false);
 
   const waiting = connection === 'connecting' || connection === 'lost';
@@ -68,11 +83,20 @@ export function PreRunHeartRateCard() {
         ) : null}
       </View>
       {slow && waiting && (
-        <Text style={styles.hint}>
-          Make sure your strap is on, or heart rate broadcasting is turned on for a watch, and that
-          it isn’t connected to another app. You can start anyway; heart rate is recorded once it
-          connects.
-        </Text>
+        <>
+          <Text style={styles.hint}>
+            Make sure your strap is on, or heart rate broadcasting is turned on for a watch, and
+            that it isn’t connected to another app. You can start anyway; heart rate is recorded
+            once it connects.
+          </Text>
+          <HelpLink section="troubleshooting" />
+        </>
+      )}
+      {connected && noReadings && (
+        <>
+          <Text style={styles.hint}>{NO_READINGS_TIP}</Text>
+          <HelpLink section="troubleshooting" />
+        </>
       )}
     </View>
   );
@@ -145,5 +169,14 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     lineHeight: 18,
     marginTop: Spacing.sm,
+  },
+  helpLink: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.xs,
+  },
+  helpLinkText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.accent,
   },
 });

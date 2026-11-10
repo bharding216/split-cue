@@ -18,6 +18,7 @@ const PAGES = [
   '/guides/hands-free-running',
   '/guides/audio-coaching-vs-gps-watches',
   '/delete-account',
+  '/help/heart-rate-monitors',
 ];
 
 export function robotsTxt(): Response {
@@ -161,6 +162,7 @@ SplitCue is an iPhone app designed for runners who do structured interval traini
 - [How to Maintain a Target Running Pace](${BASE_URL}/guides/maintain-running-pace)
 - [Hands-Free Running](${BASE_URL}/guides/hands-free-running)
 - [Audio Coaching vs GPS Watches](${BASE_URL}/guides/audio-coaching-vs-gps-watches)
+- [Connect a Heart Rate Monitor](${BASE_URL}/help/heart-rate-monitors)
 `;
 
   return new Response(body, {
