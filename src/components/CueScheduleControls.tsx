@@ -11,6 +11,7 @@ import type {
   PaceUnit,
   ProgressCueBasis,
 } from '../pace/paceTypes';
+import type { TimeRemainingInterval } from '../workout/workoutTypes';
 import { CUE_DISTANCE_PRESETS, cueDistanceLabel } from '../audio/cueSchedule';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
@@ -70,14 +71,24 @@ export const PACE_CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: strin
   { value: 120, label: '2 min' },
 ];
 
-export function PaceCueFrequencyChips({
+export const PROGRESS_TIME_OPTIONS: { value: TimeRemainingInterval; label: string }[] = [
+  { value: 0, label: 'Off' },
+  { value: 15, label: '15s' },
+  { value: 30, label: '30s' },
+  { value: 45, label: '45s' },
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+];
+
+/** Chips for a cue step in seconds. */
+export function TimeStepChips<T extends number>({
   value,
   onChange,
-  options = PACE_CUE_FREQUENCY_OPTIONS,
+  options,
 }: {
-  value: PaceCueFrequency;
-  onChange: (frequency: PaceCueFrequency) => void;
-  options?: readonly { value: PaceCueFrequency; label: string }[];
+  value: T;
+  onChange: (seconds: T) => void;
+  options: readonly { value: T; label: string }[];
 }) {
   return (
     <View style={styles.row}>
