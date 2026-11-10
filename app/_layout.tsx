@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Alert, AppState } from 'react-native';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -26,14 +26,13 @@ import {
   refreshPushToken,
   subscribeToNotificationOpens,
 } from '../src/notifications/pushRegistration';
-
-const APP_STORE_URL =
-  'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
-const PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
+import { openStoreListing, useRequiredUpdate } from '../src/updates/requiredUpdate';
+import { RequiredUpdateScreen } from '../src/components/RequiredUpdateScreen';
 
 function RootLayoutInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const updateRequired = useRequiredUpdate();
   const { user, loading: authLoading } = useAuth();
   const { tier, loading: subscriptionLoading } = useSubscription();
   const { planWorkouts } = useTrainingPlan();
@@ -146,8 +145,7 @@ function RootLayoutInner() {
             { text: 'Not Now', style: 'cancel' },
             {
               text: 'Update',
-              onPress: () =>
-                Linking.openURL(Platform.OS === 'android' ? PLAY_STORE_URL : APP_STORE_URL),
+              onPress: () => openStoreListing(),
             },
           ],
         );
@@ -289,6 +287,8 @@ function RootLayoutInner() {
           }}
         />
       </Stack>
+      {/* Never interrupt a run in progress; the screen appears once it ends. */}
+      {updateRequired && !pathname.startsWith('/workout/run') && <RequiredUpdateScreen />}
     </>
   );
 }
