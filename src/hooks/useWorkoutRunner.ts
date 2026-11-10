@@ -92,7 +92,7 @@ import {
   restoreSession,
   type ActiveSessionSnapshot,
 } from '../workout/activeSession';
-import { onWorkoutCompleted } from '../review/storeReview';
+import { onlyCooldownRemains } from '../review/reviewSchedule';
 import { track } from '../analytics/track';
 import { getPowerSnapshot } from '../analytics/deviceInfo';
 import { gpsQuality } from '../analytics/runContext';
@@ -180,6 +180,8 @@ export interface WorkoutRunnerControls {
   completedSplits: IntervalSplit[] | null;
   /** Heart rate saved with the completed workout (available after finish, when recorded). */
   completedHeartRate: WorkoutHeartRate | null;
+  /** Whether the run reached the end, or was stopped with only the cooldown left. */
+  runCompleted: boolean;
 
   // Pace tracking
   paceState: PaceState;
@@ -318,6 +320,7 @@ export function useWorkoutRunner(
   const [completedRoute, setCompletedRoute] = useState<RoutePoint[] | null>(null);
   const [completedSplits, setCompletedSplits] = useState<IntervalSplit[] | null>(null);
   const [completedHeartRate, setCompletedHeartRate] = useState<WorkoutHeartRate | null>(null);
+  const [runCompleted, setRunCompleted] = useState(false);
 
   // ── Run context for analytics ─────────────────────────────────────
   const batteryAtStartRef = useRef<number | null>(null);
@@ -607,7 +610,7 @@ export function useWorkoutRunner(
 
           // Save to history (guard against duplicate saves)
           saveHistoryEntry(next.totalElapsedMs);
-          onWorkoutCompleted();
+          setRunCompleted(true);
           trackRunEnd('workout_completed', {
             workout_id: workout.id,
             workout_name: workout.name,
@@ -644,7 +647,7 @@ export function useWorkoutRunner(
               endLiveActivity();
               stopSensors();
               saveHistoryEntry(next.totalElapsedMs);
-              onWorkoutCompleted();
+              setRunCompleted(true);
               trackRunEnd('workout_completed', {
                 workout_id: workout.id,
                 workout_name: workout.name,
@@ -680,7 +683,7 @@ export function useWorkoutRunner(
           endLiveActivity();
           stopSensors();
           saveHistoryEntry(finished.totalElapsedMs);
-          onWorkoutCompleted();
+          setRunCompleted(true);
           trackRunEnd('workout_completed', {
             workout_id: workout.id,
             workout_name: workout.name,
@@ -1066,7 +1069,7 @@ export function useWorkoutRunner(
       endLiveActivity();
       stopSensors();
       saveHistoryEntry(next.totalElapsedMs);
-      onWorkoutCompleted();
+      setRunCompleted(true);
       trackRunEnd('workout_completed', {
         workout_id: workout.id,
         workout_name: workout.name,
@@ -1089,16 +1092,10 @@ export function useWorkoutRunner(
     // Save partial workout to history
     if (next.totalElapsedMs > 0) {
       saveHistoryEntry(next.totalElapsedMs, false);
+      if (onlyCooldownRemains(next.intervals, next.currentIndex)) setRunCompleted(true);
 
-      // Still prompt for review if the user completed a good chunk of the
-      // workout (e.g. skipped the cooldown). 50% threshold avoids prompting
-      // on genuinely abandoned workouts.
       const plannedMs =
         next.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
-      if (plannedMs > 0 && next.totalElapsedMs / plannedMs >= 0.5) {
-        onWorkoutCompleted();
-      }
-
       const qualifies = runQualifies(next.totalElapsedMs, plannedMs);
       trackRunEnd('workout_abandoned', {
         workout_id: workout.id,
@@ -1212,6 +1209,7 @@ export function useWorkoutRunner(
     completedRoute,
     completedSplits,
     completedHeartRate,
+    runCompleted,
 
     // Distance tracking
     isDistanceInterval: ciIsDistance,

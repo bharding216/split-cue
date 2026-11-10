@@ -86,6 +86,7 @@ import { useStrava } from '../../../src/strava/useStrava';
 import { pushWorkoutToStrava } from '../../../src/strava/stravaService';
 import { useRunAnnotations } from '../../../src/hooks/useRunAnnotations';
 import { track } from '../../../src/analytics/track';
+import { requestReviewAfterRun } from '../../../src/review/storeReview';
 import { requestCalendarDate } from '../../../src/navigation/calendarFocus';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
@@ -389,7 +390,8 @@ function ActiveWorkoutInner({
     annotations.flush();
     startAutoUploadRef.current();
     router.dismissAll();
-  }, [annotations, router]);
+    requestReviewAfterRun({ completed: runner.runCompleted, feel: selectedFeel });
+  }, [annotations, router, runner.runCompleted, selectedFeel]);
 
   // Keep screen awake during workout
   useEffect(() => {
