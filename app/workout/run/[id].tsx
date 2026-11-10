@@ -73,6 +73,8 @@ import { hapticTap } from '../../../src/audio/haptics';
 import { setDuckingEnabled, setVoiceIdentifier, playCue } from '../../../src/audio/audioManager';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
 import { PreRunSettings } from '../../../src/components/PreRunSettings';
+import { HeartRateBadge } from '../../../src/components/HeartRateBadge';
+import { PreRunHeartRateCard } from '../../../src/components/PreRunHeartRateCard';
 import { PreRunLocationCard, BackgroundLocationCard } from '../../../src/components/LocationPermissionCards';
 import { useLocationAccess } from '../../../src/hooks/useLocationAccess';
 
@@ -359,6 +361,7 @@ function ActiveWorkoutInner({
       totalDistanceMeters: distance > 0 ? distance : undefined,
       route: runner.completedRoute ?? undefined,
       splits: runner.completedSplits ?? undefined,
+      heartRate: runner.completedHeartRate ?? undefined,
       configuration: workout,
       tags: annotations.tags.length > 0 ? annotations.tags : undefined,
     };
@@ -594,6 +597,7 @@ function ActiveWorkoutInner({
         {needsGps && locationAccess === 'granted' && (
           <BackgroundLocationCard placement="preRun" />
         )}
+        <PreRunHeartRateCard />
         <PreRunSettings
           settings={settings}
           onUpdate={onUpdateSettings}
@@ -809,6 +813,7 @@ function ActiveWorkoutInner({
               totalDistanceMeters={completedEntry.totalDistanceMeters}
               route={completedEntry.route}
               splits={completedEntry.splits}
+              heartRate={completedEntry.heartRate}
               configuration={completedEntry.configuration}
               tags={completedEntry.tags}
             />
@@ -977,6 +982,12 @@ function ActiveWorkoutInner({
             paceUnit={settings.paceUnit}
             targetPace={getCurrentInterval(state)?.targetPace}
           />
+        )}
+
+        {runner.heartRate && (
+          <View style={styles.hrLive}>
+            <HeartRateBadge bpm={runner.heartRate.bpm} connection={runner.heartRate.connection} />
+          </View>
         )}
 
         {/* Workout timeline */}
@@ -2105,6 +2116,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.lg,
     fontVariant: ['tabular-nums'],
+  },
+  hrLive: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
   },
   distanceTimerArea: {
     alignItems: 'center',

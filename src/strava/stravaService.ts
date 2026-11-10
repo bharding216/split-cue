@@ -13,6 +13,8 @@ import { supabase } from '../analytics/supabaseClient';
 import { track } from '../analytics/track';
 import { updateHistoryEntry, loadSettings, saveSettings } from '../workout/workoutStorage';
 import type { CompletedWorkout, RoutePoint } from '../workout/workoutTypes';
+import type { HrSample } from '../heartRate/hrTypes';
+import { heartRateAtTime } from '../heartRate/hrStats';
 
 // ── Redirect URI ─────────────────────────────────────────────
 // Strava's callback domain field only accepts a bare domain, so we
@@ -247,20 +249,26 @@ export async function disconnectStrava(): Promise<{ error?: string }> {
 
 // ── GPX builder ──────────────────────────────────────────────
 
+/** A track point only gets a heart rate from a reading this close in time. */
+const GPX_HR_TOLERANCE_MS = 5000;
+
 /**
  * Build a GPX 1.1 XML string from SplitCue route points.
  *
  * The RoutePoint type already stores lat, lng, alt (nullable), and ts
- * (epoch ms), which maps perfectly to GPX <trkpt> elements.
+ * (epoch ms), which maps perfectly to GPX <trkpt> elements. Heart rate,
+ * when recorded, goes in Garmin's TrackPointExtension, which Strava reads.
  */
 export function buildGpx(
   route: RoutePoint[],
   name: string,
   startTime: number,
+  heartRate?: HrSample[],
 ): string {
   const lines: string[] = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<gpx xmlns="http://www.topografix.com/GPX/1/1"',
+    '     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"',
     '     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
     '     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd"',
     '     version="1.1"',
@@ -281,6 +289,12 @@ export function buildGpx(
       lines.push(`        <ele>${pt.alt.toFixed(1)}</ele>`);
     }
     lines.push(`        <time>${new Date(pt.ts).toISOString()}</time>`);
+    const bpm = heartRate ? heartRateAtTime(heartRate, pt.ts, GPX_HR_TOLERANCE_MS) : null;
+    if (bpm != null) {
+      lines.push(
+        `        <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>${bpm}</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>`,
+      );
+    }
     lines.push('      </trkpt>');
   }
 
@@ -374,7 +388,7 @@ async function uploadWorkout(
 
     if (completed.route && completed.route.length >= 2) {
       const startTime = completed.completedAt - completed.totalDurationMs;
-      gpx = buildGpx(completed.route, completed.workoutName, startTime);
+      gpx = buildGpx(completed.route, completed.workoutName, startTime, completed.heartRate?.samples);
     }
 
     const { data, error } = await supabase.functions.invoke('strava-push', {
@@ -420,6 +434,7 @@ async function uploadWorkout(
     track('strava_workout_pushed', {
       workout_id: completed.workoutId,
       has_gpx: !!gpx,
+      has_hr: !!gpx && !!completed.heartRate,
       activity_id: activityId,
       trigger,
     });

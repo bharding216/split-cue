@@ -18,6 +18,7 @@ import type {
   WorkoutDefinition,
 } from './workoutTypes';
 import type { GpsSample } from '../pace/paceTypes';
+import type { HrSample } from '../heartRate/hrTypes';
 import type { SessionMeta } from '../hooks/useWorkoutRunner';
 
 const SESSION_VERSION = 1;
@@ -43,6 +44,9 @@ export interface ActiveSessionSnapshot {
   usesGps: boolean;
   totalDistanceMeters: number;
   trackSegments: GpsSample[][];
+  /** Workout time (pauses excluded) when the current interval started. */
+  intervalStartElapsedMs?: number;
+  hrSamples?: HrSample[];
 }
 
 /** Runner state rebuilt from a snapshot, always paused. */

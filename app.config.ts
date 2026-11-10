@@ -1,4 +1,25 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
+import { withAndroidManifest, type ConfigPlugin } from 'expo/config-plugins';
+
+/**
+ * Heart rate straps are never used to derive location, so BLE scans don't need location access on Android 12+.
+ * Set here rather than with the BLE plugin's `neverForLocation`, which also caps the location permissions GPS
+ * tracking needs at SDK 30.
+ */
+const withBluetoothScanNeverForLocation: ConfigPlugin = (config) =>
+  withAndroidManifest(config, (cfg) => {
+    const manifest = cfg.modResults.manifest;
+    manifest.$['xmlns:tools'] ??= 'http://schemas.android.com/tools';
+    const permissions = (manifest['uses-permission'] ??= []);
+    const name = 'android.permission.BLUETOOTH_SCAN';
+    let scan = permissions.find((p) => p.$['android:name'] === name);
+    if (!scan) {
+      scan = { $: { 'android:name': name } };
+      permissions.push(scan);
+    }
+    Object.assign(scan.$, { 'android:usesPermissionFlags': 'neverForLocation', 'tools:targetApi': '31' });
+    return cfg;
+  });
 
 const VARIANT = process.env.APP_VARIANT; // 'development' | 'preview' | undefined (production)
 const IS_DEV = VARIANT === 'development';
@@ -32,10 +53,13 @@ const GOOGLE_SERVICES_FILE = IS_DEV
     ? './google-services.preview.json'
     : './google-services.production.json';
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+export default (context: ConfigContext): ExpoConfig =>
+  withBluetoothScanNeverForLocation(baseConfig(context));
+
+const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   name: APP_NAME,
   slug: 'pace-cue',
-  version: '1.9.0',
+  version: '1.10.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'dark',
@@ -66,7 +90,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ],
     },
     infoPlist: {
-      UIBackgroundModes: ['audio', 'location'],
+      UIBackgroundModes: ['audio', 'location', 'bluetooth-central'],
       NSMicrophoneUsageDescription: 'SplitCue uses the microphone for voice commands to your AI coach.',
       NSLocationWhenInUseUsageDescription:
         'SplitCue uses your location to calculate your running pace in real time.',
@@ -167,6 +191,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     '@react-native-community/datetimepicker',
     'expo-localization',
+    [
+      'react-native-ble-plx',
+      {
+        // Background mode also marks BLE hardware as required, which would hide the app on devices without it
+        isBackgroundEnabled: false,
+        modes: ['central'],
+        bluetoothAlwaysPermission:
+          'SplitCue connects to your heart rate monitor to record heart rate during workouts.',
+      },
+    ],
   ],
   updates: {
     url: 'https://u.expo.dev/15ab975c-acf7-482d-8059-edfe8218ef58',

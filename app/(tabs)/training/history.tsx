@@ -551,6 +551,7 @@ export default function HistoryScreen() {
                         totalDistanceMeters={item.totalDistanceMeters}
                         route={item.route}
                         splits={item.splits}
+                        heartRate={item.heartRate}
                         configuration={item.configuration}
                         tags={item.tags}
                         notes={item.notes}

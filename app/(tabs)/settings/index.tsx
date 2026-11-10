@@ -52,6 +52,12 @@ const CARDS: SettingsCard[] = [
     route: '/(tabs)/settings/pace',
   },
   {
+    icon: 'heart-outline',
+    title: 'Heart Rate Monitor',
+    description: 'Connect a Bluetooth chest strap or armband',
+    route: '/(tabs)/settings/heart-rate',
+  },
+  {
     icon: 'options-outline',
     title: 'General',
     description: 'Haptic feedback, screen behavior, backup & restore',

@@ -63,6 +63,14 @@ import {
 } from '../audio/cuePhrases';
 import { cueDistanceMeters, nextCueMark, distanceProgressCuesNeedGps } from '../audio/cueSchedule';
 import { usePaceTracker, type PaceTrackerResult } from './usePaceTracker';
+import { useHeartRate } from './useHeartRate';
+import {
+  downsampleHeartRate,
+  recoveryDrop,
+  sliceHeartRate,
+  summarizeHeartRate,
+} from '../heartRate/hrStats';
+import type { HrConnection, WorkoutHeartRate } from '../heartRate/hrTypes';
 import { createOdometer, type GpsSample, type PaceState } from '../pace/paceTypes';
 import { advanceOdometer } from '../pace/paceTracker';
 import {
@@ -163,10 +171,15 @@ export interface WorkoutRunnerControls {
   completedRoute: RoutePoint[] | null;
   /** Interval splits captured during the workout (available after finish). */
   completedSplits: IntervalSplit[] | null;
+  /** Heart rate saved with the completed workout (available after finish, when recorded). */
+  completedHeartRate: WorkoutHeartRate | null;
 
   // Pace tracking
   paceState: PaceState;
   isPaceTracking: boolean;
+
+  /** Heart rate from the paired monitor; null when no monitor is paired. */
+  heartRate: { bpm: number | null; connection: HrConnection } | null;
 
   // Distance tracking
   isDistanceInterval: boolean; // whether the current interval is distance-based
@@ -242,6 +255,24 @@ export function useWorkoutRunner(
   const pausedMsRef = useRef(restored?.pausedMs ?? 0);
   const pausedAtRef = useRef<number | null>(restored?.pausedAt ?? null);
 
+  /** Workout time at `epoch`, excluding pauses (ms). */
+  const workoutElapsedAt = useCallback((epoch: number) => {
+    const startedAt = engineRef.current.startedAt;
+    if (startedAt <= 0) return 0;
+    const capped = pausedAtRef.current != null ? Math.min(epoch, pausedAtRef.current) : epoch;
+    return Math.max(0, capped - startedAt - pausedMsRef.current);
+  }, []);
+
+  const heartRate = useHeartRate(() => workoutElapsedAt(Date.now()));
+  const heartRateRef = useRef(heartRate);
+  heartRateRef.current = heartRate;
+
+  /** Stop GPS and heart rate recording; what was recorded stays available for the history entry. */
+  const stopSensors = useCallback(() => {
+    stopSensors();
+    heartRateRef.current.stop();
+  }, []);
+
   // Track which warnings we've already fired to avoid duplicates
   const firedWarnings = useRef(new Set<number>());
   const firedCountdowns = useRef(new Set<number>());
@@ -279,6 +310,7 @@ export function useWorkoutRunner(
   const [completedEntryId, setCompletedEntryId] = useState<string | null>(null);
   const [completedRoute, setCompletedRoute] = useState<RoutePoint[] | null>(null);
   const [completedSplits, setCompletedSplits] = useState<IntervalSplit[] | null>(null);
+  const [completedHeartRate, setCompletedHeartRate] = useState<WorkoutHeartRate | null>(null);
 
   // ── Run context for analytics ─────────────────────────────────────
   const batteryAtStartRef = useRef<number | null>(null);
@@ -314,6 +346,7 @@ export function useWorkoutRunner(
         mid_run_settings_opened: settingsOpenedCountRef.current,
         mid_run_settings_changed: [...midRunSettingsChangedRef.current],
         ...gpsQuality(paceTrackerRef.current.getFullTrack()),
+        run_has_hr: heartRateRef.current.getSamples().length > 0,
       };
       const batteryStart = batteryAtStartRef.current;
       Promise.all([getPowerSnapshot(), runHistoryRef.current!]).then(([power, history]) => {
@@ -351,6 +384,8 @@ export function useWorkoutRunner(
   const splitsRef = useRef<IntervalSplit[]>(resumeFrom?.splits ?? []);
   const intervalStartedAtRef = useRef(restored?.intervalStartedAt ?? 0); // epoch ms when current interval began
   const intervalStartDistanceRef = useRef(resumeFrom?.intervalStartDistance ?? 0); // distance (m) at interval start
+  /** Workout time (pauses excluded) when the current interval began; advanced by `captureSplit`. */
+  const intervalStartElapsedRef = useRef(resumeFrom?.intervalStartElapsedMs ?? 0);
 
   const lastSessionSaveAtRef = useRef(0);
   /** Save the in-progress workout so it can be resumed if the app is closed. */
@@ -372,6 +407,8 @@ export function useWorkoutRunner(
       usesGps: usesGpsRef.current,
       totalDistanceMeters: tracker.getPaceState().totalDistanceMeters,
       trackSegments: tracker.getTrackSegments(),
+      intervalStartElapsedMs: intervalStartElapsedRef.current,
+      hrSamples: heartRateRef.current.getSamples(),
     });
   }, [workout, sessionMeta]);
 
@@ -394,6 +431,17 @@ export function useWorkoutRunner(
     const METERS_PER_MILE = 1609.344;
     const METERS_PER_KM = 1000;
 
+    // A timed interval that expired before this tick (e.g. while backgrounded) ended at its scheduled time.
+    const expiredEarlier = s.phase === 'running' && !isUntimedInterval(ci) && s.intervalEndsAt < now;
+    const endElapsedMs = workoutElapsedAt(expiredEarlier ? s.intervalEndsAt : now);
+    const startElapsedMs = Math.min(intervalStartElapsedRef.current, endElapsedMs);
+    intervalStartElapsedRef.current = endElapsedMs;
+
+    const hrSlice = sliceHeartRate(heartRateRef.current.getSamples(), startElapsedMs, endElapsedMs);
+    const hr = summarizeHeartRate(hrSlice);
+    const isRecovery = ci.segmentType === 'recovery' || ci.segmentType === 'rest';
+    const drop = hr && isRecovery ? recoveryDrop(hrSlice) : null;
+
     splitsRef.current.push({
       label: ci.label,
       type: ci.type,
@@ -404,8 +452,13 @@ export function useWorkoutRunner(
       avgPaceMinPerKm: mps && mps > 0.3 ? METERS_PER_KM / mps / 60 : null,
       targetPace: ci.targetPace,
       effort: ci.effort,
+      segmentType: ci.segmentType,
+      startElapsedMs,
+      endElapsedMs,
+      ...(hr ? { avgHr: hr.avg, maxHr: hr.max } : {}),
+      ...(drop != null ? { hrRecoveryDrop: drop } : {}),
     });
-  }, []);
+  }, [workoutElapsedAt]);
 
   /** Mark the start of a new interval for split tracking. */
   const markIntervalStart = useCallback(() => {
@@ -423,6 +476,8 @@ export function useWorkoutRunner(
     historySaved.current = true;
     const ps = paceTrackerRef.current.getPaceState();
     const trackSegments = paceTrackerRef.current.getTrackSegments();
+    const hrSamples = heartRateRef.current.getSamples();
+    const hrSummary = summarizeHeartRate(hrSamples);
     const entryId = generateId();
     const entry: CompletedWorkout = {
       id: entryId,
@@ -437,10 +492,19 @@ export function useWorkoutRunner(
       templateId: sessionMeta?.templateId,
       planWorkoutId: sessionMeta?.planWorkoutId,
       quickStartType: sessionMeta?.quickStartType,
+      heartRate: hrSummary
+        ? {
+            samples: downsampleHeartRate(hrSamples),
+            avg: hrSummary.avg,
+            max: hrSummary.max,
+            deviceName: heartRateRef.current.getDeviceName() ?? undefined,
+          }
+        : undefined,
     };
     setCompletedEntryId(entryId);
     setCompletedRoute(entry.route ?? null);
     setCompletedSplits(entry.splits ?? null);
+    setCompletedHeartRate(entry.heartRate ?? null);
     saveCompletedWorkout(entry)
       .then(() =>
         attachRunWeather(entry).catch((e) => console.warn('Failed to attach run weather:', e)),
@@ -514,7 +578,7 @@ export function useWorkoutRunner(
           if (settingsRef.current.hapticEnabled) hapticWorkoutComplete();
           stopBackgroundLoop();
           endLiveActivity();
-          paceTrackerRef.current.stop();
+          stopSensors();
 
           // Save to history (guard against duplicate saves)
           saveHistoryEntry(next.totalElapsedMs);
@@ -553,7 +617,7 @@ export function useWorkoutRunner(
               if (settingsRef.current.hapticEnabled) hapticWorkoutComplete();
               stopBackgroundLoop();
               endLiveActivity();
-              paceTrackerRef.current.stop();
+              stopSensors();
               saveHistoryEntry(next.totalElapsedMs);
               onWorkoutCompleted();
               trackRunEnd('workout_completed', {
@@ -589,7 +653,7 @@ export function useWorkoutRunner(
           if (settingsRef.current.hapticEnabled) hapticWorkoutComplete();
           stopBackgroundLoop();
           endLiveActivity();
-          paceTrackerRef.current.stop();
+          stopSensors();
           saveHistoryEntry(finished.totalElapsedMs);
           onWorkoutCompleted();
           trackRunEnd('workout_completed', {
@@ -794,6 +858,8 @@ export function useWorkoutRunner(
     const tracker = paceTrackerRef.current;
     tracker.restore(resumeFrom.totalDistanceMeters, resumeFrom.trackSegments);
     if (resumeFrom.usesGps) tracker.start();
+    heartRateRef.current.restore(resumeFrom.hrSamples ?? []);
+    heartRateRef.current.start();
     startBackgroundLoop();
     startLiveActivity(buildLAProps(engineRef.current, true), workout.id);
     lastLAUpdate.current = Date.now();
@@ -866,8 +932,11 @@ export function useWorkoutRunner(
       paceTrackerRef.current.reset();
       paceTrackerRef.current.start();
     }
+    heartRateRef.current.reset();
+    heartRateRef.current.start();
 
     // Mark first interval start for split tracking
+    intervalStartElapsedRef.current = 0;
     markIntervalStart();
 
     // Start silent background loop and Live Activity
@@ -919,6 +988,7 @@ export function useWorkoutRunner(
       pausedAtRef.current = Date.now();
       pauseCountRef.current += 1;
       paceTrackerRef.current.pause();
+      heartRateRef.current.pause();
     }
 
     // Update Live Activity to show paused state
@@ -934,6 +1004,7 @@ export function useWorkoutRunner(
       pausedAtRef.current = null;
     }
     paceTrackerRef.current.resume();
+    heartRateRef.current.resume();
 
     // Update Live Activity with new timing
     updateLiveActivity(buildLAProps(next, false));
@@ -965,7 +1036,7 @@ export function useWorkoutRunner(
       if (settingsRef.current.hapticEnabled) hapticWorkoutComplete();
       stopBackgroundLoop();
       endLiveActivity();
-      paceTrackerRef.current.stop();
+      stopSensors();
       saveHistoryEntry(next.totalElapsedMs);
       onWorkoutCompleted();
       trackRunEnd('workout_completed', {
@@ -985,7 +1056,7 @@ export function useWorkoutRunner(
     setEngine(next);
     stopBackgroundLoop();
     endLiveActivity();
-    paceTrackerRef.current.stop();
+    stopSensors();
 
     // Save partial workout to history
     if (next.totalElapsedMs > 0) {
@@ -1030,7 +1101,7 @@ export function useWorkoutRunner(
         : 0;
     stopBackgroundLoop();
     endLiveActivity();
-    paceTrackerRef.current.stop();
+    stopSensors();
 
     trackRunEnd('workout_discarded', {
       workout_id: workout.id,
@@ -1105,9 +1176,14 @@ export function useWorkoutRunner(
     paceState: paceTracker.paceState,
     isPaceTracking: paceTracker.isTracking,
 
+    heartRate: heartRate.deviceName != null
+      ? { bpm: heartRate.currentBpm, connection: heartRate.connection }
+      : null,
+
     completedEntryId,
     completedRoute,
     completedSplits,
+    completedHeartRate,
 
     // Distance tracking
     isDistanceInterval: ciIsDistance,

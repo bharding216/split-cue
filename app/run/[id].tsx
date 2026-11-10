@@ -50,6 +50,9 @@ import {
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
 import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
 import { RunSplits } from '../../src/components/RunSplits';
+import { HeartRateSection } from '../../src/components/HeartRateSection';
+import { useSubscription } from '../../src/contexts/SubscriptionContext';
+import { track } from '../../src/analytics/track';
 import { RunWeatherCard } from '../../src/components/RunWeatherCard';
 import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
@@ -130,6 +133,7 @@ export default function RunDetailsScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const large = useLargeText();
+  const { tier } = useSubscription();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
   const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
@@ -304,6 +308,21 @@ export default function RunDetailsScreen() {
           </View>
         )}
 
+        {run.heartRate && run.heartRate.samples.length >= 2 && (
+          <View style={styles.section}>
+            <HeartRateSection
+              heartRate={run.heartRate}
+              splits={run.splits}
+              width={chartWidth}
+              isPro={tier === 'pro'}
+              onUpgrade={() => {
+                track('hr_pro_preview_tapped', { run_id: run.id });
+                router.push('/paywall');
+              }}
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <RunSplits
             intervalSplits={run.splits}
@@ -334,6 +353,7 @@ export default function RunDetailsScreen() {
           totalDistanceMeters={run.totalDistanceMeters}
           route={run.route}
           splits={run.splits}
+          heartRate={run.heartRate}
           configuration={run.configuration}
           tags={annotations.tags}
           notes={annotations.notes}

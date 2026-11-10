@@ -8,6 +8,7 @@
  */
 
 import { DEFAULT_PREMIUM_VOICE_ID } from '../audio/voiceCatalog';
+import type { WorkoutHeartRate } from '../heartRate/hrTypes';
 
 // ── Segment model ────────────────────────────────────────────────────
 
@@ -155,6 +156,16 @@ export interface IntervalSplit {
   avgPaceMinPerKm: number | null;
   targetPace: number | undefined;
   effort: number | undefined;
+  /** Segment type of the interval; absent on splits recorded before heart rate support. */
+  segmentType?: SegmentType;
+  /** Workout time when the interval started, excluding pauses (ms). */
+  startElapsedMs?: number;
+  /** Workout time when the interval ended, excluding pauses (ms). */
+  endElapsedMs?: number;
+  avgHr?: number;
+  maxHr?: number;
+  /** Recovery and rest only: how far heart rate fell over the interval (bpm). */
+  hrRecoveryDrop?: number;
 }
 
 // ── Workout Tags ─────────────────────────────────────────────────────
@@ -231,6 +242,8 @@ export interface CompletedWorkout {
   quickStartType?: QuickStartType;
   /** Only GPS runs have weather: it's looked up at the route's last point. */
   weather?: RunWeather;
+  /** Recorded when a heart rate monitor was connected. */
+  heartRate?: WorkoutHeartRate;
 }
 
 // ── Settings ─────────────────────────────────────────────────────────
