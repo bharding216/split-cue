@@ -108,7 +108,7 @@ export function llmsTxt(): Response {
 
 ## What SplitCue Does
 
-SplitCue is an iPhone app designed for runners who do structured interval training. It announces interval transitions, current pace, elapsed time, and countdown warnings through voice audio — so runners don't need to check their phone or watch during workouts.
+SplitCue is an iPhone and Android app designed for runners who do structured interval training. It announces interval transitions, current pace, elapsed time, and countdown warnings through voice audio — so runners don't need to check their phone or watch during workouts.
 
 ## Key Features
 
@@ -135,11 +135,13 @@ SplitCue is an iPhone app designed for runners who do structured interval traini
 ## Platforms
 
 - iOS (iPhone): available on the App Store
+- Android: available on Google Play
 
 ## Links
 
 - Website: ${BASE_URL}
 - App Store: https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816
+- Google Play: https://play.google.com/store/apps/details?id=com.surmount.pacecue
 
 ## Comparison with Other Apps
 

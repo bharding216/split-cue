@@ -96,7 +96,7 @@ export function compareNrcPage(): string {
               </tr>
               <tr>
                 <td><strong>Platforms</strong></td>
-                <td class="partial">iOS</td>
+                <td class="yes">iOS and Android</td>
                 <td class="yes">iOS and Android</td>
               </tr>
             </tbody>
@@ -112,7 +112,6 @@ export function compareNrcPage(): string {
           <li><strong>Multi-week training plans.</strong> NRC offers structured plans that progress over weeks toward a race goal. SplitCue handles individual workouts, not periodized training.</li>
           <li><strong>Social and community features.</strong> NRC has challenges, leaderboards, and the ability to run with friends. SplitCue has no social features.</li>
           <li><strong>Music integration.</strong> NRC integrates with Spotify and offers curated playlists. SplitCue ducks your music during cues but doesn't control playback.</li>
-          <li><strong>Android support.</strong> NRC is available on both iOS and Android. SplitCue is currently iOS only.</li>
           <li><strong>Completely free.</strong> NRC has no subscription or premium tier.</li>
         </ul>
 
@@ -133,7 +132,7 @@ export function compareNrcPage(): string {
       </div>
     </section>
 
-    ${ctaBanner('Try SplitCue for Your Next Interval Workout', 'Download free on the App Store. Includes 11 built-in presets.')}
+    ${ctaBanner('Try SplitCue for Your Next Interval Workout', 'Download free on the App Store or Google Play. Includes 11 built-in presets.')}
     `,
   );
 }

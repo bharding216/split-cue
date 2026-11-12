@@ -101,7 +101,7 @@ export function compareStravaPage(): string {
               </tr>
               <tr>
                 <td><strong>Platforms</strong></td>
-                <td class="partial">iOS</td>
+                <td class="partial">iOS and Android</td>
                 <td class="yes">iOS, Android, web, watch integrations</td>
               </tr>
             </tbody>

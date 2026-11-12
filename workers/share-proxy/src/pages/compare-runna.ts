@@ -91,7 +91,7 @@ export function compareRunnaPage(): string {
               </tr>
               <tr>
                 <td><strong>Platforms</strong></td>
-                <td class="partial">iOS</td>
+                <td class="yes">iOS and Android</td>
                 <td class="yes">iOS and Android</td>
               </tr>
             </tbody>

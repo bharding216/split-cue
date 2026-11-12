@@ -51,7 +51,7 @@ export function handsFreePage(): string {
         <h2>Key Features That Enable Hands-Free Running</h2>
 
         <h3>Background Operation</h3>
-        <p>SplitCue runs in the background on iOS. Lock your screen and the app continues tracking GPS, timing intervals, and making announcements. Your phone's battery usage is minimal because the screen is off.</p>
+        <p>SplitCue runs in the background on iPhone and Android. Lock your screen and the app continues tracking GPS, timing intervals, and making announcements. Your phone's battery usage is minimal because the screen is off.</p>
 
         <h3>Music Ducking</h3>
         <p>If you're listening to music, SplitCue temporarily lowers the music volume during voice cues, then restores it. You never miss an announcement, and you never lose your music.</p>
