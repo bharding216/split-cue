@@ -279,7 +279,7 @@ export function useWorkoutRunner(
 
   /** Stop GPS and heart rate recording; what was recorded stays available for the history entry. */
   const stopSensors = useCallback(() => {
-    stopSensors();
+    paceTrackerRef.current.stop();
     heartRateRef.current.stop();
   }, []);
 
