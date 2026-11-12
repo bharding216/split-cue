@@ -625,7 +625,10 @@ export default function HomeScreen() {
   }, [loading]);
 
   const todayEntry = dayEntries[todayDateKey()];
-  const todayPlanWorkoutRaw = todayEntry?.planWorkouts?.find((pw) => pw.status !== 'skipped') ?? null;
+  // Match the training calendar: a real workout outranks a rest day scheduled on the same date.
+  const todayActive = todayEntry?.planWorkouts?.filter((pw) => pw.status !== 'skipped') ?? [];
+  const todayPlanWorkoutRaw =
+    todayActive.find((pw) => !pw.day_label?.toLowerCase().includes('rest')) ?? todayActive[0] ?? null;
   // Hide the "Today's Workout" card when:
   // 1. Every plan workout today was skipped (the training calendar hides skipped days)
   // 2. The plan workout is already completed (it's in "Recently Used")
