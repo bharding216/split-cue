@@ -536,9 +536,10 @@ export function useWorkoutRunner(
       });
     }
     saveCompletedWorkout(entry)
-      .then(() =>
-        attachRunWeather(entry).catch((e) => console.warn('Failed to attach run weather:', e)),
-      )
+      .then(() => {
+        clearActiveSession();
+        return attachRunWeather(entry).catch((e) => console.warn('Failed to attach run weather:', e));
+      })
       .catch((e) => console.warn('Failed to save workout history:', e));
     return entryId;
   }, [workout.id, workout.name, sessionMeta]);
@@ -903,13 +904,10 @@ export function useWorkoutRunner(
     // Mount only: the snapshot is consumed once.
   }, []);
 
-  // Save on every phase or interval change; drop the saved session once the workout ends.
+  // Save on every phase or interval change. The saved session is kept after the workout ends
+  // until it's in history, so a crash while finishing can still be resumed.
   useEffect(() => {
-    if (engine.phase === 'finished') {
-      clearActiveSession();
-    } else {
-      persistSession();
-    }
+    persistSession();
   }, [engine.phase, engine.currentIndex, persistSession]);
 
   // Save when backgrounded, since the OS may kill the app without warning.
@@ -1116,6 +1114,8 @@ export function useWorkoutRunner(
           settings: settingsRef.current,
         });
       }
+    } else {
+      clearActiveSession();
     }
   }, [workout, captureSplit, saveHistoryEntry, trackRunEnd]);
 

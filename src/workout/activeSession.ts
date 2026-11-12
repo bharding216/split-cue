@@ -3,7 +3,7 @@
  * closed or killed mid-run.
  *
  * The runner writes a snapshot while a workout is running or paused and
- * deletes it when the workout finishes or is stopped. On the next launch,
+ * deletes it once the ended workout is saved to history. On the next launch,
  * a leftover snapshot means the workout never ended, so the user is
  * offered the chance to pick it back up.
  *
