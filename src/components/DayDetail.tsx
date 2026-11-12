@@ -32,8 +32,6 @@ interface DayDetailProps {
   onRemoveWorkout?: (workoutId: string) => void;
   onMoveWorkout?: (workoutId: string) => void;
   onEditWorkout?: (workoutData: WorkoutDefinition, planWorkoutId: string) => void;
-  /** Open voice-driven AI edit for a specific plan workout */
-  onVoiceEdit?: (workoutId: string) => void;
   onViewRun: (historyEntryId: string) => void;
   onRunAgain: (run: CompletedWorkout) => void;
   onAddWorkout?: (date: string) => void;
@@ -179,7 +177,6 @@ export function DayDetail({
   onRemoveWorkout,
   onMoveWorkout,
   onEditWorkout,
-  onVoiceEdit,
   onViewRun,
   onRunAgain,
   onAddWorkout,
@@ -251,19 +248,6 @@ export function DayDetail({
 
         return (
           <View key={pw.id} style={[styles.planCard, highlighted && styles.planCardHighlighted]}>
-            {/* AI edit button — top-right of card (only for detailed workouts in the 14-day window) */}
-            {onVoiceEdit && isPlanned && !isRest && hasWorkoutData && (
-              <TouchableOpacity
-                style={[styles.aiEditBtn, large && styles.aiEditBtnInline]}
-                onPress={() => onVoiceEdit(pw.id)}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="mic-outline" size={15} color={Colors.accent} />
-                <Text style={styles.aiEditBtnText}>Edit with AI</Text>
-              </TouchableOpacity>
-            )}
-
             <View style={styles.planHeader}>
               <View style={[styles.statusBadge, { backgroundColor: statusBadgeColor(pw.status) + '22' }]}>
                 <Text style={[styles.statusText, { color: statusBadgeColor(pw.status) }]}>
@@ -460,31 +444,6 @@ const styles = StyleSheet.create({
   planCardHighlighted: {
     borderColor: Colors.primary,
     borderWidth: 2,
-  },
-  aiEditBtn: {
-    position: 'absolute' as const,
-    top: Spacing.sm,
-    right: Spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.accent + '15',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    zIndex: 1,
-  },
-  aiEditBtnInline: {
-    position: 'relative' as const,
-    top: 0,
-    right: 0,
-    alignSelf: 'flex-end',
-    marginBottom: Spacing.sm,
-  },
-  aiEditBtnText: {
-    fontSize: FontSize.xs - 1,
-    fontWeight: '700',
-    color: Colors.accent,
   },
   planHeader: {
     gap: Spacing.xs,

@@ -47,8 +47,7 @@ import { track } from '../../../src/analytics/track';
 import { consumeCalendarRequest, type CalendarHighlightSource } from '../../../src/navigation/calendarFocus';
 import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
-import { VoiceEditSheet } from '../../../src/components/VoiceEditSheet';
-import { addWorkoutToCalendar, applyPlanModifications, type PlanModification } from '../../../src/ai/planService';
+import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { buildHistorySummary } from '../../../src/ai/historySummary';
@@ -138,7 +137,6 @@ export default function TrainingScreen() {
   const [voiceDate, setVoiceDate] = useState<string | null>(null);
   const [aiContext, setAiContext] = useState<AIContext | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ id: string; date: string; label: string } | null>(null);
-  const [voiceEditTarget, setVoiceEditTarget] = useState<string | null>(null);
   const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [coachCollapsed, setCoachCollapsed] = useState(false);
   const returnToPickerDate = useRef<string | null>(null);
@@ -334,20 +332,6 @@ export default function TrainingScreen() {
       setMoveTarget({ id: pw.id, date: pw.date, label: pw.day_label || 'Training' });
     }
   }, [planWorkouts]);
-
-  const handleVoiceEdit = useCallback((workoutId: string) => {
-    setVoiceEditTarget(workoutId);
-  }, []);
-
-  const handleVoiceEditApply = useCallback(async (modifications: PlanModification[]) => {
-    const pw = voiceEditTarget ? planWorkouts.find((w) => w.id === voiceEditTarget) : null;
-    if (!pw) return;
-    const ownerPlan = plans.find((p) => p.id === pw.plan_id);
-    if (!ownerPlan) return;
-    await applyPlanModifications(ownerPlan.id, modifications);
-    setVoiceEditTarget(null);
-    await refresh();
-  }, [voiceEditTarget, planWorkouts, plans, refresh]);
 
   // Load AI context for voice builder (lazy — only when needed)
   const loadAiContext = useCallback(async () => {
@@ -658,7 +642,6 @@ export default function TrainingScreen() {
                 onRemoveWorkout={handleRemoveWorkout}
                 onMoveWorkout={handleMoveWorkoutFromDay}
                 onEditWorkout={handleEditWorkout}
-                onVoiceEdit={user ? handleVoiceEdit : undefined}
                 onViewRun={handleViewRun}
                 onRunAgain={handleRunAgain}
                 onAddWorkout={handleAddWorkout}
@@ -717,23 +700,6 @@ export default function TrainingScreen() {
           onClose={() => setMoveTarget(null)}
         />
       )}
-
-      {/* Voice AI edit sheet */}
-      {voiceEditTarget && (() => {
-        const pw = planWorkouts.find((w) => w.id === voiceEditTarget);
-        const ownerPlan = pw ? plans.find((p) => p.id === pw.plan_id) : null;
-        if (!pw || !ownerPlan) return null;
-        return (
-          <VoiceEditSheet
-            visible
-            workout={pw}
-            plan={ownerPlan}
-            planWorkouts={planWorkouts.filter((w) => w.plan_id === ownerPlan.id)}
-            onApply={handleVoiceEditApply}
-            onClose={() => setVoiceEditTarget(null)}
-          />
-        );
-      })()}
     </View>
   );
 }

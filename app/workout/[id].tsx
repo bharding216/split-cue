@@ -12,17 +12,25 @@ import { WorkoutDefinition, generateId, withResolvedCategory } from '../../src/w
 import { loadWorkouts, saveWorkout } from '../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../src/workout/tempWorkoutCache';
 import { WorkoutEditorForm } from '../../src/components/WorkoutEditorForm';
+import { VoiceEditSheet } from '../../src/components/VoiceEditSheet';
+import { applyPlanModifications, type PlanModification } from '../../src/ai/planService';
 import { useTrainingPlan } from '../../src/contexts/TrainingPlanContext';
+import { useAuth } from '../../src/contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
 import { track } from '../../src/analytics/track';
 
 export default function EditWorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { updateWorkoutData } = useTrainingPlan();
+  const { user } = useAuth();
+  const { plans, planWorkouts, refresh, updateWorkoutData } = useTrainingPlan();
   const [workout, setWorkout] = useState<WorkoutDefinition | null>(null);
   const [fromPlan, setFromPlan] = useState(false);
   const [planWorkoutId, setPlanWorkoutId] = useState<string | undefined>();
+  const [aiEditOpen, setAiEditOpen] = useState(false);
+  const planWorkout = planWorkoutId ? planWorkouts.find((w) => w.id === planWorkoutId) : undefined;
+  const ownerPlan = planWorkout ? plans.find((p) => p.id === planWorkout.plan_id) : undefined;
+  const canAiEdit = !!user && !!planWorkout && !!ownerPlan && planWorkout.status === 'planned';
   /** The latest autosaved version, so sharing picks up edits. */
   const latest = useRef<WorkoutDefinition | null>(null);
   const { openShare, shareSheet } = useShareSheet();
@@ -85,6 +93,7 @@ export default function EditWorkoutScreen() {
         initial={workout}
         autoSave={!fromPlan}
         isPlanWorkout={fromPlan}
+        onAiEdit={canAiEdit ? () => setAiEditOpen(true) : undefined}
         onSave={async (updated) => {
           if (planWorkoutId) {
             try {
@@ -131,6 +140,22 @@ export default function EditWorkoutScreen() {
         }}
         onCancel={() => router.back()}
       />
+      {/* Mounted only while open so the native recorder isn't created with the editor */}
+      {aiEditOpen && planWorkout && ownerPlan && (
+        <VoiceEditSheet
+          visible
+          workout={planWorkout}
+          plan={ownerPlan}
+          planWorkouts={planWorkouts.filter((w) => w.plan_id === ownerPlan.id)}
+          onApply={async (modifications: PlanModification[]) => {
+            await applyPlanModifications(ownerPlan.id, modifications);
+            setAiEditOpen(false);
+            await refresh();
+            router.back();
+          }}
+          onClose={() => setAiEditOpen(false)}
+        />
+      )}
       {shareSheet}
     </>
   );
