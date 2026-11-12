@@ -1,10 +1,12 @@
 /**
  * Workout sharing utilities.
  *
- * Supports three sharing modes:
+ * Supports four sharing modes:
  *  1. Share workout structure (from Home) — text summary + deep link
  *  2. Share workout results (from History) — text summary with splits + deep link
  *  3. Challenge a friend (after a workout) — the structure plus the result to beat
+ *  4. Share a planned workout (from Training) — the structure plus its calendar
+ *     date, so the recipient can add it to the same day in their calendar
  *
  * Share links are HTTPS URLs pointing to a Supabase Edge Function that
  * serves a landing page. The page lets recipients open the workout in the
@@ -168,16 +170,22 @@ interface ShareableWorkoutV2 {
   /** Sender's app variant, set only by dev/preview builds. The landing page
    *  uses it to deep link into the matching build. */
   a?: 'development' | 'preview';
+  /** Calendar date (YYYY-MM-DD) the sender planned the workout for. Builds
+   *  that predate this field ignore it and import a plain workout. */
+  pd?: string;
 }
+
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Encode a workout definition into a deep link URL.
  */
-export function encodeWorkoutLink(def: WorkoutDefinition): string {
+export function encodeWorkoutLink(def: WorkoutDefinition, plannedDate?: string): string {
   const shareable: ShareableWorkoutV2 = {
     v: 2,
     n: def.name,
     b: def.blocks,
+    ...(plannedDate ? { pd: plannedDate } : {}),
   };
 
   const json = JSON.stringify(shareable);
@@ -186,11 +194,17 @@ export function encodeWorkoutLink(def: WorkoutDefinition): string {
   return `${scheme}://workout/import?d=${encodeURIComponent(base64)}`;
 }
 
+export interface SharedWorkout {
+  workout: WorkoutDefinition;
+  /** YYYY-MM-DD when shared from a planned calendar day, otherwise null. */
+  plannedDate: string | null;
+}
+
 /**
  * Result of decoding a shared workout. `'needs-update'` means the payload was
  * written by a newer app version with a format this build doesn't understand.
  */
-export type SharedWorkoutResult = WorkoutDefinition | 'needs-update' | null;
+export type SharedWorkoutResult = SharedWorkout | 'needs-update' | null;
 
 /**
  * Decode a deep link URL back into a WorkoutDefinition.
@@ -222,11 +236,14 @@ function decodeSharePayload(parsed: any): SharedWorkoutResult {
   if (parsed.v === 2 && parsed.n && Array.isArray(parsed.b)) {
     const now = Date.now();
     return {
-      id: generateId(),
-      name: parsed.n,
-      blocks: parsed.b,
-      createdAt: now,
-      updatedAt: now,
+      workout: {
+        id: generateId(),
+        name: parsed.n,
+        blocks: parsed.b,
+        createdAt: now,
+        updatedAt: now,
+      },
+      plannedDate: typeof parsed.pd === 'string' && DATE_KEY_PATTERN.test(parsed.pd) ? parsed.pd : null,
     };
   }
 
@@ -241,7 +258,7 @@ function decodeSharePayload(parsed: any): SharedWorkoutResult {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    return migrateToBlockModel(oldDef);
+    return { workout: migrateToBlockModel(oldDef), plannedDate: null };
   }
 
   return null;
@@ -260,9 +277,20 @@ function generateShortCode(): string {
   return code;
 }
 
+/** Extract the short code from a share URL (splitcue.app/w/<code> or <scheme>://w/<code>). */
+export function parseShareCode(url: string): string | null {
+  const match = url.match(/\/w\/([A-Za-z0-9]{4,16})\/?(?:[?#].*)?$/);
+  return match ? match[1] : null;
+}
+
+export function shareUrlForCode(code: string): string {
+  return `${SHARE_BASE_URL}/${code}`;
+}
+
 export async function createShareLink(
   def: WorkoutDefinition,
-  shareType: 'structure' | 'results' | 'challenge' = 'structure',
+  shareType: 'structure' | 'results' | 'challenge' | 'planned' = 'structure',
+  plannedDate?: string,
 ): Promise<string> {
   const variant = Constants.expoConfig?.extra?.appVariant as string | undefined;
   const shareable: ShareableWorkoutV2 = {
@@ -270,6 +298,7 @@ export async function createShareLink(
     n: def.name,
     b: def.blocks,
     ...(variant === 'development' || variant === 'preview' ? { a: variant } : {}),
+    ...(plannedDate ? { pd: plannedDate } : {}),
   };
 
   const code = generateShortCode();
@@ -290,13 +319,13 @@ export async function createShareLink(
       });
 
     if (!error) {
-      return `${SHARE_BASE_URL}/${code}`;
+      return shareUrlForCode(code);
     }
   } catch {
     // Network failure — fall through to legacy link
   }
 
-  return encodeWorkoutLink(def);
+  return encodeWorkoutLink(def, plannedDate);
 }
 
 export async function resolveShareCode(code: string): Promise<SharedWorkoutResult> {
@@ -335,6 +364,52 @@ export async function shareWorkoutStructure(
       workout_name: def.name,
       share_type: 'structure',
     });
+  } catch {
+    // User cancelled or share failed
+  }
+}
+
+/** Format a YYYY-MM-DD calendar date as e.g. "Thursday, Nov 14". */
+export function formatPlannedDate(dateKey: string): string {
+  return new Date(`${dateKey}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+/**
+ * Share a workout planned for a calendar day. Recipients who open the link
+ * are offered to add it to the same date in their own calendar.
+ */
+export async function shareWorkoutForDate(
+  def: WorkoutDefinition,
+  plannedDate: string,
+): Promise<void> {
+  const text = [
+    `Run this with me on ${formatPlannedDate(plannedDate)}.`,
+    '',
+    formatWorkoutText(def, await loadPaceUnit()),
+  ].join('\n');
+  const link = await createShareLink(def, 'planned', plannedDate);
+
+  try {
+    const result = await Share.share(
+      Platform.OS === 'ios'
+        ? { message: `${text}\n\nAdd it to your SplitCue calendar:`, url: link }
+        : {
+            message: `${text}\n\nAdd it to your SplitCue calendar:\n${link}`,
+            title: `${def.name} — SplitCue Workout`,
+          },
+    );
+    if (result.action === Share.sharedAction) {
+      track('workout_shared', {
+        workout_id: def.id,
+        workout_name: def.name,
+        share_type: 'planned',
+        planned_date: plannedDate,
+      });
+    }
   } catch {
     // User cancelled or share failed
   }

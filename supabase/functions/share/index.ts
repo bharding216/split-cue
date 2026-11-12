@@ -6,8 +6,13 @@
  *
  * Reads both payload formats stored in `shared_workouts.workout_data`:
  *   v1: { n, w, b, c }      — warmup/blocks/cooldown of { repeatCount, intervals }
- *   v2: { v: 2, n, b, a? }  — block model (segments and repeat groups);
- *                             `a` is set by dev/preview builds only
+ *   v2: { v: 2, n, b, a?, pd? } — block model (segments and repeat groups);
+ *                             `a` is set by dev/preview builds only;
+ *                             `pd` is the sender's planned date (YYYY-MM-DD)
+ *
+ * The store buttons carry the code through an install so the app can import
+ * the workout on first launch: the Play link sets the install referrer, and
+ * the App Store button copies the share URL to the clipboard.
  *
  * Must be deployed with JWT verification off; link previews and browsers
  * call it without auth.
@@ -115,9 +120,19 @@ function summarize(workout: Json): string | null {
   return parts.join(" \u00b7 ");
 }
 
+function formatPlannedDate(pd: Json): string | null {
+  if (typeof pd !== "string") return null;
+  const match = pd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "short", day: "numeric" });
+}
+
 function renderPage(code: string, workout: Json | null): string {
   const rawName = typeof workout?.n === "string" && workout.n.trim() ? workout.n.trim() : null;
   const name = rawName ? escapeHtml(rawName) : "Shared Workout";
+  const plannedDate = formatPlannedDate(workout?.pd);
 
   let summary: string | null = null;
   try {
@@ -125,7 +140,14 @@ function renderPage(code: string, workout: Json | null): string {
   } catch {
     summary = null;
   }
-  const desc = escapeHtml(summary ?? "Open in SplitCue to try this workout.");
+  const fallbackDesc = plannedDate
+    ? "Open in SplitCue to add this workout to your calendar."
+    : "Open in SplitCue to try this workout.";
+  const desc = escapeHtml(
+    plannedDate ? `Planned for ${plannedDate}${summary ? ` \u00b7 ${summary}` : ""}` : summary ?? fallbackDesc,
+  );
+  const shareUrl = `${SHARE_BASE_URL}/${code}`;
+  const playUrl = `${PLAY_STORE_URL}&referrer=${encodeURIComponent(`splitcue_share=${code}`)}`;
 
   const productionLink = `${PRODUCTION_SCHEME}://w/${code}`;
   const variant = typeof workout?.a === "string" ? VARIANT_SCHEMES[workout.a] : undefined;
@@ -167,7 +189,8 @@ function renderPage(code: string, workout: Json | null): string {
     <a class="btn btn-primary" href="${primaryLink}">${primaryLabel}</a>
     ${secondaryOpen}
     <a id="ios" class="btn btn-secondary" href="${APP_STORE_URL}" style="display:none">Download on the App Store</a>
-    <a id="android" class="btn btn-secondary" href="${PLAY_STORE_URL}" style="display:none">Get it on Google Play</a>
+    <a id="android" class="btn btn-secondary" href="${playUrl}" style="display:none">Get it on Google Play</a>
+    <p id="ios-hint" class="hint" style="display:none">New to SplitCue? After installing, open the app and allow paste to pick up this workout.</p>
     <p class="hint">Already have SplitCue? If the workout doesn't open, update to the latest version.</p>
     <p class="footer">SplitCue \u2014 Interval running, guided by audio cues</p>
   </div>
@@ -176,9 +199,38 @@ function renderPage(code: string, workout: Json | null): string {
       var ua = navigator.userAgent || '';
       var isIOS = /iPhone|iPad|iPod/i.test(ua);
       var isAndroid = /Android/i.test(ua);
-      if (isIOS) document.getElementById('ios').style.display = 'block';
+      var ios = document.getElementById('ios');
+      if (isIOS) {
+        ios.style.display = 'block';
+        document.getElementById('ios-hint').style.display = 'block';
+      }
       else if (isAndroid) document.getElementById('android').style.display = 'block';
-      else { document.getElementById('ios').style.display = 'block'; document.getElementById('android').style.display = 'block'; }
+      else { ios.style.display = 'block'; document.getElementById('android').style.display = 'block'; }
+
+      // The app reads this on first launch to import the workout.
+      var shareUrl = ${JSON.stringify(shareUrl)};
+      function copyFallback() {
+        var input = document.createElement('textarea');
+        input.value = shareUrl;
+        input.setAttribute('readonly', '');
+        input.style.position = 'absolute';
+        input.style.left = '-9999px';
+        document.body.appendChild(input);
+        input.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(input);
+      }
+      ios.addEventListener('click', function(e) {
+        if (!isIOS) return;
+        e.preventDefault();
+        var go = function() { window.location.href = ios.href; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(shareUrl).then(go, function() { copyFallback(); go(); });
+        } else {
+          copyFallback();
+          go();
+        }
+      });
     })();
   </script>
 </body>

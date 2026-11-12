@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -13,7 +13,16 @@ import {
 } from '../src/announcements/announcementService';
 import { track } from '../src/analytics/track';
 import { reportDevice } from '../src/analytics/deviceReport';
-import { decodeWorkoutLink, resolveShareCode } from '../src/sharing/shareWorkout';
+import {
+  decodeWorkoutLink,
+  formatPlannedDate,
+  parseShareCode,
+  resolveShareCode,
+  type SharedWorkout,
+} from '../src/sharing/shareWorkout';
+import { consumeDeferredShareLink } from '../src/sharing/deferredShareLink';
+import { addWorkoutToCalendar } from '../src/ai/planService';
+import type { WorkoutDefinition } from '../src/workout/workoutTypes';
 import { saveWorkout, clearAllUserData } from '../src/workout/workoutStorage';
 import { loadActiveSession, clearActiveSession } from '../src/workout/activeSession';
 import { AuthProvider, useAuth } from '../src/contexts/AuthContext';
@@ -29,14 +38,31 @@ import {
 import { openStoreListing, useRequiredUpdate } from '../src/updates/requiredUpdate';
 import { RequiredUpdateScreen } from '../src/components/RequiredUpdateScreen';
 
+function todayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function saveImportedWorkout(workout: WorkoutDefinition): Promise<void> {
+  await saveWorkout({ ...workout, origin: 'imported' });
+  track('workout_imported', {
+    workout_id: workout.id,
+    workout_name: workout.name,
+    destination: 'workouts',
+  });
+}
+
 function RootLayoutInner() {
   const router = useRouter();
   const pathname = usePathname();
   const updateRequired = useRequiredUpdate();
   const { user, loading: authLoading } = useAuth();
   const { tier, loading: subscriptionLoading } = useSubscription();
-  const { planWorkouts } = useTrainingPlan();
+  const { planWorkouts, loading: planLoading, ensurePlan, refresh: refreshPlans } = useTrainingPlan();
   const prevUserIdRef = useRef<string | null>(null);
+  const [pendingPlannedShare, setPendingPlannedShare] = useState<SharedWorkout | null>(null);
+  /** Account (or 'guest') the pending planned share was last offered to. */
+  const plannedShareOfferedTo = useRef<string | null>(null);
 
   // End any Live Activities orphaned by a force-kill during a workout.
   useEffect(() => {
@@ -117,15 +143,103 @@ function RootLayoutInner() {
     return () => subscription.remove();
   }, [user?.id]);
 
+  // Offer a shared planned workout for the same date on the recipient's
+  // calendar, once auth and the calendar have loaded.
+  useEffect(() => {
+    if (!pendingPlannedShare || authLoading || planLoading) return;
+    const audience = user?.id ?? 'guest';
+    if (plannedShareOfferedTo.current === audience) return;
+    plannedShareOfferedTo.current = audience;
+
+    const { workout, plannedDate } = pendingPlannedShare;
+    const dateKey = plannedDate!;
+    const dateLabel = formatPlannedDate(dateKey);
+    const finish = () => setPendingPlannedShare(null);
+    const importToWorkouts = async () => {
+      finish();
+      await saveImportedWorkout(workout);
+      router.push(`/workout/${workout.id}`);
+    };
+
+    if (!user) {
+      Alert.alert(
+        'Add to Your Calendar',
+        `Sign in to add "${workout.name}" to your training calendar on ${dateLabel}.`,
+        [
+          { text: 'Not Now', style: 'cancel', onPress: finish },
+          { text: 'Save to Workouts', onPress: importToWorkouts },
+          { text: 'Sign In', onPress: () => router.push('/login') },
+        ],
+      );
+      return;
+    }
+
+    const existing = planWorkouts.find(
+      (pw) =>
+        pw.date === dateKey &&
+        (pw.workout_data as WorkoutDefinition | null)?.name === workout.name,
+    );
+    if (existing) {
+      finish();
+      Alert.alert(
+        'Already Planned',
+        `"${workout.name}" is already on your calendar for ${dateLabel}.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          {
+            text: 'View',
+            onPress: () => router.push(`/(tabs)/training/workout-detail?workoutId=${existing.id}` as any),
+          },
+        ],
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Add to Your Calendar',
+      `Add "${workout.name}" to your training calendar on ${dateLabel}?`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: finish },
+        {
+          text: 'Add',
+          onPress: async () => {
+            finish();
+            try {
+              const plan = await ensurePlan();
+              const added = await addWorkoutToCalendar(
+                plan.id,
+                user.id,
+                dateKey,
+                { ...workout, origin: 'imported' },
+                plan.start_date,
+              );
+              track('workout_imported', {
+                workout_id: workout.id,
+                workout_name: workout.name,
+                destination: 'calendar',
+                planned_date: dateKey,
+              });
+              await refreshPlans().catch(() => {});
+              router.push(`/(tabs)/training/workout-detail?workoutId=${added.id}` as any);
+            } catch (err) {
+              console.warn('Failed to add shared workout to calendar:', err);
+              Alert.alert('Could Not Add Workout', 'Check your connection and try opening the link again.');
+            }
+          },
+        },
+      ],
+    );
+  }, [pendingPlannedShare, authLoading, planLoading, user, planWorkouts, ensurePlan, refreshPlans, router]);
+
   // Handle incoming deep links for shared workout imports.
   useEffect(() => {
     const handleUrl = async (url: string, { isInitial }: { isInitial?: boolean } = {}) => {
       // Support HTTPS links (splitcue.app/w/<code>), custom-scheme short links
       // (pacecue://w/<code>), and legacy base64 links (pacecue://workout/import?d=...)
-      const shortMatch = url.match(/\/w\/([A-Za-z0-9]{4,16})$/);
+      const shortCode = parseShareCode(url);
       const isLegacy = url.includes('workout/import');
 
-      if (!shortMatch && !isLegacy) return;
+      if (!shortCode && !isLegacy) return;
 
       // On cold start the URL doesn't match any app route, so Expo Router
       // renders an unmatched/404 screen. Navigate to home first to clear it.
@@ -133,11 +247,11 @@ function RootLayoutInner() {
         router.replace('/');
       }
 
-      const workout = shortMatch
-        ? await resolveShareCode(shortMatch[1])
+      const shared = shortCode
+        ? await resolveShareCode(shortCode)
         : decodeWorkoutLink(url);
 
-      if (workout === 'needs-update') {
+      if (shared === 'needs-update') {
         Alert.alert(
           'Update SplitCue',
           'This workout was shared from a newer version of SplitCue. Update the app to import it.',
@@ -152,24 +266,29 @@ function RootLayoutInner() {
         return;
       }
 
-      if (!workout) {
+      if (!shared) {
         Alert.alert('Invalid Link', 'Could not read the shared workout.');
         return;
       }
 
+      if (shared.plannedDate && shared.plannedDate >= todayKey()) {
+        plannedShareOfferedTo.current = null;
+        setPendingPlannedShare(shared);
+        return;
+      }
+
+      const { workout } = shared;
       Alert.alert(
         'Import Workout',
-        `Add "${workout.name}" to your workouts?`,
+        shared.plannedDate
+          ? `"${workout.name}" was planned for ${formatPlannedDate(shared.plannedDate)}, which has passed. Add it to your workouts?`
+          : `Add "${workout.name}" to your workouts?`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Import',
             onPress: async () => {
-              await saveWorkout({ ...workout, origin: 'imported' });
-              track('workout_imported', {
-                workout_id: workout.id,
-                workout_name: workout.name,
-              });
+              await saveImportedWorkout(workout);
               router.push(`/workout/${workout.id}`);
             },
           },
@@ -177,9 +296,18 @@ function RootLayoutInner() {
       );
     };
 
-    // Handle URL that launched the app (cold start)
-    Linking.getInitialURL().then((url) => {
-      if (url) handleUrl(url, { isInitial: true });
+    // Handle URL that launched the app (cold start). A first launch without
+    // one may still have come from a share link opened before install.
+    Linking.getInitialURL().then(async (url) => {
+      if (url) {
+        handleUrl(url, { isInitial: true });
+        return;
+      }
+      const deferredUrl = await consumeDeferredShareLink();
+      if (deferredUrl) {
+        track('deferred_share_link_opened');
+        handleUrl(deferredUrl);
+      }
     });
 
     // Handle URLs while the app is already open (warm start)

@@ -14,15 +14,22 @@ import { ANNOUNCEMENTS, type Announcement } from './announcements';
 const DISMISSED_KEY = '@pacecue/dismissed_announcements';
 const INSTALLED_KEY = '@pacecue/installed_at';
 
+let installInit: Promise<boolean> | null = null;
+
 /**
  * Record the install timestamp if one doesn't already exist.
- * Safe to call on every app open — only writes once.
+ * Safe to call on every app open — only writes once. Resolves to `true`
+ * on the first launch after install, including from every caller that
+ * launch.
  */
-export async function initInstallTimestamp(): Promise<void> {
-  const existing = await AsyncStorage.getItem(INSTALLED_KEY);
-  if (!existing) {
+export function initInstallTimestamp(): Promise<boolean> {
+  installInit ??= (async () => {
+    const existing = await AsyncStorage.getItem(INSTALLED_KEY);
+    if (existing) return false;
     await AsyncStorage.setItem(INSTALLED_KEY, new Date().toISOString());
-  }
+    return true;
+  })();
+  return installInit;
 }
 
 async function getInstalledAt(): Promise<Date> {
