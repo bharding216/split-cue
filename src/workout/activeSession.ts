@@ -47,6 +47,8 @@ export interface ActiveSessionSnapshot {
   /** Workout time (pauses excluded) when the current interval started. */
   intervalStartElapsedMs?: number;
   hrSamples?: HrSample[];
+  /** App state when the snapshot was written ('active', 'background', ...). */
+  appState?: string;
 }
 
 /** Runner state rebuilt from a snapshot, always paused. */

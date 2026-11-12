@@ -24,6 +24,7 @@ import {
   hasDistanceFeature,
   QuickStartType,
   DISTANCE_INTERVAL_MAX_MS,
+  estimatedPlannedSeconds,
 } from '../workout/workoutTypes';
 import {
   createEngineState,
@@ -419,6 +420,7 @@ export function useWorkoutRunner(
       trackSegments: tracker.getTrackSegments(),
       intervalStartElapsedMs: intervalStartElapsedRef.current,
       hrSamples: heartRateRef.current.getSamples(),
+      appState: AppState.currentState,
     });
   }, [workout, sessionMeta]);
 
@@ -981,7 +983,7 @@ export function useWorkoutRunner(
       workout_id: workout.id,
       workout_name: workout.name,
       interval_count: next.intervals.length,
-      total_duration_seconds: next.intervals.reduce((s, i) => s + i.durationSeconds, 0),
+      total_duration_seconds: estimatedPlannedSeconds(next.intervals),
       gps_enabled: needsGps,
       settings: settingsRef.current,
       template_id: sessionMeta?.templateId,
@@ -1094,8 +1096,7 @@ export function useWorkoutRunner(
       saveHistoryEntry(next.totalElapsedMs, false);
       if (onlyCooldownRemains(next.intervals, next.currentIndex)) setRunCompleted(true);
 
-      const plannedMs =
-        next.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
+      const plannedMs = estimatedPlannedSeconds(next.intervals) * 1000;
       const qualifies = runQualifies(next.totalElapsedMs, plannedMs);
       trackRunEnd('workout_abandoned', {
         workout_id: workout.id,

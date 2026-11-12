@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 18.4.0",
+    "version": ">= 24.9.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -14,13 +14,15 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "uploadSourceMaps": true,
       "env": {
         "APP_VARIANT": "preview"
       }
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "uploadSourceMaps": true
     }
   },
   "submit": {

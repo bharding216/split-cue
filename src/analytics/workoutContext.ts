@@ -9,11 +9,13 @@ import {
   type CompletedWorkout,
   type WorkoutDefinition,
   categorizeWorkout,
+  estimatedPlannedSeconds,
   flattenWorkout,
   totalWorkoutDistanceMeters,
 } from '../workout/workoutTypes';
 import { loadHistory } from '../workout/workoutStorage';
 import type { SessionMeta } from '../hooks/useWorkoutRunner';
+import type { ActiveSessionSnapshot } from '../workout/activeSession';
 import type { WorkoutSource } from '../workout/tempWorkoutCache';
 
 /** A stopped run counts as done once this share of its planned time is covered. */
@@ -43,7 +45,7 @@ export function buildWorkoutContext(
   meta?: SessionMeta,
 ): Record<string, unknown> {
   const intervals = flattenWorkout(workout);
-  const plannedSeconds = intervals.reduce((s, i) => s + i.durationSeconds, 0);
+  const plannedSeconds = estimatedPlannedSeconds(intervals);
   const runSegments = intervals.filter((i) => i.segmentType === 'run');
   return {
     workout_source: resolveWorkoutSource(meta),
@@ -73,15 +75,16 @@ export interface RunHistoryContext {
  */
 export function historyEntryQualifies(entry: CompletedWorkout): boolean {
   const config = entry.configuration;
-  const plannedMs = config
-    ? flattenWorkout(config).reduce((s, i) => s + i.durationSeconds, 0) * 1000
-    : 0;
-  if (plannedMs > 0) return entry.totalDurationMs >= plannedMs * QUALIFYING_PLANNED_FRACTION;
   const plannedDistance = config ? totalWorkoutDistanceMeters(config) : null;
-  if (plannedDistance && entry.totalDistanceMeters) {
-    return entry.totalDistanceMeters >= plannedDistance * QUALIFYING_PLANNED_FRACTION;
+  if (
+    plannedDistance &&
+    entry.totalDistanceMeters &&
+    entry.totalDistanceMeters >= plannedDistance * QUALIFYING_PLANNED_FRACTION
+  ) {
+    return true;
   }
-  return entry.totalDurationMs >= QUALIFYING_OPEN_RUN_MS;
+  const plannedMs = config ? estimatedPlannedSeconds(flattenWorkout(config)) * 1000 : 0;
+  return runQualifies(entry.totalDurationMs, plannedMs);
 }
 
 /** Qualifying runs saved on this device, newest first. */
@@ -110,6 +113,35 @@ export async function getRunHistoryContext(): Promise<RunHistoryContext> {
 export function runQualifies(elapsedMs: number, plannedMs: number): boolean {
   if (plannedMs > 0) return elapsedMs >= plannedMs * QUALIFYING_PLANNED_FRACTION;
   return elapsedMs >= QUALIFYING_OPEN_RUN_MS;
+}
+
+/**
+ * Describes a workout the app closed during, from the snapshot left behind.
+ * `seconds_since_save` bounds when the app died: snapshots are written every
+ * few seconds while running and on every move to the background.
+ */
+export function orphanedSessionProps(
+  snapshot: ActiveSessionSnapshot,
+  now = Date.now(),
+): Record<string, unknown> {
+  const { engine, workout } = snapshot;
+  const endedAt = engine.phase === 'paused' && snapshot.pausedAt != null ? snapshot.pausedAt : snapshot.savedAt;
+  const elapsedMs = engine.startedAt > 0 ? Math.max(0, endedAt - engine.startedAt - snapshot.pausedMs) : 0;
+  const plannedMs = estimatedPlannedSeconds(engine.intervals) * 1000;
+  return {
+    workout_id: workout.id,
+    workout_name: workout.name,
+    workout_source: resolveWorkoutSource(snapshot.sessionMeta),
+    phase_at_save: engine.phase,
+    app_state_at_save: snapshot.appState ?? 'unknown',
+    elapsed_ms: elapsedMs,
+    completion_pct: plannedMs > 0 ? Math.round((elapsedMs / plannedMs) * 100) : 0,
+    interval_index: engine.currentIndex,
+    interval_count: engine.intervals.length,
+    distance_m: Math.round(snapshot.totalDistanceMeters),
+    uses_gps: snapshot.usesGps,
+    seconds_since_save: Math.round(Math.max(0, now - snapshot.savedAt) / 1000),
+  };
 }
 
 /** Returns true the first time it's called on this device, so first_run_completed fires once. */

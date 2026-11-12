@@ -25,6 +25,7 @@
     "expo-localization": "~57.0.2",
     "expo-location": "~57.0.20",
     "expo-notifications": "~57.0.24",
+    "expo-observe": "~57.0.28",
     "expo-router": "~57.0.20",
     "expo-sharing": "~57.0.18",
     "expo-speech": "~57.0.2",
@@ -72,8 +73,8 @@
     "build:prod:android": "eas build --profile production --platform android",
     "submit:ios": "eas submit --platform ios",
     "submit:android": "eas submit --platform android",
-    "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --message",
-    "update:prod": "eas update --branch production --environment production --message",
+    "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --upload-source-maps --message",
+    "update:prod": "eas update --branch production --environment production --upload-source-maps --message",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "private": true

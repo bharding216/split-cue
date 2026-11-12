@@ -619,6 +619,28 @@ export function totalWorkoutSeconds(def: WorkoutDefinition): number {
   return flattenWorkout(def).reduce((sum, i) => sum + i.durationSeconds, 0);
 }
 
+/** Pace assumed for distance intervals without a target pace, in min/mile (about 6:13/km). */
+export const ESTIMATE_PACE_MIN_PER_MILE = 10;
+
+/**
+ * Planned run time in seconds. Distance intervals have no duration of their
+ * own, so they're estimated from their target pace (or a typical easy pace).
+ * Manual intervals have no plan and add nothing.
+ */
+export function estimatedPlannedSeconds(
+  intervals: Pick<FlatInterval, 'durationSeconds' | 'distanceMeters' | 'targetPace'>[],
+): number {
+  const total = intervals.reduce((sum, i) => {
+    if (i.durationSeconds > 0) return sum + i.durationSeconds;
+    if (i.distanceMeters && i.distanceMeters > 0) {
+      const pace = i.targetPace && i.targetPace > 0 ? i.targetPace : ESTIMATE_PACE_MIN_PER_MILE;
+      return sum + (i.distanceMeters / METERS_PER_MILE) * pace * 60;
+    }
+    return sum;
+  }, 0);
+  return Math.round(total);
+}
+
 // ── Block tree walkers ───────────────────────────────────────────────
 
 /** Recursively walk the block tree, calling fn on every Segment. */

@@ -33,6 +33,7 @@ import {
   hasDistanceFeature,
   WORKOUT_TAG_GROUPS,
   categorizeWorkout,
+  estimatedPlannedSeconds,
   type CompletedWorkout,
 } from '../../../src/workout/workoutTypes';
 import { resolveWorkoutSource, runQualifies, getRunHistoryContext } from '../../../src/analytics/workoutContext';
@@ -498,7 +499,7 @@ function ActiveWorkoutInner({
 
   // ── Next-run suggestion ──
   // Offered after a run that counts, unless the calendar already has one in the next few days.
-  const plannedMs = state.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
+  const plannedMs = estimatedPlannedSeconds(state.intervals) * 1000;
   const runCounts =
     runQualifies(state.totalElapsedMs, plannedMs) || runner.paceState.totalDistanceMeters >= 1000;
   const hasUpcomingPlanned = planWorkouts.some(

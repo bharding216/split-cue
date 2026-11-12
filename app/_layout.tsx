@@ -3,6 +3,7 @@ import { Alert, AppState } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
+import { Observe, ObserveRoot, useObserve } from 'expo-observe';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Colors } from '../src/constants/theme';
 import { cleanupStaleLiveActivities } from '../src/hooks/useLiveActivity';
@@ -11,7 +12,8 @@ import {
   getUnseenAnnouncement,
   dismissAnnouncement,
 } from '../src/announcements/announcementService';
-import { track } from '../src/analytics/track';
+import { appInfo, flushQueuedEvents, track } from '../src/analytics/track';
+import { orphanedSessionProps } from '../src/analytics/workoutContext';
 import { reportDevice } from '../src/analytics/deviceReport';
 import {
   decodeWorkoutLink,
@@ -39,6 +41,8 @@ import {
 } from '../src/notifications/pushRegistration';
 import { openStoreListing, useRequiredUpdate } from '../src/updates/requiredUpdate';
 import { RequiredUpdateScreen } from '../src/components/RequiredUpdateScreen';
+
+Observe.configure({ environment: appInfo().environment });
 
 function todayKey(): string {
   const d = new Date();
@@ -75,6 +79,11 @@ function RootLayoutInner() {
   const [incomingShare, setIncomingShare] = useState<SharedWorkout | null>(null);
   /** Account (or 'guest') the pending planned share was last offered to. */
   const plannedShareOfferedTo = useRef<string | null>(null);
+  const { markInteractive } = useObserve();
+
+  useEffect(() => {
+    if (!authLoading) markInteractive();
+  }, [authLoading, markInteractive]);
 
   // End any Live Activities orphaned by a force-kill during a workout.
   useEffect(() => {
@@ -93,6 +102,15 @@ function RootLayoutInner() {
   // Track app open
   useEffect(() => {
     track('app_opened');
+  }, []);
+
+  // Resend events queued while offline, e.g. during a run without signal.
+  useEffect(() => {
+    flushQueuedEvents();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') flushQueuedEvents();
+    });
+    return () => subscription.remove();
   }, []);
 
   // Keep the analytics device row current. Foregrounding picks up permission
@@ -325,6 +343,8 @@ function RootLayoutInner() {
       const unfinished = loadActiveSession();
       if (unfinished) {
         const { workout } = unfinished;
+        const sessionProps = orphanedSessionProps(unfinished);
+        track('workout_session_orphaned', sessionProps);
         Alert.alert(
           'Resume Workout?',
           `"${workout.name}" was still in progress when SplitCue closed. Pick up where you left off?`,
@@ -334,13 +354,16 @@ function RootLayoutInner() {
               style: 'destructive',
               onPress: () => {
                 clearActiveSession();
-                track('workout_resume_declined', { workout_id: workout.id });
+                track('workout_resume_declined', sessionProps);
               },
             },
             {
               text: 'Resume',
               style: 'default',
-              onPress: () => router.push(`/workout/run/${workout.id}?resume=1` as any),
+              onPress: () => {
+                track('workout_resume_accepted', sessionProps);
+                router.push(`/workout/run/${workout.id}?resume=1` as any);
+              },
             },
           ],
           { cancelable: false },
@@ -434,7 +457,7 @@ function RootLayoutInner() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#0A0A0F' }}>
       <AuthProvider>
@@ -447,3 +470,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default ObserveRoot.wrap(RootLayout);
