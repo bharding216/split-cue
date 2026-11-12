@@ -93,6 +93,11 @@ import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { RunReviewCard } from '../../../src/components/RunReviewCard';
 import { detectNewRecords, detectNewAwards } from '../../../src/stats/personalRecords';
 import type { PersonalRecord, AwardBadge } from '../../../src/stats/personalRecords';
+import { useShareSheet } from '../../../src/components/ShareSheet';
+import { PostRunShareCard } from '../../../src/components/PostRunShareCard';
+import { SharedResultComparison } from '../../../src/components/SharedResultComparison';
+import { compareResults, resultOf } from '../../../src/sharing/shareText';
+import { recordShareEvent } from '../../../src/sharing/shareWorkout';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -449,6 +454,48 @@ function ActiveWorkoutInner({
     router.push(`/run/${entryId}` as any);
   }, [leaveFinishedScreen, router, runner.completedEntryId, selectedFeel]);
 
+  // ── Sharing ──
+  const { openShare, shareSheet } = useShareSheet();
+  const sharedFrom = workout.sharedFrom;
+
+  const handleShareRun = (kind: 'results' | 'challenge') => {
+    const entry = buildCompletedEntry();
+    if (!entry) return;
+    openShare({
+      kind,
+      workout,
+      workoutName: workout.name,
+      run: entry,
+      replyTo: kind === 'challenge' ? sharedFrom : undefined,
+      surface: sharedFrom && kind === 'challenge' ? 'workout_complete_reply' : 'workout_complete',
+      records: newRecords,
+      awards: newAwards,
+    });
+  };
+
+  // Count a finished run of a friend's shared workout once.
+  const shareCompletionTracked = useRef(false);
+  useEffect(() => {
+    if (state.phase !== 'finished' || !runner.completedEntryId || !sharedFrom) return;
+    if (shareCompletionTracked.current) return;
+    shareCompletionTracked.current = true;
+    recordShareEvent(sharedFrom.code, 'complete');
+    const comparison = sharedFrom.result
+      ? compareResults(
+          resultOf({ totalDurationMs: state.totalElapsedMs, totalDistanceMeters: runner.paceState.totalDistanceMeters }),
+          sharedFrom.result,
+          settings.paceUnit,
+        )
+      : null;
+    track('shared_workout_completed', {
+      workout_id: workout.id,
+      share_code: sharedFrom.code ?? null,
+      has_sender_result: !!sharedFrom.result,
+      beat_sender: comparison ? comparison.deltaSeconds > 0 : null,
+      comparison_basis: comparison?.basis ?? null,
+    });
+  }, [state.phase, runner.completedEntryId]);
+
   // ── Next-run suggestion ──
   // Offered after a run that counts, unless the calendar already has one in the next few days.
   const plannedMs = state.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
@@ -788,6 +835,21 @@ function ActiveWorkoutInner({
           </View>
         </View>
 
+        {completedEntry && sharedFrom?.result ? (
+          <SharedResultComparison
+            sharedFrom={{ ...sharedFrom, result: sharedFrom.result }}
+            mine={resultOf(completedEntry)}
+            paceUnit={settings.paceUnit}
+            onReply={() => handleShareRun('challenge')}
+          />
+        ) : completedEntry && runCounts ? (
+          <PostRunShareCard
+            achievement={newRecords.length > 0 || newAwards.length > 0}
+            onShare={() => handleShareRun('results')}
+            onChallenge={() => handleShareRun('challenge')}
+          />
+        ) : null}
+
         {sessionMeta?.planWorkoutId && (
           <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
         )}
@@ -842,6 +904,7 @@ function ActiveWorkoutInner({
           <Text style={styles.detailsLinkText}>View workout details</Text>
           <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
+        {shareSheet}
       </ScrollView>
     );
   }

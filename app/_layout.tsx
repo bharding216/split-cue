@@ -17,10 +17,12 @@ import {
   decodeWorkoutLink,
   formatPlannedDate,
   parseShareCode,
+  recordShareEvent,
   resolveShareCode,
   type SharedWorkout,
 } from '../src/sharing/shareWorkout';
 import { consumeDeferredShareLink } from '../src/sharing/deferredShareLink';
+import { SharedWorkoutSheet } from '../src/components/SharedWorkoutSheet';
 import { addWorkoutToCalendar } from '../src/ai/planService';
 import type { WorkoutDefinition } from '../src/workout/workoutTypes';
 import { saveWorkout, clearAllUserData } from '../src/workout/workoutStorage';
@@ -43,13 +45,22 @@ function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-async function saveImportedWorkout(workout: WorkoutDefinition): Promise<void> {
-  await saveWorkout({ ...workout, origin: 'imported' });
+function trackSharedImport(workout: WorkoutDefinition, destination: string, extra?: Record<string, unknown>): void {
+  recordShareEvent(workout.sharedFrom?.code, 'import');
   track('workout_imported', {
     workout_id: workout.id,
     workout_name: workout.name,
-    destination: 'workouts',
+    destination,
+    share_code: workout.sharedFrom?.code ?? null,
+    has_sender_name: !!workout.sharedFrom?.senderName,
+    has_sender_result: !!workout.sharedFrom?.result,
+    ...extra,
   });
+}
+
+async function saveImportedWorkout(workout: WorkoutDefinition, destination = 'workouts'): Promise<void> {
+  await saveWorkout({ ...workout, origin: 'imported' });
+  trackSharedImport(workout, destination);
 }
 
 function RootLayoutInner() {
@@ -61,6 +72,7 @@ function RootLayoutInner() {
   const { planWorkouts, loading: planLoading, ensurePlan, refresh: refreshPlans } = useTrainingPlan();
   const prevUserIdRef = useRef<string | null>(null);
   const [pendingPlannedShare, setPendingPlannedShare] = useState<SharedWorkout | null>(null);
+  const [incomingShare, setIncomingShare] = useState<SharedWorkout | null>(null);
   /** Account (or 'guest') the pending planned share was last offered to. */
   const plannedShareOfferedTo = useRef<string | null>(null);
 
@@ -154,6 +166,8 @@ function RootLayoutInner() {
     const { workout, plannedDate } = pendingPlannedShare;
     const dateKey = plannedDate!;
     const dateLabel = formatPlannedDate(dateKey);
+    const sender = workout.sharedFrom?.senderName;
+    const fromSender = sender ? `${sender} wants to run "${workout.name}" with you on ${dateLabel}. ` : '';
     const finish = () => setPendingPlannedShare(null);
     const importToWorkouts = async () => {
       finish();
@@ -164,7 +178,7 @@ function RootLayoutInner() {
     if (!user) {
       Alert.alert(
         'Add to Your Calendar',
-        `Sign in to add "${workout.name}" to your training calendar on ${dateLabel}.`,
+        `${fromSender}Sign in to add "${workout.name}" to your training calendar on ${dateLabel}.`,
         [
           { text: 'Not Now', style: 'cancel', onPress: finish },
           { text: 'Save to Workouts', onPress: importToWorkouts },
@@ -197,7 +211,7 @@ function RootLayoutInner() {
 
     Alert.alert(
       'Add to Your Calendar',
-      `Add "${workout.name}" to your training calendar on ${dateLabel}?`,
+      `${fromSender}Add "${workout.name}" to your training calendar on ${dateLabel}?`,
       [
         { text: 'Cancel', style: 'cancel', onPress: finish },
         {
@@ -213,12 +227,7 @@ function RootLayoutInner() {
                 { ...workout, origin: 'imported' },
                 plan.start_date,
               );
-              track('workout_imported', {
-                workout_id: workout.id,
-                workout_name: workout.name,
-                destination: 'calendar',
-                planned_date: dateKey,
-              });
+              trackSharedImport(workout, 'calendar', { planned_date: dateKey });
               await refreshPlans().catch(() => {});
               router.push(`/(tabs)/training/workout-detail?workoutId=${added.id}` as any);
             } catch (err) {
@@ -277,23 +286,13 @@ function RootLayoutInner() {
         return;
       }
 
-      const { workout } = shared;
-      Alert.alert(
-        'Import Workout',
-        shared.plannedDate
-          ? `"${workout.name}" was planned for ${formatPlannedDate(shared.plannedDate)}, which has passed. Add it to your workouts?`
-          : `Add "${workout.name}" to your workouts?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Import',
-            onPress: async () => {
-              await saveImportedWorkout(workout);
-              router.push(`/workout/${workout.id}`);
-            },
-          },
-        ],
-      );
+      track('shared_workout_opened', {
+        share_code: shared.workout.sharedFrom?.code ?? null,
+        share_type: shared.kind,
+        has_sender_name: !!shared.workout.sharedFrom?.senderName,
+        has_sender_result: !!shared.workout.sharedFrom?.result,
+      });
+      setIncomingShare(shared);
     };
 
     // Handle URL that launched the app (cold start). A first launch without
@@ -415,6 +414,20 @@ function RootLayoutInner() {
           }}
         />
       </Stack>
+      <SharedWorkoutSheet
+        shared={incomingShare}
+        onClose={() => setIncomingShare(null)}
+        onRun={async (workout) => {
+          setIncomingShare(null);
+          await saveImportedWorkout(workout, 'run_now');
+          router.push(`/workout/run/${workout.id}`);
+        }}
+        onSave={async (workout) => {
+          setIncomingShare(null);
+          await saveImportedWorkout(workout);
+          router.push(`/workout/${workout.id}`);
+        }}
+      />
       {/* Never interrupt a run in progress; the screen appears once it ends. */}
       {updateRequired && !pathname.startsWith('/workout/run') && <RequiredUpdateScreen />}
     </>

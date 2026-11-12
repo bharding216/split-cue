@@ -42,6 +42,7 @@ import {
 import { loadWorkouts, loadHistory, deleteWorkout, saveWorkouts } from '../../src/workout/workoutStorage';
 import { setTempWorkout, type WorkoutSource } from '../../src/workout/tempWorkoutCache';
 import { WorkoutCard } from '../../src/components/WorkoutCard';
+import { useShareSheet } from '../../src/components/ShareSheet';
 import { QUICK_START_TILES, quickStartFactory, firstRunWorkout } from '../../src/workout/quickStartDefaults';
 import { FirstRunCard } from '../../src/components/FirstRunCard';
 import { hapticTap } from '../../src/audio/haptics';
@@ -146,6 +147,7 @@ function CategoryWorkoutList({
   onStart,
   onEdit,
   onDelete,
+  onShare,
 }: {
   items: WorkoutDefinition[];
   scrollRef: React.RefObject<ScrollView | null>;
@@ -154,6 +156,7 @@ function CategoryWorkoutList({
   onStart: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onShare: (workout: WorkoutDefinition) => void;
 }) {
   const [data, setData] = useState(items);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -337,6 +340,7 @@ function CategoryWorkoutList({
               onEdit(item.id);
             }}
             onDelete={() => onDelete(item.id)}
+            onShare={() => onShare(item)}
             drag={() => {}}
             isActive={item.id === activeId}
           />
@@ -634,6 +638,7 @@ export default function HomeScreen() {
     return todayPlanWorkoutRaw;
   })();
   const [expanded, setExpanded] = useState<Set<WorkoutCategory>>(new Set());
+  const { openShare, shareSheet } = useShareSheet();
   const scrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(0);
 
@@ -969,6 +974,9 @@ export default function HomeScreen() {
                       onStart={(id) => router.push(`/workout/run/${id}`)}
                       onEdit={(id) => router.push({ pathname: '/workout/configure' as any, params: { id } })}
                       onDelete={handleDelete}
+                      onShare={(workout) =>
+                        openShare({ kind: 'structure', workout, workoutName: workout.name, surface: 'home' })
+                      }
                     />
                   )}
                 </View>
@@ -995,6 +1003,7 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
+      {shareSheet}
       <LapsedSurveySheet />
 
       <RecentRunsSheet

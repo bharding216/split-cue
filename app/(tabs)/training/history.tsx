@@ -25,7 +25,7 @@ import { CompletedWorkout, WorkoutDefinition, formatTime, generateId, METERS_PER
 import { loadHistory, clearHistory, deleteHistoryEntry, updateHistoryEntry, loadWorkouts, loadSettings } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { TagBadges, TagPicker } from '../../../src/components/TagPicker';
-import { shareWorkoutResults } from '../../../src/sharing/shareWorkout';
+import { useShareSheet } from '../../../src/components/ShareSheet';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { onSyncStatusChange } from '../../../src/sync/cloudSync';
 import { analyzeElevation, aggregateByTerrain } from '../../../src/pace/elevationAnalysis';
@@ -167,9 +167,17 @@ export default function HistoryScreen() {
     }
   }, [router]);
 
+  const { openShare, shareSheet } = useShareSheet();
+
   const handleShare = (item: CompletedWorkout) => {
-    const def = workoutsRef.current.find((w) => w.id === item.workoutId) ?? null;
-    shareWorkoutResults(def, item);
+    const def = item.configuration ?? workoutsRef.current.find((w) => w.id === item.workoutId) ?? null;
+    openShare({
+      kind: 'results',
+      workout: def,
+      workoutName: item.workoutName,
+      run: item,
+      surface: 'history',
+    });
   };
 
   const handleClear = () => {
@@ -578,6 +586,7 @@ export default function HistoryScreen() {
         }
       />
       )}
+      {shareSheet}
     </View>
   );
 }

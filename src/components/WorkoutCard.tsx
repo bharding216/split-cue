@@ -23,7 +23,6 @@ import {
   BorderRadius,
   intervalColor,
 } from '../constants/theme';
-import { shareWorkoutStructure } from '../sharing/shareWorkout';
 import { useUnits } from '../hooks/useUnits';
 
 interface WorkoutCardProps {
@@ -31,6 +30,7 @@ interface WorkoutCardProps {
   onStart: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onShare: () => void;
   drag: () => void;
   isActive: boolean;
 }
@@ -40,6 +40,7 @@ export function WorkoutCard({
   onStart,
   onEdit,
   onDelete,
+  onShare,
   drag,
   isActive,
 }: WorkoutCardProps) {
@@ -121,7 +122,7 @@ export function WorkoutCard({
 
         <View style={styles.secondaryActions}>
           <TouchableOpacity
-            onPress={() => shareWorkoutStructure(workout)}
+            onPress={onShare}
             style={styles.iconButton}
             hitSlop={8}
             activeOpacity={0.6}

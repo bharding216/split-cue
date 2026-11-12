@@ -1081,6 +1081,36 @@ returns table(
   order by share_count desc;
 $$ language sql security definer;
 
+-- Share funnel by share type for links created in the last N days: links,
+-- landing page opens (people, not preview bots), app imports, and finished
+-- runs of the shared workout. imports_per_share is the viral coefficient.
+create or replace function share_funnel(num_days int default 30)
+returns table(
+  share_type text,
+  shares int,
+  with_image int,
+  opens int,
+  imports int,
+  completions int,
+  imports_per_share numeric
+) as $$
+  select
+    case when grouping(share_type) = 1 then 'all' else coalesce(share_type, 'unknown') end as share_type,
+    count(*)::int as shares,
+    count(*) filter (where image_path is not null)::int as with_image,
+    coalesce(sum(open_count), 0)::int as opens,
+    coalesce(sum(import_count), 0)::int as imports,
+    coalesce(sum(completion_count), 0)::int as completions,
+    round(coalesce(sum(import_count), 0)::numeric / nullif(count(*), 0), 3) as imports_per_share
+  from shared_workouts
+  where created_at > now() - (num_days || ' days')::interval
+  group by rollup(share_type)
+  order by grouping(share_type), shares desc;
+$$ language sql security definer set search_path = public;
+
+revoke execute on function share_funnel(int) from public, anon, authenticated;
+grant execute on function share_funnel(int) to service_role;
+
 -- ── Strava ───────────────────────────────────────────────────
 -- Push counts come from the client's strava_workout_pushed events, which are
 -- only sent after a successful upload; pushes before that event shipped are

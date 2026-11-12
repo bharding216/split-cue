@@ -26,7 +26,7 @@ import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
-import { shareWorkoutForDate } from '../../../src/sharing/shareWorkout';
+import { useShareSheet } from '../../../src/components/ShareSheet';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { useLargeText } from '../../../src/hooks/useLargeText';
 
@@ -112,13 +112,19 @@ export default function WorkoutDetailScreen() {
     router.push(`/workout/${workout.id}`);
   }, [workoutData, planWorkout, router]);
 
+  const { openShare, shareSheet } = useShareSheet();
+
   const handleShare = useCallback(() => {
     if (!workoutData || !planWorkout) return;
-    shareWorkoutForDate(
-      { ...workoutData, name: workoutData.name || planWorkout.day_label || 'Training' },
-      planWorkout.date,
-    );
-  }, [workoutData, planWorkout]);
+    const name = workoutData.name || planWorkout.day_label || 'Training';
+    openShare({
+      kind: 'planned',
+      workout: { ...workoutData, name },
+      workoutName: name,
+      plannedDate: planWorkout.date,
+      surface: 'plan_workout_detail',
+    });
+  }, [workoutData, planWorkout, openShare]);
 
   const handleGenerateDetail = useCallback(async () => {
     if (!planWorkout || !ownerPlan) return;
@@ -344,6 +350,7 @@ export default function WorkoutDetailScreen() {
           </View>
         </View>
       )}
+      {shareSheet}
     </ScrollView>
   );
 }

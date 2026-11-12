@@ -76,8 +76,16 @@ const ASSET_LINKS = JSON.stringify([
     target: {
       namespace: 'android_app',
       package_name: 'com.surmount.pacecue',
-      // TODO: Replace with your app signing certificate SHA-256 fingerprint
-      sha256_cert_fingerprints: ['TODO:ADD:YOUR:SHA256:FINGERPRINT:HERE'],
+      // Play installs are signed with the Play app signing key; EAS builds
+      // installed outside Play carry the EAS keystore signature.
+      sha256_cert_fingerprints: [
+        // Play app signing key
+        '05:EA:A0:62:B1:83:E9:AC:3F:6F:22:E3:ED:A4:F6:DD:B3:6B:CD:8F:8E:AC:44:6D:8E:B9:C9:D9:98:C6:A1:74',
+        // EAS keystore, production profile (Play upload key)
+        '39:4A:A0:D5:15:94:57:8E:61:97:FE:7E:E9:82:5B:1D:83:4A:C5:48:AF:44:89:F9:87:7A:A5:20:E3:D7:DD:2F',
+        // EAS keystore, build credentials zKjx_H1HoG
+        '86:A4:37:87:51:2E:5C:8C:D0:77:F1:25:09:FD:84:5F:E3:1F:BD:12:BC:25:0F:B4:B5:18:C0:E2:ED:22:FC:AC',
+      ],
     },
   },
 ]);
@@ -137,7 +145,11 @@ export default {
       let resp: Response | null = null;
       try {
         resp = await fetch(upstream, {
-          headers: { 'User-Agent': 'pacecue-share-proxy' },
+          headers: {
+            'User-Agent': 'pacecue-share-proxy',
+            // Lets the share function skip link-preview bots when counting opens.
+            'X-Forwarded-User-Agent': request.headers.get('User-Agent') ?? '',
+          },
         });
       } catch {
         resp = null;
@@ -159,7 +171,7 @@ export default {
         status: resp.status,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': resp.ok ? 'public, max-age=3600' : 'no-store',
+          'Cache-Control': resp.ok ? 'public, max-age=300' : 'no-store',
         },
       });
     }
@@ -233,6 +245,8 @@ function shareFallbackPage(code: string): string {
   <title>Shared Workout \u2014 SplitCue</title>
   <meta property="og:title" content="Shared Workout \u2014 SplitCue">
   <meta property="og:description" content="Open in SplitCue to try this workout.">
+  <meta property="og:image" content="https://splitcue.app/banner.png">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#181818;color:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}

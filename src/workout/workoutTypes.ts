@@ -63,6 +63,19 @@ export type IntervalType = 'warmup' | 'hard' | 'easy' | 'cooldown';
 /** Where a workout's structure came from, when it wasn't built by hand. */
 export type WorkoutOrigin = 'ai_voice' | 'imported' | 'next_run_suggestion';
 
+/** A sender's finished result, carried in a share link. */
+export interface SharedResult {
+  durationMs: number;
+  distanceMeters?: number;
+}
+
+/** Who shared an imported workout, and the result they posted with it. */
+export interface SharedFrom {
+  code?: string;
+  senderName?: string;
+  result?: SharedResult;
+}
+
 export interface WorkoutDefinition {
   id: string;
   name: string;
@@ -70,6 +83,7 @@ export interface WorkoutDefinition {
   targetDistanceMeters?: number;
   category?: WorkoutCategory;
   origin?: WorkoutOrigin;
+  sharedFrom?: SharedFrom;
   createdAt: number;
   updatedAt: number;
 }
