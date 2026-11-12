@@ -8,6 +8,7 @@
  *   /features/audio-pace-announcements        → feature page
  *   /features/interval-running                → feature page
  *   /features/ai-workout-builder              → feature page
+ *   /features/training-plans                  → feature page
  *   /guides/maintain-running-pace             → guide page
  *   /guides/hands-free-running                → guide page
  *   /robots.txt                               → crawler rules
@@ -24,6 +25,7 @@ import { homePage } from './pages/home';
 import { audioPacePage } from './pages/audio-pace';
 import { intervalRunningPage } from './pages/interval-running';
 import { aiBuilderPage } from './pages/ai-builder';
+import { trainingPlansPage } from './pages/training-plans';
 import { maintainPacePage } from './pages/maintain-pace';
 import { handsFreePage } from './pages/hands-free';
 import { compareNrcPage } from './pages/compare-nrc';
@@ -109,6 +111,7 @@ const PAGE_ROUTES: Record<string, () => string> = {
   '/features/audio-pace-announcements': audioPacePage,
   '/features/interval-running': intervalRunningPage,
   '/features/ai-workout-builder': aiBuilderPage,
+  '/features/training-plans': trainingPlansPage,
   '/guides/maintain-running-pace': maintainPacePage,
   '/guides/hands-free-running': handsFreePage,
   '/guides/beginner-run-walk': beginnerRunWalkPage,

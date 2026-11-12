@@ -25,7 +25,7 @@ const APP_JSON_LD = {
   '@type': 'MobileApplication',
   name: 'SplitCue',
   description:
-    'A running app for iPhone and Android providing real-time audio pace announcements, structured interval workouts with voice coaching, and an AI workout builder. Supports GPS pace tracking, customizable audio cues, and hands-free operation for runners.',
+    'A running app for iPhone and Android providing adaptive AI training plans, real-time audio pace announcements, structured interval workouts with voice coaching, and an AI workout builder. Supports GPS pace tracking, Bluetooth heart rate monitors and watches, customizable audio cues, and hands-free operation for runners.',
   applicationCategory: 'SportsApplication',
   operatingSystem: 'iOS, Android',
   url: BASE_URL,
@@ -36,6 +36,13 @@ const APP_JSON_LD = {
     priceCurrency: 'USD',
   },
   featureList: [
+    'AI training plans for 5K, 10K, half marathon, marathon, and pace goals',
+    'Training plans that adapt after every run',
+    'Plan adjustments by chat or voice',
+    'Bluetooth heart rate monitor and watch support',
+    'Route maps, elevation profiles, and terrain pace',
+    'Strava upload',
+    'Personal records and progress trends',
     'Real-time voice pace announcements',
     'GPS pace tracking',
     'Structured interval workouts',
@@ -54,6 +61,7 @@ const APP_JSON_LD = {
 
 const NAV_LINKS = [
   { label: 'Features', href: '/features/audio-pace-announcements' },
+  { label: 'Training Plans', href: '/features/training-plans' },
   { label: 'Intervals', href: '/features/interval-running' },
   { label: 'AI Builder', href: '/features/ai-workout-builder' },
   { label: 'Compare', href: '/compare/pacecue-vs-nike-run-club' },
@@ -73,7 +81,9 @@ export function renderPage(meta: PageMeta, body: string): string {
   <title>${escapeHtml(meta.title)}</title>
   <meta name="description" content="${escapeAttr(meta.description)}">
   <link rel="canonical" href="${canonical}">
-  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" type="image/png" href="/favicon.png?v=2" sizes="512x512">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
@@ -126,11 +136,12 @@ export function renderPage(meta: PageMeta, body: string): string {
             <img src="/icon.png" alt="SplitCue" width="40" height="40" class="footer-logo">
             <span>SplitCue</span>
           </div>
-          <p class="footer-text">Real-time voice coaching for runners. Interval training, pace tracking, and AI-powered workouts.</p>
+          <p class="footer-text">Real-time voice coaching for runners. Adaptive training plans, interval training, pace tracking, and AI-powered workouts.</p>
         </div>
         <div>
           <h3 class="footer-heading">Features</h3>
           <ul class="footer-links">
+            <li><a href="/features/training-plans">AI Training Plans</a></li>
             <li><a href="/features/audio-pace-announcements">Audio Pace Announcements</a></li>
             <li><a href="/features/interval-running">Interval Running</a></li>
             <li><a href="/features/ai-workout-builder">AI Workout Builder</a></li>
@@ -275,7 +286,7 @@ const CSS = `
   .nav-brand:hover { color: var(--green); }
   .nav-logo { border-radius: 8px; }
   .nav-links { display: flex; gap: 24px; align-items: center; }
-  .nav-link { color: var(--text-secondary); font-size: 14px; font-weight: 500; transition: color 0.2s; }
+  .nav-link { color: var(--text-secondary); font-size: 14px; font-weight: 500; transition: color 0.2s; white-space: nowrap; }
   .nav-link:hover { color: var(--text); }
   .nav-cta {
     background: var(--green);
@@ -294,7 +305,7 @@ const CSS = `
   .nav-toggle { display: none; cursor: pointer; flex-direction: column; gap: 5px; }
   .nav-toggle span { display: block; width: 22px; height: 2px; background: var(--text-secondary); border-radius: 2px; transition: 0.3s; }
 
-  @media (max-width: 768px) {
+  @media (max-width: 1040px) {
     .nav-toggle { display: flex; }
     .nav-links {
       position: fixed; top: 64px; left: 0; right: 0;

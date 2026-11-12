@@ -21,7 +21,7 @@ export function compareNrcPage(): string {
     <section class="section">
       <div class="prose">
         <h2>Overview</h2>
-        <p><strong>SplitCue</strong> is an interval training app with real-time voice pace coaching, a custom workout builder, and an AI workout generator. It's focused on structured workouts and hands-free audio feedback.</p>
+        <p><strong>SplitCue</strong> is a running app with adaptive AI training plans, real-time voice pace coaching, a custom workout builder, and an AI workout generator. It's focused on structured training and hands-free audio feedback.</p>
         <p><strong>Nike Run Club (NRC)</strong> is a free, all-purpose running app with guided audio runs narrated by Nike coaches, GPS tracking, training plans, and a social community. It covers running more broadly — from casual jogs to marathon training.</p>
         <p>These apps solve different problems. Here's where each one is stronger.</p>
 
@@ -61,12 +61,12 @@ export function compareNrcPage(): string {
               </tr>
               <tr>
                 <td><strong>Training plans</strong></td>
-                <td class="no">No — SplitCue is workout-by-workout, not a multi-week plan</td>
+                <td class="yes">Yes — AI plans for 5K through marathon, custom distances, or a target pace, adapted after each run</td>
                 <td class="yes">Yes — 5K, 10K, half marathon, full marathon plans</td>
               </tr>
               <tr>
                 <td><strong>GPS tracking</strong></td>
-                <td class="yes">Yes — pace, distance, splits per interval</td>
+                <td class="yes">Yes — pace, distance, splits per interval, route map, elevation</td>
                 <td class="yes">Yes — pace, distance, route map, elevation</td>
               </tr>
               <tr>
@@ -76,7 +76,7 @@ export function compareNrcPage(): string {
               </tr>
               <tr>
                 <td><strong>Social features</strong></td>
-                <td class="no">No</td>
+                <td class="partial">Challenge a friend to beat your result via link — no feed or leaderboards</td>
                 <td class="yes">Yes — challenges, leaderboards, friends</td>
               </tr>
               <tr>
@@ -109,8 +109,7 @@ export function compareNrcPage(): string {
         <p>NRC is a better choice if you want:</p>
         <ul>
           <li><strong>Guided coached runs.</strong> NRC's library of narrated runs with coaches like Coach Bennett is genuinely motivating. SplitCue doesn't have pre-recorded coach content.</li>
-          <li><strong>Multi-week training plans.</strong> NRC offers structured plans that progress over weeks toward a race goal. SplitCue handles individual workouts, not periodized training.</li>
-          <li><strong>Social and community features.</strong> NRC has challenges, leaderboards, and the ability to run with friends. SplitCue has no social features.</li>
+          <li><strong>Social and community features.</strong> NRC has community challenges, leaderboards, and the ability to run with friends. SplitCue lets you challenge a friend to beat a workout result, but has no feed or leaderboards.</li>
           <li><strong>Music integration.</strong> NRC integrates with Spotify and offers curated playlists. SplitCue ducks your music during cues but doesn't control playback.</li>
           <li><strong>Completely free.</strong> NRC has no subscription or premium tier.</li>
         </ul>
@@ -118,6 +117,7 @@ export function compareNrcPage(): string {
         <h2>Where SplitCue Is Better</h2>
         <p>SplitCue is a better choice if you want:</p>
         <ul>
+          <li><strong>Training plans you can reshape by asking.</strong> SplitCue builds a plan around your race date, running days, and recent runs, reviews each plan workout to suggest changes, and lets you adjust the plan by text or voice.</li>
           <li><strong>Custom interval workouts.</strong> SplitCue lets you build any interval structure — any number of blocks, any durations, any labels, with repeat counts. NRC doesn't have a custom interval builder.</li>
           <li><strong>Frequent, configurable pace announcements.</strong> SplitCue can announce your pace every 15 seconds with GPS smoothing. NRC's audio feedback is less frequent and not configurable.</li>
           <li><strong>Target pace alerts.</strong> Set a target pace on individual intervals and hear whether you're on pace, too fast, or too slow. NRC doesn't offer per-interval target pacing.</li>
@@ -126,9 +126,9 @@ export function compareNrcPage(): string {
         </ul>
 
         <h2>When to Use Which</h2>
-        <p><strong>Use Nike Run Club</strong> if you're looking for a general-purpose running companion with coaching motivation, training plans, and social features — especially if you're newer to running or want guided runs.</p>
-        <p><strong>Use SplitCue</strong> if you do structured interval training and want precise control over your workout structure with hands-free voice coaching and real-time pace feedback.</p>
-        <p>Many runners use both — NRC for easy runs and training plan guidance, SplitCue for speed work and custom interval sessions.</p>
+        <p><strong>Use Nike Run Club</strong> if you're looking for a general-purpose running companion with coach-narrated guided runs and social features — especially if you're newer to running and want motivation.</p>
+        <p><strong>Use SplitCue</strong> if you want a training plan that adapts to how your runs go, precise control over your workout structure, and hands-free voice coaching with real-time pace feedback.</p>
+        <p>Many runners use both — NRC for guided easy runs, SplitCue for their training plan, speed work, and custom interval sessions.</p>
       </div>
     </section>
 

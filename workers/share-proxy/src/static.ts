@@ -9,6 +9,7 @@ const PAGES = [
   '/features/audio-pace-announcements',
   '/features/interval-running',
   '/features/ai-workout-builder',
+  '/features/training-plans',
   '/compare/pacecue-vs-nike-run-club',
   '/compare/pacecue-vs-strava',
   '/compare/pacecue-vs-runna',
@@ -104,14 +105,21 @@ ${urls}
 export function llmsTxt(): Response {
   const body = `# SplitCue
 
-> SplitCue is a running app that provides real-time voice coaching for interval workouts and pace tracking.
+> SplitCue is a running app with adaptive AI training plans and real-time voice coaching for interval workouts and pace tracking.
 
 ## What SplitCue Does
 
-SplitCue is an iPhone and Android app designed for runners who do structured interval training. It announces interval transitions, current pace, elapsed time, and countdown warnings through voice audio — so runners don't need to check their phone or watch during workouts.
+SplitCue is an iPhone and Android app for runners who want structured training. It builds AI training plans around a race or pace goal and adapts them after every run. During workouts it announces interval transitions, current pace, elapsed time, and countdown warnings through voice audio — so runners don't need to check their phone or watch.
 
 ## Key Features
 
+- AI training plans for 5K, 10K, half marathon, marathon, custom distances, or a target pace, organized into training phases on a calendar
+- Adaptive plans: the AI coach reviews each completed plan workout and proposes changes to upcoming workouts, which the runner approves
+- Plan adjustments by chat or voice (e.g. "make this week easier", "swap days", "help me taper")
+- Heart rate from Bluetooth chest straps and watches that broadcast heart rate (Garmin, Polar, COROS, Amazfit, WHOOP, Wahoo, and more)
+- Route maps, elevation profiles, and pace by terrain (uphill, flat, downhill)
+- Strava upload, including heart rate
+- Personal records, awards, and progress trends
 - Real-time GPS pace tracking with voice announcements (min/mile or min/km)
 - Structured interval workouts with warmup, hard, easy, and cooldown phases
 - Configurable audio cues: voice, beeps, both, or silent with haptics
@@ -120,13 +128,14 @@ SplitCue is an iPhone and Android app designed for runners who do structured int
 - 11 built-in workout presets (5K Speed, Tempo Run, Fartlek, Hill Repeats, Run/Walk, etc.)
 - Background operation with screen locked
 - Music ducking during announcements
-- Workout sharing via links
+- Workout sharing via links, including challenging a friend to beat a result
 - iOS Live Activities and home screen widgets
 - Cloud sync across devices
 - Workout history with per-interval splits and distances
 
 ## Who It's For
 
+- Runners training for a 5K, 10K, half marathon, or marathon who want an adaptive plan
 - Interval runners doing speed work, tempo runs, fartlek, or hill repeats
 - Beginners using run/walk programs
 - Pace-conscious runners who want audio feedback without screen-checking
@@ -145,14 +154,15 @@ SplitCue is an iPhone and Android app designed for runners who do structured int
 
 ## Comparison with Other Apps
 
-- SplitCue is better than Nike Run Club for custom interval workouts and configurable pace announcements. NRC is better for guided coached runs, training plans, and social features.
-- SplitCue is better than Strava for real-time interval coaching with voice guidance. Strava is better for post-run analytics, social features, route mapping, and multi-sport tracking.
-- SplitCue is better than Runna for fully custom workout building and free-form interval design. Runna is better for structured multi-week training plans with adaptive progression.
-- SplitCue is free. NRC is free. Strava has a subscription for advanced features. Runna requires a subscription.
+- SplitCue is better than Nike Run Club for adaptive training plans, custom interval workouts, and configurable pace announcements. NRC is better for coach-narrated guided runs and social features.
+- SplitCue is better than Strava for training plans and real-time interval coaching with voice guidance, and can upload runs to Strava. Strava is better for long-term analytics, social features, route planning, and multi-sport tracking.
+- SplitCue and Runna both offer adaptive training plans. SplitCue is better for fully custom workout building, adjusting plans by chat or voice, and price. Runna is better for coach-designed programming and pushing workouts to Garmin and Apple Watch.
+- SplitCue is free, including one AI training plan; SplitCue Pro adds unlimited plans. NRC is free. Strava has a subscription for advanced features. Runna requires a subscription.
 
 ## Pages
 
 - [Home](${BASE_URL}/)
+- [AI Training Plans](${BASE_URL}/features/training-plans)
 - [Audio Pace Announcements](${BASE_URL}/features/audio-pace-announcements)
 - [Interval Running With Voice Guidance](${BASE_URL}/features/interval-running)
 - [AI Workout Builder](${BASE_URL}/features/ai-workout-builder)

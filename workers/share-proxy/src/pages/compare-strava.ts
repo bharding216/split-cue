@@ -21,7 +21,7 @@ export function compareStravaPage(): string {
     <section class="section">
       <div class="prose">
         <h2>Overview</h2>
-        <p><strong>SplitCue</strong> is an interval training app with real-time voice pace coaching, a custom workout builder, and an AI workout generator. It's designed to guide you <em>during</em> the run with audio cues.</p>
+        <p><strong>SplitCue</strong> is a running app with adaptive AI training plans, real-time voice pace coaching, a custom workout builder, and an AI workout generator. It's designed to guide you <em>during</em> the run with audio cues — and it can upload your runs to Strava.</p>
         <p><strong>Strava</strong> is a GPS tracking and social fitness platform. It records your runs (and rides, swims, hikes), maps routes, tracks performance over time, and connects you with a large community of athletes through segments, clubs, and leaderboards.</p>
         <p>These apps don't really compete — they complement each other. But here's a detailed comparison.</p>
 
@@ -61,7 +61,7 @@ export function compareStravaPage(): string {
               </tr>
               <tr>
                 <td><strong>GPS tracking and mapping</strong></td>
-                <td class="partial">GPS pace and distance — no route map</td>
+                <td class="partial">Route map, elevation profile, and pace by terrain for each run</td>
                 <td class="yes">Full route mapping, elevation profiles, heatmaps</td>
               </tr>
               <tr>
@@ -76,7 +76,7 @@ export function compareStravaPage(): string {
               </tr>
               <tr>
                 <td><strong>Training log and analytics</strong></td>
-                <td class="partial">Workout history with splits</td>
+                <td class="partial">Workout history with splits, heart rate graphs, personal records, and progress trends</td>
                 <td class="yes">Detailed training log, fitness trends, relative effort, power data</td>
               </tr>
               <tr>
@@ -113,8 +113,8 @@ export function compareStravaPage(): string {
         <h2>Where Strava Is Better</h2>
         <p>Strava is stronger in almost every category that isn't real-time interval coaching:</p>
         <ul>
-          <li><strong>Post-run analysis.</strong> Strava's training log, pace analysis, elevation profiles, and fitness trends are far more detailed. SplitCue stores basic split data.</li>
-          <li><strong>Route mapping.</strong> Strava maps every run with GPS and lets you plan routes. SplitCue doesn't map routes.</li>
+          <li><strong>Long-term analysis.</strong> Strava's training log, relative effort, and fitness trends go deeper. SplitCue shows splits, route maps, elevation, heart rate, and personal records for your runs, but isn't a full training-load platform.</li>
+          <li><strong>Route planning.</strong> Strava lets you plan routes with a popularity heatmap. SplitCue maps the runs you've done but doesn't plan routes.</li>
           <li><strong>Social community.</strong> Strava is the social network for runners. Segments, clubs, kudos, and challenges are core to the experience.</li>
           <li><strong>Multi-sport support.</strong> Strava covers running, cycling, swimming, hiking, and more. SplitCue is running only.</li>
           <li><strong>Platform support.</strong> Strava works on iOS, Android, web, and integrates with GPS watches from Garmin, Apple, COROS, and others.</li>
@@ -124,6 +124,7 @@ export function compareStravaPage(): string {
         <h2>Where SplitCue Is Better</h2>
         <p>SplitCue fills a gap that Strava doesn't address:</p>
         <ul>
+          <li><strong>Adaptive training plans.</strong> SplitCue builds a plan around your race date and recent runs, reviews each plan workout, and lets you adjust the plan by text or voice.</li>
           <li><strong>Interval training with voice coaching.</strong> Strava records your run but doesn't tell you when to start your next interval or what your current set is. SplitCue guides every transition with audio.</li>
           <li><strong>Custom workout builder.</strong> Create any interval structure with blocks, repeats, and target paces. Strava has no equivalent.</li>
           <li><strong>Frequent pace announcements.</strong> Hear your pace every 15–120 seconds, not just at mile markers.</li>
@@ -137,7 +138,7 @@ export function compareStravaPage(): string {
           <li>Use <strong>SplitCue</strong> to coach you through interval workouts with real-time audio guidance.</li>
           <li>Use <strong>Strava</strong> to log your training, track fitness over time, plan routes, and connect with other runners.</li>
         </ul>
-        <p>SplitCue doesn't try to replace Strava's tracking and social features. Strava doesn't try to coach your intervals.</p>
+        <p>Connect Strava in SplitCue and upload your runs with one tap — GPS route and heart rate included. SplitCue doesn't try to replace Strava's tracking and social features. Strava doesn't try to coach your intervals.</p>
       </div>
     </section>
 
