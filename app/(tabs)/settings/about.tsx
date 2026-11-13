@@ -11,13 +11,13 @@ import {
   ScrollView,
   Linking,
   Platform,
-  Share,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
 import { openSupportEmail } from '../../../src/support/supportEmail';
+import { shareSplitCue } from '../../../src/sharing/shareApp';
 
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
@@ -25,19 +25,9 @@ const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
 
 export default function AboutSettingsScreen() {
-  const handleShare = async () => {
+  const handleShare = () => {
     hapticTap();
-    const storeUrl = Platform.OS === 'android' ? PLAY_STORE_URL : APP_STORE_URL;
-    try {
-      const pitch = 'Check out SplitCue — an interval timer for runners with audio pacing cues.';
-      await Share.share(
-        Platform.OS === 'ios'
-          ? { message: pitch, url: storeUrl }
-          : { message: `${pitch}\n\n${storeUrl}` },
-      );
-    } catch (_) {
-      // User dismissed the share sheet
-    }
+    shareSplitCue('settings_about');
   };
 
   return (

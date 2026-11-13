@@ -10,6 +10,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useShareSheet } from '../../src/components/ShareSheet';
 import { WorkoutDefinition, generateId, withResolvedCategory } from '../../src/workout/workoutTypes';
 import { loadWorkouts, saveWorkout } from '../../src/workout/workoutStorage';
+import { withEditedAttribution } from '../../src/sharing/shareWorkout';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../src/workout/tempWorkoutCache';
 import { WorkoutEditorForm } from '../../src/components/WorkoutEditorForm';
 import { VoiceEditSheet } from '../../src/components/VoiceEditSheet';
@@ -105,8 +106,9 @@ export default function EditWorkoutScreen() {
             router.back();
             return;
           }
-          latest.current = updated;
-          await saveWorkout({ ...updated, updatedAt: Date.now() });
+          const attributed = withEditedAttribution(workout, updated);
+          latest.current = attributed;
+          await saveWorkout({ ...attributed, updatedAt: Date.now() });
           track('workout_saved', {
             workout_id: updated.id,
             workout_name: updated.name,
@@ -121,7 +123,7 @@ export default function EditWorkoutScreen() {
             ? updated.name
             : updated.name.replace(/\s*\(copy\)$/i, '') + ' (Copy)';
           await saveWorkout({
-            ...withResolvedCategory(updated),
+            ...withResolvedCategory(withEditedAttribution(workout, updated)),
             id: newId,
             name,
             createdAt: now,

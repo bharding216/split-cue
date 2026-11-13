@@ -96,6 +96,53 @@ test('pace comparison uses the runner unit', () => {
   assert.equal(c?.label, '1:00/km faster');
 });
 
+test('consistency challenges compare scores, not pace', () => {
+  const mine = { durationMs: 30 * 60_000, distanceMeters: 4 * MILE, consistency: 92 };
+  const theirs = { durationMs: 28 * 60_000, distanceMeters: 4 * MILE, consistency: 88 };
+  assert.deepEqual(compareResults(mine, theirs, 'minPerMile', 'consistency'), {
+    basis: 'consistency',
+    deltaSeconds: 4,
+    label: '4 points higher',
+  });
+  assert.equal(compareResults(mine, theirs, 'minPerMile', 'time')?.basis, 'pace');
+  assert.equal(compareResults({ ...mine, consistency: 87 }, theirs, 'minPerMile', 'consistency')?.label, '1 point lower');
+  assert.equal(compareResults({ ...mine, consistency: undefined }, theirs, 'minPerMile', 'consistency')?.basis, 'pace');
+});
+
+const steadyRun: CompletedWorkout = {
+  ...run,
+  splits: [0, 1, 2].map(() => ({ ...run.splits![0], segmentType: 'run' as const })),
+};
+
+test('consistency challenge captions use the score', () => {
+  const subject: ShareSubject = {
+    kind: 'challenge',
+    workout,
+    workoutName: 'Tempo Mile',
+    run: steadyRun,
+    challengeType: 'consistency',
+  };
+  assert.equal(
+    defaultCaption(subject, all, 'minPerMile'),
+    'I scored 100/100 for interval consistency on "Tempo Mile". Can you match my consistency?',
+  );
+
+  const reply: ShareSubject = {
+    ...subject,
+    challengeType: undefined,
+    replyTo: { senderName: 'Alex', challengeType: 'consistency', result: { durationMs: 30 * 60_000, consistency: 90 } },
+  };
+  assert.match(defaultCaption(reply, all, 'minPerMile'), /100\/100 consistency, 10 points higher than you/);
+});
+
+test('achievement captions name the PR or milestone', () => {
+  const base: ShareSubject = { kind: 'achievement', workout, workoutName: 'Tempo Mile', run };
+  const pr = { id: 'fastest_5k', label: 'Fastest 5K', value: '21:48', kicker: 'New PR', message: '' };
+  assert.equal(defaultCaption({ ...base, achievement: pr }, all, 'minPerMile'), 'New Fastest 5K PR: 21:48!');
+  const milestone = { id: 'count_20', label: 'Workouts Completed', value: '20', kicker: 'Milestone', message: 'Keep showing up.' };
+  assert.equal(defaultCaption({ ...base, achievement: milestone }, all, 'minPerMile'), 'Workouts Completed! Keep showing up.');
+});
+
 test('body lists the structure, and splits only when included', () => {
   const subject: ShareSubject = { kind: 'results', workout, workoutName: 'Tempo Mile', run };
   const withSplits = composeShareBody(subject, all, 'minPerMile');

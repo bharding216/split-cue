@@ -61,7 +61,21 @@ import {
   uploadShareCard,
 } from '../sharing/shareCardImage';
 import { trimRouteForPrivacy } from '../sharing/routeOutline';
-import { ShareCard } from './ShareCard';
+import { computeIntervalConsistency } from '../stats/intervalConsistency';
+import type { ChallengeType, SharedResult } from '../workout/workoutTypes';
+import { ShareCard, type ShareCardVariant } from './ShareCard';
+
+const VARIANT_LABELS: Record<ShareCardVariant, string> = {
+  performance: 'Stats',
+  route: 'Route',
+  intervals: 'Intervals',
+  achievement: 'Milestone',
+};
+
+const CHALLENGE_LABELS: Record<ChallengeType, string> = {
+  time: 'Beat my time',
+  consistency: 'Match my consistency',
+};
 
 export interface ShareRequest extends ShareSubject {
   /** Where the share started, for analytics (e.g. "workout_complete"). */
@@ -78,6 +92,7 @@ const TITLES: Record<ShareSubject['kind'], string> = {
   planned: 'Share Planned Run',
   results: 'Share Your Run',
   challenge: 'Challenge a Friend',
+  achievement: 'Share Your Achievement',
 };
 
 function badgeFor(request: ShareRequest): string | undefined {
@@ -111,15 +126,55 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
   const createdLink = useRef<{ key: string; link: CreatedShareLink | null; imageUri: string | null } | null>(null);
 
   const run = request?.run;
-  const hasResult = !!run && run.totalDurationMs > 0 && (request?.kind === 'results' || request?.kind === 'challenge');
+  const hasResult =
+    !!run &&
+    run.totalDurationMs > 0 &&
+    (request?.kind === 'results' || request?.kind === 'challenge' || request?.kind === 'achievement');
   const hasSplits = hasResult && (run?.splits?.length ?? 0) > 1;
   const hasRoute = hasResult && trimRouteForPrivacy(run?.route ?? []).length > 0;
 
   const showResult = hasResult && prefs.includeResult;
   const showSplits = showResult && hasSplits && prefs.includeSplits;
-  const showRoute = showResult && hasRoute && prefs.includeRoute;
   const senderName = prefs.includeName ? prefs.senderName.trim() : '';
+
+  const consistency = useMemo(
+    () => (hasResult ? computeIntervalConsistency(run?.splits) : null),
+    [hasResult, run?.splits],
+  );
+  const variants = useMemo<ShareCardVariant[]>(() => {
+    if (!request) return [];
+    const list: ShareCardVariant[] = [];
+    if (request.achievement) list.push('achievement');
+    list.push('performance');
+    if (showResult && consistency) list.push('intervals');
+    if (showResult && hasRoute) list.push('route');
+    return list;
+  }, [request, showResult, consistency, hasRoute]);
+
+  // Replies keep the original challenge's type; new challenges default to consistency when it can be scored.
+  const challengeTypes: ChallengeType[] =
+    request?.kind === 'challenge' && !request.replyTo && consistency ? ['consistency', 'time'] : [];
+  const [pickedChallengeType, setPickedChallengeType] = useState<ChallengeType | null>(null);
+  const challengeType: ChallengeType | undefined =
+    request?.kind !== 'challenge'
+      ? undefined
+      : request.replyTo
+        ? request.replyTo.challengeType
+        : (pickedChallengeType ?? (consistency ? 'consistency' : 'time'));
+
+  const [pickedVariant, setPickedVariant] = useState<ShareCardVariant | null>(null);
+  const defaultVariant: ShareCardVariant = request?.achievement
+    ? 'achievement'
+    : challengeType === 'consistency' && consistency
+      ? 'intervals'
+      : 'performance';
+  const variant: ShareCardVariant =
+    pickedVariant && variants.includes(pickedVariant) ? pickedVariant : defaultVariant;
+
+  // Picking the route card opts this share in to the route, still with its ends hidden.
+  const showRoute = showResult && hasRoute && (prefs.includeRoute || variant === 'route');
   const textOptions = { includeResult: showResult, includeSplits: showSplits };
+  const subject = request ? { ...request, challengeType } : null;
 
   // Load preferences and units each time the sheet opens.
   useEffect(() => {
@@ -127,6 +182,8 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     let cancelled = false;
     setCaptionEdited(false);
     setNotice(null);
+    setPickedVariant(null);
+    setPickedChallengeType(null);
     createdLink.current = null;
     track('share_sheet_opened', { share_type: request.kind, surface: request.surface });
     (async () => {
@@ -147,10 +204,10 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
 
   // Keep the default caption in step with the switches until the runner edits it.
   useEffect(() => {
-    if (!request || captionEdited) return;
-    setCaption(defaultCaption(request, textOptions, paceUnit));
+    if (!subject || captionEdited) return;
+    setCaption(defaultCaption(subject, textOptions, paceUnit));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, captionEdited, showResult, showSplits, paceUnit]);
+  }, [request, captionEdited, showResult, showSplits, paceUnit, challengeType]);
 
   const updatePrefs = (partial: Partial<SharePreferences>) => {
     const next = { ...prefs, ...partial };
@@ -161,7 +218,7 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
   /** Create the link (and upload the card) once per set of choices. */
   const ensureLink = useCallback(async () => {
     if (!request) return { link: null, imageUri: null };
-    const key = JSON.stringify([senderName, showResult, showSplits, showRoute]);
+    const key = JSON.stringify([senderName, showResult, showSplits, showRoute, variant, challengeType]);
     if (createdLink.current?.key === key) return createdLink.current;
 
     const imageUri = canCapture ? await captureShareCard(cardRef) : null;
@@ -169,20 +226,28 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     if (request.workout) {
       const code = generateShortCode();
       const imagePath = imageUri ? await uploadShareCard(code, imageUri) : null;
+      let result: SharedResult | undefined = showResult && run ? resultOf(run) : undefined;
+      if (result && request.kind === 'challenge' && consistency) {
+        result = { ...result, consistency: consistency.score, repPaces: consistency.repPaces };
+      }
+      const achievement = request.kind === 'achievement' ? request.achievement : undefined;
       link = await createShareLink(
         { ...request.workout, name: request.workoutName || request.workout.name },
         {
           kind: request.kind,
           plannedDate: request.plannedDate,
           senderName: senderName || undefined,
-          result: showResult && run ? resultOf(run) : undefined,
+          result,
+          challengeType,
+          achievement: achievement ? { id: achievement.id, label: achievement.label, value: achievement.value } : undefined,
+          parentCode: request.replyTo?.code ?? request.workout.sharedFrom?.code,
         },
         { code, imagePath },
       );
     }
     createdLink.current = { key, link, imageUri };
     return createdLink.current;
-  }, [request, senderName, showResult, showSplits, showRoute, canCapture, run]);
+  }, [request, senderName, showResult, showSplits, showRoute, variant, challengeType, consistency, canCapture, run]);
 
   const trackShare = (method: ShareMethod, link: CreatedShareLink | null, imageUri: string | null) => {
     if (!request) return;
@@ -199,6 +264,9 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
       include_result: showResult,
       include_splits: showSplits,
       include_route: showRoute,
+      card_variant: imageUri ? variant : null,
+      challenge_type: challengeType ?? null,
+      consistency_score: consistency?.score ?? null,
       is_reply: !!request.replyTo,
       caption_edited: captionEdited,
     });
@@ -211,7 +279,7 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     setNotice(null);
     try {
       const { link, imageUri } = await ensureLink();
-      const message = composeShareMessage(caption, composeShareBody(request, textOptions, paceUnit));
+      const message = composeShareMessage(caption, composeShareBody(subject ?? request, textOptions, paceUnit));
       const url = link?.url;
 
       if (method === 'copy') {
@@ -295,16 +363,43 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
                 >
                   <ShareCard
                     ref={cardRef}
-                    subject={request}
+                    subject={subject ?? request}
                     paceUnit={paceUnit}
                     senderName={senderName || undefined}
                     showResult={showResult}
                     showSplits={showSplits}
                     showRoute={showRoute}
                     badge={showResult ? badgeFor(request) : undefined}
+                    variant={variant}
+                    consistency={consistency}
                   />
                 </View>
               </View>
+            )}
+
+            {canCapture && variants.length > 1 && (
+              <ChipRow
+                label="Card"
+                options={variants.map((v) => ({ value: v, label: VARIANT_LABELS[v] }))}
+                value={variant}
+                onChange={(v) => {
+                  hapticTap();
+                  setPickedVariant(v);
+                }}
+              />
+            )}
+
+            {challengeTypes.length > 1 && (
+              <ChipRow
+                label="Challenge"
+                options={challengeTypes.map((t) => ({ value: t, label: CHALLENGE_LABELS[t] }))}
+                value={challengeType ?? 'time'}
+                onChange={(t) => {
+                  hapticTap();
+                  setPickedChallengeType(t);
+                  if (t === 'consistency') setPickedVariant('intervals');
+                }}
+              />
             )}
 
             <Text style={styles.label}>Message</Text>
@@ -357,7 +452,7 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
                   onChange={(v) => updatePrefs({ includeSplits: v })}
                 />
               )}
-              {hasRoute && showResult && (
+              {hasRoute && showResult && variant !== 'route' && (
                 <ToggleRow
                   label="Route shape"
                   hint="Start and finish are always hidden"
@@ -438,6 +533,41 @@ function ToggleRow({
         accessibilityLabel={label}
       />
     </View>
+  );
+}
+
+function ChipRow<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.chipRow} accessibilityRole="radiogroup">
+        {options.map((option) => {
+          const active = option.value === value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => onChange(option.value)}
+              activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{option.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </>
   );
 }
 
@@ -579,6 +709,33 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 999,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.surface,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  chipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '22',
+  },
+  chipText: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  chipTextActive: {
+    color: Colors.primary,
   },
   nameInput: {
     backgroundColor: Colors.surfaceLight,

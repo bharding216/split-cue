@@ -33,8 +33,11 @@ export function SharedWorkoutSheet({ shared, onRun, onSave, onClose }: Props) {
   const mark = result ? formatResultMark(result, unit) : null;
 
   const eyebrow = sender ? `From ${sender}` : 'Shared workout';
-  const intro =
-    kind === 'challenge' && mark
+  const consistencyChallenge =
+    kind === 'challenge' && workout.sharedFrom?.challengeType === 'consistency' && result?.consistency != null;
+  const intro = consistencyChallenge
+    ? `${sender ?? 'Your friend'} scored ${Math.round(result!.consistency!)}/100 for interval consistency. Can you match it?`
+    : kind === 'challenge' && mark
       ? `${sender ?? 'Your friend'} ran this in ${mark}. Can you beat it?`
       : mark
         ? `${sender ?? 'Your friend'} finished this: ${mark}.`

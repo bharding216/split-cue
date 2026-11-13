@@ -48,7 +48,7 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
         <Stat label="Max" value={heartRate.max} />
       </View>
 
-      {samples && <HeartRateChart samples={samples} splits={splits} width={width} />}
+      {samples && <HeartRateChart samples={samples} splits={splits} avg={heartRate.avg} width={width} />}
 
       {showIntervals && (
         <View style={styles.tableCard}>

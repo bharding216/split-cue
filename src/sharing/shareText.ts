@@ -8,6 +8,7 @@ import {
   WorkoutBlock,
   CompletedWorkout,
   IntervalSplit,
+  ChallengeType,
   SharedFrom,
   SharedResult,
   flattenWorkout,
@@ -16,8 +17,9 @@ import {
 } from '../workout/workoutTypes';
 import type { PaceUnit } from '../pace/paceTypes';
 import { formatDistance, formatPace, metersPerUnit, paceSuffix } from '../units/format';
+import { computeIntervalConsistency } from '../stats/intervalConsistency';
 
-export type ShareKind = 'structure' | 'planned' | 'results' | 'challenge';
+export type ShareKind = 'structure' | 'planned' | 'results' | 'challenge' | 'achievement';
 
 /** Everything a share is about. */
 export interface ShareSubject {
@@ -31,6 +33,25 @@ export interface ShareSubject {
   plannedDate?: string;
   /** Challenges sent back to the friend who shared the workout. */
   replyTo?: SharedFrom;
+  /** Achievement shares: the record or award being celebrated. */
+  achievement?: AchievementMoment;
+  /** Challenges: what the runs are compared on. */
+  challengeType?: ChallengeType;
+}
+
+/** A record or award worth celebrating, shown on its own card. */
+export interface AchievementMoment {
+  id: string;
+  /** e.g. "Fastest 5K" or "20 Workouts". */
+  label: string;
+  /** The big number, e.g. "21:48" or "20". */
+  value: string;
+  /** e.g. "New PR" or "Milestone". */
+  kicker: string;
+  /** e.g. "You're building something great. Keep showing up." */
+  message: string;
+  /** Lifetime totals shown under the big number. */
+  totals?: { label: string; value: string }[];
 }
 
 export interface ShareTextOptions {
@@ -128,11 +149,17 @@ export function formatSplitsText(splits: IntervalSplit[], unit: PaceUnit): strin
 // ── Comparison ───────────────────────────────────────────────────────
 
 export interface ResultComparison {
-  /** Pace when both runs have enough distance, otherwise total time. */
-  basis: 'pace' | 'time';
-  /** Positive when `mine` was better. Seconds, or seconds per unit for pace. */
+  /**
+   * Consistency score for consistency challenges when both runs have one;
+   * otherwise pace when both runs have enough distance, else total time.
+   */
+  basis: 'consistency' | 'pace' | 'time';
+  /**
+   * Positive when `mine` was better. Seconds, seconds per unit for pace, or
+   * score points for consistency.
+   */
   deltaSeconds: number;
-  /** "0:12/mi faster", "0:32 slower", or "dead even". */
+  /** "0:12/mi faster", "0:32 slower", "4 points higher", or "dead even". */
   label: string;
 }
 
@@ -141,8 +168,20 @@ export function compareResults(
   mine: SharedResult,
   theirs: SharedResult,
   unit: PaceUnit,
+  challengeType?: ChallengeType,
 ): ResultComparison | null {
   if (mine.durationMs <= 0 || theirs.durationMs <= 0) return null;
+
+  if (challengeType === 'consistency' && mine.consistency != null && theirs.consistency != null) {
+    const delta = Math.round(mine.consistency) - Math.round(theirs.consistency);
+    if (delta === 0) return { basis: 'consistency', deltaSeconds: 0, label: 'dead even' };
+    const points = Math.abs(delta);
+    return {
+      basis: 'consistency',
+      deltaSeconds: delta,
+      label: `${points} ${points === 1 ? 'point' : 'points'} ${delta > 0 ? 'higher' : 'lower'}`,
+    };
+  }
 
   const myPace = resultPaceMinPerMile(mine);
   const theirPace = resultPaceMinPerMile(theirs);
@@ -167,7 +206,16 @@ export function compareResults(
 function sharedResultOf(subject: ShareSubject, options: ShareTextOptions): SharedResult | null {
   if (!options.includeResult || !subject.run) return null;
   const result = resultOf(subject.run);
-  return result.durationMs > 0 ? result : null;
+  if (result.durationMs <= 0) return null;
+  if (challengeTypeOf(subject) === 'consistency') {
+    const consistency = computeIntervalConsistency(subject.run.splits ?? []);
+    if (consistency) result.consistency = consistency.score;
+  }
+  return result;
+}
+
+function challengeTypeOf(subject: ShareSubject): ChallengeType {
+  return subject.challengeType ?? subject.replyTo?.challengeType ?? 'time';
 }
 
 /** The editable first line of a share message. */
@@ -185,8 +233,29 @@ export function defaultCaption(subject: ShareSubject, options: ShareTextOptions,
         : `Run ${name} with me.`;
     case 'results':
       return mark ? `Just finished ${name}: ${mark}.` : `Just finished ${name}.`;
+    case 'achievement': {
+      const ach = subject.achievement;
+      if (!ach) return mark ? `Just finished ${name}: ${mark}.` : `Just finished ${name}.`;
+      return ach.kicker === 'New PR' ? `New ${ach.label} PR: ${ach.value}!` : `${ach.label}! ${ach.message}`;
+    }
     case 'challenge': {
       const theirs = subject.replyTo?.result;
+      const type = challengeTypeOf(subject);
+      if (type === 'consistency') {
+        const score = result?.consistency;
+        if (subject.replyTo) {
+          if (score == null) return `Took on your ${name} challenge. Your move.`;
+          const delta = theirs?.consistency != null ? Math.round(score) - Math.round(theirs.consistency) : null;
+          if (delta == null) return `Took on your ${name} challenge: ${score}/100 consistency. Your move.`;
+          if (delta === 0) return `Took on your ${name} challenge: ${score}/100 consistency. Dead even with you!`;
+          return delta > 0
+            ? `Took on your ${name} challenge: ${score}/100 consistency, ${delta} points higher than you. Your move.`
+            : `Took on your ${name} challenge: ${score}/100 consistency. You win this round. Rematch?`;
+        }
+        return score != null
+          ? `I scored ${score}/100 for interval consistency on ${name}. Can you match my consistency?`
+          : `Come run ${name} with me. See who paces it more evenly.`;
+      }
       if (subject.replyTo) {
         const comparison = result && theirs ? compareResults(result, theirs, unit) : null;
         if (!mark) return `Took on your ${name} challenge. Your move.`;

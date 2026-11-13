@@ -67,13 +67,23 @@ export type WorkoutOrigin = 'ai_voice' | 'imported' | 'next_run_suggestion';
 export interface SharedResult {
   durationMs: number;
   distanceMeters?: number;
+  /** Interval consistency score, 0-100 (see intervalConsistency). */
+  consistency?: number;
+  /** Average pace of each work rep, seconds per mile. */
+  repPaces?: number[];
 }
+
+export type ChallengeType = 'time' | 'consistency';
 
 /** Who shared an imported workout, and the result they posted with it. */
 export interface SharedFrom {
   code?: string;
   senderName?: string;
   result?: SharedResult;
+  /** Set on challenges: what the runs are compared on. */
+  challengeType?: ChallengeType;
+  /** The recipient changed the structure, so runs can't be compared with the sender's. */
+  modified?: boolean;
 }
 
 export interface WorkoutDefinition {

@@ -1081,35 +1081,64 @@ returns table(
   order by share_count desc;
 $$ language sql security definer;
 
--- Share funnel by share type for links created in the last N days: links,
--- landing page opens (people, not preview bots), app imports, and finished
--- runs of the shared workout. imports_per_share is the viral coefficient.
-create or replace function share_funnel(num_days int default 30)
+-- Share funnel for links created in the last N days, by share type plus an
+-- 'all' row, from share_events: landing page opens (people, not preview bots),
+-- store taps, imports, installs that picked up a link, completed runs, distinct
+-- runners who finished a shared workout, and re-shares. activated_per_sharer is
+-- the viral coefficient. Same definition as the share_hardening migration.
+drop function if exists public.share_funnel(int);
+create or replace function public.share_funnel(num_days int default 30)
 returns table(
   share_type text,
   shares int,
+  sharers int,
   with_image int,
   opens int,
+  store_clicks int,
   imports int,
+  deferred_installs int,
   completions int,
-  imports_per_share numeric
+  activated_runners int,
+  reshares int,
+  activated_per_sharer numeric
 ) as $$
+  with shares as (
+    select sw.code, coalesce(sw.share_type, 'unknown') as share_type, sw.image_path,
+      coalesce(sw.user_id::text, sw.anonymous_id) as sharer
+    from shared_workouts sw
+    where sw.created_at > now() - (num_days || ' days')::interval
+  ),
+  ev as (
+    select e.share_code, e.event_type, e.anonymous_id, e.referrer
+    from share_events e
+    join shares s on s.code = e.share_code
+  )
   select
-    case when grouping(share_type) = 1 then 'all' else coalesce(share_type, 'unknown') end as share_type,
-    count(*)::int as shares,
-    count(*) filter (where image_path is not null)::int as with_image,
-    coalesce(sum(open_count), 0)::int as opens,
-    coalesce(sum(import_count), 0)::int as imports,
-    coalesce(sum(completion_count), 0)::int as completions,
-    round(coalesce(sum(import_count), 0)::numeric / nullif(count(*), 0), 3) as imports_per_share
-  from shared_workouts
-  where created_at > now() - (num_days || ' days')::interval
-  group by rollup(share_type)
-  order by grouping(share_type), shares desc;
+    case when grouping(s.share_type) = 1 then 'all' else s.share_type end as share_type,
+    count(distinct s.code)::int as shares,
+    count(distinct s.sharer)::int as sharers,
+    count(distinct s.code) filter (where s.image_path is not null)::int as with_image,
+    count(ev.*) filter (where ev.event_type = 'open')::int as opens,
+    count(ev.*) filter (where ev.event_type = 'store_click')::int as store_clicks,
+    count(ev.*) filter (where ev.event_type = 'import')::int as imports,
+    count(distinct ev.anonymous_id) filter (where ev.event_type = 'import' and ev.referrer = 'deferred')::int
+      as deferred_installs,
+    count(ev.*) filter (where ev.event_type = 'complete')::int as completions,
+    count(distinct ev.anonymous_id) filter (where ev.event_type = 'complete')::int as activated_runners,
+    count(ev.*) filter (where ev.event_type = 'reshare')::int as reshares,
+    round(
+      (count(distinct ev.anonymous_id) filter (where ev.event_type = 'complete'))::numeric
+        / nullif(count(distinct s.sharer), 0),
+      3
+    ) as activated_per_sharer
+  from shares s
+  left join ev on ev.share_code = s.code
+  group by rollup(s.share_type)
+  order by grouping(s.share_type), shares desc;
 $$ language sql security definer set search_path = public;
 
-revoke execute on function share_funnel(int) from public, anon, authenticated;
-grant execute on function share_funnel(int) to service_role;
+revoke execute on function public.share_funnel(int) from public, anon, authenticated;
+grant execute on function public.share_funnel(int) to service_role;
 
 -- ── Strava ───────────────────────────────────────────────────
 -- Push counts come from the client's strava_workout_pushed events, which are

@@ -2910,6 +2910,42 @@ __name(llmsTxt, "llmsTxt");
 // src/index.ts
 var SUPABASE_URL = "https://oakhqqrxsavmoeqlzcny.supabase.co";
 var SUPABASE_SHARE_FN = `${SUPABASE_URL}/functions/v1/share`;
+var STORE_CLICK_PLATFORMS = /* @__PURE__ */ new Set(["ios", "android"]);
+function referrerHost(request) {
+  const referer = request.headers.get("Referer");
+  if (!referer) return "";
+  try {
+    return new URL(referer).hostname.slice(0, 64);
+  } catch {
+    return "";
+  }
+}
+__name(referrerHost, "referrerHost");
+async function shareRateLimited(request, env) {
+  if (!env.SHARE_RATE_LIMITER) return false;
+  const visitor = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const { success } = await env.SHARE_RATE_LIMITER.limit({ key: `share:${visitor}` });
+  return !success;
+}
+__name(shareRateLimited, "shareRateLimited");
+async function logStoreClick(code, url, env) {
+  const platform = url.searchParams.get("p") ?? "";
+  if (url.searchParams.get("t") === "store_click" && STORE_CLICK_PLATFORMS.has(platform) && env.SUPABASE_PUBLISHABLE_KEY) {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_share_event`, {
+        method: "POST",
+        headers: {
+          apikey: env.SUPABASE_PUBLISHABLE_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ p_code: code, p_event: "store_click", p_platform: platform })
+      });
+    } catch {
+    }
+  }
+  return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+}
+__name(logStoreClick, "logStoreClick");
 var BUNDLE_ID = "com.toddly.runningintervals";
 var TEAM_ID = "G4DCQGFUKF";
 var LEGACY_TEAM_ID = "M922P47QNZ";
@@ -2984,9 +3020,22 @@ var src_default = {
     if (pathname === "/robots.txt") return robotsTxt();
     if (pathname === "/sitemap.xml") return sitemapXml();
     if (pathname === "/llms.txt") return llmsTxt();
+    const beaconMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})\/e$/);
+    if (beaconMatch && request.method === "POST") {
+      if (await shareRateLimited(request, env)) {
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+      return logStoreClick(beaconMatch[1], url, env);
+    }
     const workoutMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})$/);
     if (workoutMatch) {
       const code = workoutMatch[1];
+      if (await shareRateLimited(request, env)) {
+        return new Response("Too many requests. Try again in a minute.", {
+          status: 429,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "60", "Cache-Control": "no-store" }
+        });
+      }
       const upstream = `${SUPABASE_SHARE_FN}?code=${code}`;
       let resp = null;
       try {
@@ -2994,7 +3043,8 @@ var src_default = {
           headers: {
             "User-Agent": "pacecue-share-proxy",
             // Lets the share function skip link-preview bots when counting opens.
-            "X-Forwarded-User-Agent": request.headers.get("User-Agent") ?? ""
+            "X-Forwarded-User-Agent": request.headers.get("User-Agent") ?? "",
+            "X-Forwarded-Referer": referrerHost(request)
           }
         });
       } catch {
@@ -3172,7 +3222,7 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-6zQd7F/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-ZeTd76/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
@@ -3204,7 +3254,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-6zQd7F/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-ZeTd76/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class ___Facade_ScheduledController__ {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

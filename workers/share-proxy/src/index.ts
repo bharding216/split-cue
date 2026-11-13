@@ -17,6 +17,7 @@
  *   /delete-account                            → account deletion info (Google Play requirement)
  *   /help/heart-rate-monitors                 → heart rate monitor setup help (linked from the app)
  *   /w/<code>                                 → proxy to Supabase share Edge Function
+ *   POST /w/<code>/e?t=store_click&p=<os>     → landing page store tap beacon
  *   /.well-known/apple-app-site-association   → iOS Universal Links config
  *   /.well-known/assetlinks.json              → Android App Links config
  */
@@ -43,6 +44,48 @@ const SUPABASE_SHARE_FN = `${SUPABASE_URL}/functions/v1/share`;
 
 interface Env {
   SUPABASE_PUBLISHABLE_KEY?: string;
+  /** Per-visitor limit on share pages and beacons, against scraping codes. */
+  SHARE_RATE_LIMITER?: RateLimit;
+}
+
+const STORE_CLICK_PLATFORMS = new Set(['ios', 'android']);
+
+/** Referring site's hostname only, so share events never store full URLs. */
+function referrerHost(request: Request): string {
+  const referer = request.headers.get('Referer');
+  if (!referer) return '';
+  try {
+    return new URL(referer).hostname.slice(0, 64);
+  } catch {
+    return '';
+  }
+}
+
+async function shareRateLimited(request: Request, env: Env): Promise<boolean> {
+  if (!env.SHARE_RATE_LIMITER) return false;
+  const visitor = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await env.SHARE_RATE_LIMITER.limit({ key: `share:${visitor}` });
+  return !success;
+}
+
+/** Log a landing page store tap. Always answers 204 so beacons never retry. */
+async function logStoreClick(code: string, url: URL, env: Env): Promise<Response> {
+  const platform = url.searchParams.get('p') ?? '';
+  if (url.searchParams.get('t') === 'store_click' && STORE_CLICK_PLATFORMS.has(platform) && env.SUPABASE_PUBLISHABLE_KEY) {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_share_event`, {
+        method: 'POST',
+        headers: {
+          apikey: env.SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_code: code, p_event: 'store_click', p_platform: platform }),
+      });
+    } catch {
+      // Best effort
+    }
+  }
+  return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
 }
 
 const BUNDLE_ID = 'com.toddly.runningintervals';
@@ -140,10 +183,25 @@ export default {
     if (pathname === '/sitemap.xml') return sitemapXml();
     if (pathname === '/llms.txt') return llmsTxt();
 
+    // ── Shared workout link — store tap beacon ───────────────────
+    const beaconMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})\/e$/);
+    if (beaconMatch && request.method === 'POST') {
+      if (await shareRateLimited(request, env)) {
+        return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+      }
+      return logStoreClick(beaconMatch[1], url, env);
+    }
+
     // ── Shared workout link — proxy to Supabase Edge Function ────
     const workoutMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})$/);
     if (workoutMatch) {
       const code = workoutMatch[1];
+      if (await shareRateLimited(request, env)) {
+        return new Response('Too many requests. Try again in a minute.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60', 'Cache-Control': 'no-store' },
+        });
+      }
       const upstream = `${SUPABASE_SHARE_FN}?code=${code}`;
       let resp: Response | null = null;
       try {
@@ -152,6 +210,7 @@ export default {
             'User-Agent': 'pacecue-share-proxy',
             // Lets the share function skip link-preview bots when counting opens.
             'X-Forwarded-User-Agent': request.headers.get('User-Agent') ?? '',
+            'X-Forwarded-Referer': referrerHost(request),
           },
         });
       } catch {

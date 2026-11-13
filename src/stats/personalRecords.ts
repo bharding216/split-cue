@@ -6,10 +6,11 @@
  * the full CompletedWorkout[] array and gets back computed stats.
  */
 
-import type { CompletedWorkout, RoutePoint } from '../workout/workoutTypes';
+import type { CompletedWorkout, IntervalSplit, RoutePoint } from '../workout/workoutTypes';
 import { analyzeElevation, aggregateByTerrain } from '../pace/elevationAnalysis';
 import type { PaceUnit } from '../pace/paceTypes';
-import { formatDistance, formatPaceValue, paceSuffix } from '../units/format';
+import { formatDistance, formatPaceValue, metersPerUnit, paceSuffix } from '../units/format';
+import { computeIntervalConsistency } from './intervalConsistency';
 
 const METERS_PER_MILE = 1_609.344;
 
@@ -24,7 +25,18 @@ export type RecordCategory =
   | 'longest_duration'
   | 'best_avg_pace'
   | 'fastest_uphill_pace'
-  | 'most_elevation_gain';
+  | 'most_elevation_gain'
+  | 'most_consistent_intervals'
+  | 'biggest_improvement';
+
+/** Records where a bigger value is better; the rest are times and paces. */
+const HIGHER_IS_BETTER: readonly RecordCategory[] = [
+  'longest_run',
+  'longest_duration',
+  'most_elevation_gain',
+  'most_consistent_intervals',
+  'biggest_improvement',
+];
 
 export interface PersonalRecord {
   category: RecordCategory;
@@ -293,6 +305,58 @@ function computeRecords(history: CompletedWorkout[], unit: PaceUnit): PersonalRe
     });
   }
 
+  // ── Most consistent interval session ──
+  let mostConsistent: { score: number; workout: CompletedWorkout } | null = null;
+  for (const w of history) {
+    const consistency = computeIntervalConsistency(w.splits);
+    if (consistency && (!mostConsistent || consistency.score > mostConsistent.score)) {
+      mostConsistent = { score: consistency.score, workout: w };
+    }
+  }
+  if (mostConsistent) {
+    records.push({
+      category: 'most_consistent_intervals',
+      label: 'Most Consistent Intervals',
+      icon: 'pulse-outline',
+      value: mostConsistent.score,
+      displayValue: `${mostConsistent.score}`,
+      unit: '/100',
+      workoutId: mostConsistent.workout.workoutId,
+      workoutName: mostConsistent.workout.workoutName,
+      completedAt: mostConsistent.workout.completedAt,
+    });
+  }
+
+  // ── Biggest improvement on a repeated workout (average pace vs the previous run of it) ──
+  const lastPaceByWorkout = new Map<string, number>();
+  let biggestGain: { secPerMile: number; workout: CompletedWorkout } | null = null;
+  for (const w of [...history].sort((a, b) => a.completedAt - b.completedAt)) {
+    const pace = avgPaceMinPerMile(w);
+    if (pace === null) continue;
+    const key = w.templateId ?? w.workoutId;
+    const previous = lastPaceByWorkout.get(key);
+    lastPaceByWorkout.set(key, pace);
+    if (previous === undefined) continue;
+    const gain = (previous - pace) * 60;
+    if (gain >= 1 && (!biggestGain || gain > biggestGain.secPerMile)) {
+      biggestGain = { secPerMile: gain, workout: w };
+    }
+  }
+  if (biggestGain) {
+    const gainInUnit = Math.round(biggestGain.secPerMile * (metersPerUnit(unit) / METERS_PER_MILE));
+    records.push({
+      category: 'biggest_improvement',
+      label: 'Biggest Improvement',
+      icon: 'trending-up-outline',
+      value: biggestGain.secPerMile,
+      displayValue: `${Math.floor(gainInUnit / 60)}:${String(gainInUnit % 60).padStart(2, '0')}`,
+      unit: `${paceSuffix(unit)} faster`,
+      workoutId: biggestGain.workout.workoutId,
+      workoutName: biggestGain.workout.workoutName,
+      completedAt: biggestGain.workout.completedAt,
+    });
+  }
+
   return records;
 }
 
@@ -310,6 +374,7 @@ const DISTANCE_MILESTONES = [
 const WORKOUT_COUNT_MILESTONES = [
   { count: 5, label: '5 Workouts', id: 'count_5', tier: 'bronze' as const },
   { count: 10, label: '10 Workouts', id: 'count_10', tier: 'bronze' as const },
+  { count: 20, label: '20 Workouts', id: 'count_20', tier: 'silver' as const },
   { count: 25, label: '25 Workouts', id: 'count_25', tier: 'silver' as const },
   { count: 50, label: '50 Workouts', id: 'count_50', tier: 'silver' as const },
   { count: 100, label: '100 Workouts', id: 'count_100', tier: 'gold' as const },
@@ -323,6 +388,36 @@ const PACE_MILESTONES = [
   { pace: 7, label: 'Sub-7 Mile', id: 'pace_sub7', tier: 'gold' as const },
   { pace: 6, label: 'Sub-6 Mile', id: 'pace_sub6', tier: 'gold' as const },
 ];
+
+const STREAK_WEEKS = 4;
+const MS_PER_DAY = 86_400_000;
+
+function workRepCount(splits: IntervalSplit[] | undefined): number {
+  return (splits ?? []).filter((s) => (s.segmentType ? s.segmentType === 'run' : s.type === 'hard')).length;
+}
+
+/** Index of the local Monday-start week containing `ms`, counted from a fixed epoch. */
+function weekIndex(ms: number): number {
+  const d = new Date(ms);
+  const daysSinceMonday = (d.getDay() + 6) % 7;
+  // The local calendar date of that Monday, as a UTC day, so time zones and DST don't shift it.
+  const monday = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate() - daysSinceMonday);
+  return Math.floor(monday / (7 * MS_PER_DAY));
+}
+
+/** The run (oldest first) that first completed `weeks` consecutive weeks with a run. */
+function firstWeekStreakRun(sorted: CompletedWorkout[], weeks: number): CompletedWorkout | null {
+  let streak = 0;
+  let lastWeek: number | null = null;
+  for (const w of sorted) {
+    const week = weekIndex(w.completedAt);
+    if (week === lastWeek) continue;
+    streak = lastWeek !== null && week === lastWeek + 1 ? streak + 1 : 1;
+    lastWeek = week;
+    if (streak >= weeks) return w;
+  }
+  return null;
+}
 
 function computeAwards(history: CompletedWorkout[]): AwardBadge[] {
   const awards: AwardBadge[] = [];
@@ -437,6 +532,32 @@ function computeAwards(history: CompletedWorkout[]): AwardBadge[] {
     });
   }
 
+  // First interval workout: at least two work reps
+  const firstInterval = sorted.find((w) => workRepCount(w.splits) >= 2);
+  if (firstInterval) {
+    awards.push({
+      id: 'first_interval',
+      label: 'First Intervals',
+      description: 'Completed your first interval workout',
+      icon: 'repeat-outline',
+      tier: 'bronze',
+      earnedAt: firstInterval.completedAt,
+    });
+  }
+
+  // Four consecutive weeks with at least one run
+  const streakRun = firstWeekStreakRun(sorted, STREAK_WEEKS);
+  if (streakRun) {
+    awards.push({
+      id: 'streak_4wk',
+      label: '4-Week Streak',
+      description: `Ran at least once a week for ${STREAK_WEEKS} weeks in a row`,
+      icon: 'calendar-outline',
+      tier: 'silver',
+      earnedAt: streakRun.completedAt,
+    });
+  }
+
   // Sort by earned date, newest first
   awards.sort((a, b) => b.earnedAt - a.earnedAt);
 
@@ -543,11 +664,9 @@ export function detectNewRecords(
     }
     const oldRecord = oldRecords.find((r) => r.category === record.category);
     if (!oldRecord) return true; // First time setting this record
-    // For pace/time records, lower is better. For distance/elevation, higher is better.
-    const higherIsBetter = ['longest_run', 'longest_duration', 'most_elevation_gain'].includes(
-      record.category,
-    );
-    return higherIsBetter ? record.value > oldRecord.value : record.value < oldRecord.value;
+    return HIGHER_IS_BETTER.includes(record.category)
+      ? record.value > oldRecord.value
+      : record.value < oldRecord.value;
   });
 }
 

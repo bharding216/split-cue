@@ -23,6 +23,7 @@ interface HrEventProps {
   };
   hr_analysis_viewed: { is_pro: boolean; has_graph: boolean };
   hr_pro_upgrade_clicked: { source: 'run_details' };
+  hr_elevation_overlay_toggled: { enabled: boolean };
   hr_connection_failed: { device_name: string | null; error: string; attempts: number };
   /** Feeds the website's "Confirmed working" monitor list. */
   hr_recording_saved: { device_name: string | null; sample_count: number };

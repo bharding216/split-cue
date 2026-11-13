@@ -330,6 +330,7 @@ export default function RunDetailsScreen() {
               summary={elevation}
               paceUnit={paceUnit}
               width={chartWidth}
+              heartRate={hrSamples}
             />
             {terrainAggs.length > 0 && (
               <TerrainSummary aggregates={terrainAggs} paceUnit={paceUnit} />

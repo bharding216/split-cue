@@ -49,8 +49,16 @@ function todayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Share codes that reached the app through an install (deferred link). */
+const deferredShareCodes = new Set<string>();
+
+function shareReferrer(code: string | undefined): 'link' | 'deferred' {
+  return code && deferredShareCodes.has(code) ? 'deferred' : 'link';
+}
+
 function trackSharedImport(workout: WorkoutDefinition, destination: string, extra?: Record<string, unknown>): void {
-  recordShareEvent(workout.sharedFrom?.code, 'import');
+  const code = workout.sharedFrom?.code;
+  recordShareEvent(code, 'import', shareReferrer(code));
   track('workout_imported', {
     workout_id: workout.id,
     workout_name: workout.name,
@@ -260,7 +268,7 @@ function RootLayoutInner() {
 
   // Handle incoming deep links for shared workout imports.
   useEffect(() => {
-    const handleUrl = async (url: string, { isInitial }: { isInitial?: boolean } = {}) => {
+    const handleUrl = async (url: string, { isInitial, deferred }: { isInitial?: boolean; deferred?: boolean } = {}) => {
       // Support HTTPS links (splitcue.app/w/<code>), custom-scheme short links
       // (pacecue://w/<code>), and legacy base64 links (pacecue://workout/import?d=...)
       const shortCode = parseShareCode(url);
@@ -274,9 +282,19 @@ function RootLayoutInner() {
         router.replace('/');
       }
 
+      if (shortCode) {
+        if (deferred) deferredShareCodes.add(shortCode);
+        recordShareEvent(shortCode, 'app_open', shareReferrer(shortCode));
+      }
+
       const shared = shortCode
         ? await resolveShareCode(shortCode)
         : decodeWorkoutLink(url);
+
+      if (shared === 'removed') {
+        Alert.alert('Link Removed', 'This share link is no longer available. Ask your friend to send a new one.');
+        return;
+      }
 
       if (shared === 'needs-update') {
         Alert.alert(
@@ -323,7 +341,7 @@ function RootLayoutInner() {
       const deferredUrl = await consumeDeferredShareLink();
       if (deferredUrl) {
         track('deferred_share_link_opened');
-        handleUrl(deferredUrl);
+        handleUrl(deferredUrl, { deferred: true });
       }
     });
 

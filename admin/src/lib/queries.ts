@@ -411,6 +411,32 @@ export async function getRunLadder(windowDays = 14): Promise<RunLadderStep[]> {
   return (data as RunLadderStep[]) ?? [];
 }
 
+export interface ShareFunnelRow {
+  share_type: string;
+  shares: number;
+  sharers: number;
+  with_image: number;
+  opens: number;
+  store_clicks: number;
+  imports: number;
+  deferred_installs: number;
+  completions: number;
+  activated_runners: number;
+  reshares: number;
+  activated_per_sharer: number | null;
+}
+
+/**
+ * Share funnel for links created in the last N days, by share type plus an
+ * 'all' row: opens, store taps, imports, installs, completions, re-shares.
+ */
+export async function getShareFunnel(days = 30): Promise<ShareFunnelRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('share_funnel', { num_days: days });
+  return (data as ShareFunnelRow[]) ?? [];
+}
+
 /**
  * Strava connections (current) and push activity (last N days).
  */

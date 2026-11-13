@@ -9,6 +9,15 @@
   "routes": [
     { "pattern": "splitcue.app/*", "zone_name": "splitcue.app" }
   ],
+  "ratelimits": [
+    {
+      "name": "SHARE_RATE_LIMITER",
+      "namespace_id": "1001",
+      // Per visitor IP, per Cloudflare location. Generous so shared networks
+      // (carrier NAT, offices) aren't blocked; stops bulk code guessing.
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
   "vars": {
     // Publishable (client-safe) key; only grants what the anon role can do.
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_6nGFQBroiJHgyCAt8Oo8fA_YqWvEs_I"

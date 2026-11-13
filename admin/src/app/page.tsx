@@ -19,8 +19,10 @@ import {
   getStravaUsers,
   getHeartRateFeatureStats,
   getHeartRateRetention,
+  getShareFunnel,
 } from '@/lib/queries';
 import HeartRateFeatureSection from '@/components/HeartRateFeatureSection';
+import SharingSection from '@/components/SharingSection';
 import StatCard from '@/components/StatCard';
 import DAUChart from '@/components/DAUChart';
 import WorkoutsChart from '@/components/WorkoutsChart';
@@ -63,6 +65,7 @@ export default async function DashboardPage() {
     stravaUsers,
     hrStats,
     hrRetention,
+    shareFunnel,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -83,18 +86,19 @@ export default async function DashboardPage() {
     getStravaUsers(30),
     getHeartRateFeatureStats(30),
     getHeartRateRetention(90),
+    getShareFunnel(30),
   ]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-8 flex items-center justify-between">
-        <div>
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">SplitCue Admin</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <p className="mt-1 break-all text-sm text-gray-400">
             Signed in as {user?.email}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Link
             href="/retention"
             className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
@@ -214,6 +218,9 @@ export default async function DashboardPage() {
           detail={`${aiAdoption.aiUsersCompleted}/${aiAdoption.aiUsers} AI users completed a workout`}
         />
       </section>
+
+      {/* ── Sharing ───────────────────────────────────────── */}
+      <SharingSection data={shareFunnel} days={30} />
 
       {/* ── Strava ────────────────────────────────────────── */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">

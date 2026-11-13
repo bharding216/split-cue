@@ -99,6 +99,12 @@ import { PostRunShareCard } from '../../../src/components/PostRunShareCard';
 import { SharedResultComparison } from '../../../src/components/SharedResultComparison';
 import { compareResults, resultOf } from '../../../src/sharing/shareText';
 import { recordShareEvent } from '../../../src/sharing/shareWorkout';
+import { markInvitePromptShown, shouldShowInvitePrompt } from '../../../src/sharing/shareApp';
+import { InviteFriendCard } from '../../../src/components/InviteFriendCard';
+import { AchievementMomentCard } from '../../../src/components/AchievementMomentCard';
+import { pickAchievementMoment } from '../../../src/stats/achievementMoment';
+import { computeIntervalConsistency } from '../../../src/stats/intervalConsistency';
+import type { AchievementMoment } from '../../../src/sharing/shareText';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -314,11 +320,35 @@ function ActiveWorkoutInner({
   };
 
   // Detect new personal records when the workout finishes
+  const [showInvite, setShowInvite] = useState(false);
+  const [moment, setMoment] = useState<AchievementMoment | null>(null);
   useEffect(() => {
     if (state.phase !== 'finished' || !runner.completedEntryId) return;
-    loadHistory().then((history) => {
-      setNewRecords(detectNewRecords(history, runner.completedEntryId!, settings.paceUnit));
-      setNewAwards(detectNewAwards(history, runner.completedEntryId!));
+    loadHistory().then(async (history) => {
+      const records = detectNewRecords(history, runner.completedEntryId!, settings.paceUnit);
+      const awards = detectNewAwards(history, runner.completedEntryId!);
+      setNewRecords(records);
+      setNewAwards(awards);
+      const finished = history.find((w) => w.id === runner.completedEntryId);
+      const picked = finished
+        ? pickAchievementMoment({
+            records,
+            awards,
+            run: finished,
+            totals: {
+              workouts: history.length,
+              distanceMeters: history.reduce((s, w) => s + (w.totalDistanceMeters ?? 0), 0),
+            },
+            unit: settings.paceUnit,
+          })
+        : null;
+      setMoment(picked);
+      if (picked) track('achievement_moment_shown', { achievement_id: picked.id, kicker: picked.kicker });
+      if (await shouldShowInvitePrompt(history.length)) {
+        markInvitePromptShown();
+        track('invite_prompt_shown', { completed_runs: history.length });
+        setShowInvite(true);
+      }
     }).catch(() => {});
   }, [state.phase, runner.completedEntryId, settings.paceUnit]);
 
@@ -459,7 +489,7 @@ function ActiveWorkoutInner({
   const { openShare, shareSheet } = useShareSheet();
   const sharedFrom = workout.sharedFrom;
 
-  const handleShareRun = (kind: 'results' | 'challenge') => {
+  const handleShareRun = (kind: 'results' | 'challenge' | 'achievement') => {
     const entry = buildCompletedEntry();
     if (!entry) return;
     openShare({
@@ -468,7 +498,13 @@ function ActiveWorkoutInner({
       workoutName: workout.name,
       run: entry,
       replyTo: kind === 'challenge' ? sharedFrom : undefined,
-      surface: sharedFrom && kind === 'challenge' ? 'workout_complete_reply' : 'workout_complete',
+      achievement: kind === 'achievement' ? moment ?? undefined : undefined,
+      surface:
+        kind === 'achievement'
+          ? 'achievement_moment'
+          : sharedFrom && kind === 'challenge'
+            ? 'workout_complete_reply'
+            : 'workout_complete',
       records: newRecords,
       awards: newAwards,
     });
@@ -481,19 +517,23 @@ function ActiveWorkoutInner({
     if (shareCompletionTracked.current) return;
     shareCompletionTracked.current = true;
     recordShareEvent(sharedFrom.code, 'complete');
-    const comparison = sharedFrom.result
-      ? compareResults(
-          resultOf({ totalDurationMs: state.totalElapsedMs, totalDistanceMeters: runner.paceState.totalDistanceMeters }),
-          sharedFrom.result,
-          settings.paceUnit,
-        )
-      : null;
+    const entry = buildCompletedEntry();
+    const mine = resultOf({ totalDurationMs: state.totalElapsedMs, totalDistanceMeters: runner.paceState.totalDistanceMeters });
+    const consistency = computeIntervalConsistency(entry?.splits);
+    if (consistency) mine.consistency = consistency.score;
+    const comparison =
+      sharedFrom.result && !sharedFrom.modified
+        ? compareResults(mine, sharedFrom.result, settings.paceUnit, sharedFrom.challengeType)
+        : null;
     track('shared_workout_completed', {
       workout_id: workout.id,
       share_code: sharedFrom.code ?? null,
       has_sender_result: !!sharedFrom.result,
       beat_sender: comparison ? comparison.deltaSeconds > 0 : null,
       comparison_basis: comparison?.basis ?? null,
+      challenge_type: sharedFrom.challengeType ?? null,
+      modified_workout: !!sharedFrom.modified,
+      consistency_score: consistency?.score ?? null,
     });
   }, [state.phase, runner.completedEntryId]);
 
@@ -767,7 +807,9 @@ function ActiveWorkoutInner({
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {newRecords.length > 0 || newAwards.length > 0 ? (
+        {moment && completedEntry ? (
+          <AchievementMomentCard moment={moment} onShare={() => handleShareRun('achievement')} />
+        ) : newRecords.length > 0 || newAwards.length > 0 ? (
           <PrimaryAchievement records={newRecords} awards={newAwards} />
         ) : (
           <>
@@ -840,16 +882,19 @@ function ActiveWorkoutInner({
           <SharedResultComparison
             sharedFrom={{ ...sharedFrom, result: sharedFrom.result }}
             mine={resultOf(completedEntry)}
+            mySplits={completedEntry.splits}
             paceUnit={settings.paceUnit}
             onReply={() => handleShareRun('challenge')}
           />
         ) : completedEntry && runCounts ? (
           <PostRunShareCard
-            achievement={newRecords.length > 0 || newAwards.length > 0}
+            achievement={!moment && (newRecords.length > 0 || newAwards.length > 0)}
             onShare={() => handleShareRun('results')}
             onChallenge={() => handleShareRun('challenge')}
           />
         ) : null}
+
+        {showInvite && <InviteFriendCard />}
 
         {sessionMeta?.planWorkoutId && (
           <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
