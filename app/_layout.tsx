@@ -39,8 +39,10 @@ import {
   refreshPushToken,
   subscribeToNotificationOpens,
 } from '../src/notifications/pushRegistration';
-import { openStoreListing, useRequiredUpdate } from '../src/updates/requiredUpdate';
+import { openStoreListing, useVersionGate } from '../src/updates/requiredUpdate';
+import { useOtaUpdate } from '../src/updates/otaUpdate';
 import { RequiredUpdateScreen } from '../src/components/RequiredUpdateScreen';
+import { OptionalUpdateBanner } from '../src/components/OptionalUpdateBanner';
 
 Observe.configure({ environment: appInfo().environment });
 
@@ -78,7 +80,9 @@ async function saveImportedWorkout(workout: WorkoutDefinition, destination = 'wo
 function RootLayoutInner() {
   const router = useRouter();
   const pathname = usePathname();
-  const updateRequired = useRequiredUpdate();
+  const versionGate = useVersionGate();
+  const inWorkoutRun = pathname.startsWith('/workout/run');
+  useOtaUpdate({ safeToReload: !inWorkoutRun });
   const { user, loading: authLoading } = useAuth();
   const { tier, loading: subscriptionLoading } = useSubscription();
   const { planWorkouts, loading: planLoading, ensurePlan, refresh: refreshPlans } = useTrainingPlan();
@@ -469,8 +473,11 @@ function RootLayoutInner() {
           router.push(`/workout/${workout.id}`);
         }}
       />
-      {/* Never interrupt a run in progress; the screen appears once it ends. */}
-      {updateRequired && !pathname.startsWith('/workout/run') && <RequiredUpdateScreen />}
+      {/* Never interrupt a run in progress; prompts appear once it ends. */}
+      {versionGate.status === 'update-required' && !inWorkoutRun && <RequiredUpdateScreen />}
+      {versionGate.status === 'update-available' && !inWorkoutRun && (
+        <OptionalUpdateBanner latestVersion={versionGate.latestVersion} />
+      )}
     </>
   );
 }

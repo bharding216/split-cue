@@ -7,8 +7,8 @@
  * past runs too.
  */
 
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { IntervalSplit } from '../workout/workoutTypes';
 import type { HrSample, WorkoutHeartRate } from '../heartRate/hrTypes';
@@ -31,6 +31,7 @@ const CELL_FONT_SCALE = MaxFontScale.display;
 export function HeartRateSection({ heartRate, samples, splits, width, isPro, onUpgrade }: Props) {
   const intervalRows = (splits ?? []).filter((s) => s.avgHr != null);
   const showIntervals = intervalRows.length > 1;
+  const [dropInfoVisible, setDropInfoVisible] = useState(false);
 
   return (
     <View>
@@ -64,7 +65,16 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
             <Text style={[styles.headCell, styles.segmentCell]}>Segment</Text>
             <Text style={styles.headCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>Avg</Text>
             <Text style={styles.headCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>Max</Text>
-            <Text style={styles.headCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>Drop</Text>
+            <TouchableOpacity
+              style={styles.dropHeader}
+              onPress={() => setDropInfoVisible(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="What is Drop?"
+            >
+              <Text style={styles.dropHeaderText} maxFontSizeMultiplier={CELL_FONT_SCALE}>Drop</Text>
+              <Ionicons name="information-circle-outline" size={13} color={Colors.textMuted} />
+            </TouchableOpacity>
           </View>
           <View style={!isPro && styles.lockedRows}>
             {(isPro ? intervalRows : intervalRows.slice(0, 4)).map((s, i) => (
@@ -87,13 +97,7 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
               </View>
             ))}
           </View>
-          {isPro ? (
-            intervalRows.some((s) => s.hrRecoveryDrop != null) && (
-              <Text style={styles.footnote}>
-                Drop is how far your heart rate fell during each recovery.
-              </Text>
-            )
-          ) : (
+          {isPro ? null : (
             <View style={styles.upsell}>
               <Text style={styles.upsellTitle}>Unlock detailed interval analysis with SplitCue Pro</Text>
               <Text style={styles.upsellText}>
@@ -113,6 +117,62 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
           )}
         </View>
       )}
+
+      <Modal visible={dropInfoVisible} animationType="slide" transparent onRequestClose={() => setDropInfoVisible(false)}>
+        <View style={styles.infoOverlay}>
+          <TouchableOpacity style={styles.infoBackdrop} onPress={() => setDropInfoVisible(false)} activeOpacity={1} />
+          <View style={styles.infoSheet}>
+            <View style={styles.infoHandleRow}>
+              <View style={styles.infoHandle} />
+            </View>
+            <View style={styles.infoHeader}>
+              <Text style={styles.infoTitle}>How is Drop calculated?</Text>
+              <TouchableOpacity
+                onPress={() => setDropInfoVisible(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.infoBody}>
+              <Text style={styles.infoText}>
+                Drop measures how far your heart rate fell during a recovery interval. It only appears on recovery and rest segments.
+              </Text>
+              <View style={styles.infoCard}>
+                <View style={styles.infoStep}>
+                  <View style={[styles.infoStepDot, { backgroundColor: Colors.danger }]} />
+                  <View style={styles.infoStepContent}>
+                    <Text style={styles.infoStepLabel}>Peak</Text>
+                    <Text style={styles.infoStepDesc}>
+                      Your highest heart rate in the first 15 seconds of the recovery. Heart rate keeps climbing briefly after an effort ends, so this captures the true peak.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.infoStep}>
+                  <View style={[styles.infoStepDot, { backgroundColor: Colors.primary }]} />
+                  <View style={styles.infoStepContent}>
+                    <Text style={styles.infoStepLabel}>End</Text>
+                    <Text style={styles.infoStepDesc}>
+                      Your average heart rate over the last 5 seconds of the recovery, smoothed to reduce single-beat noise.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.infoFormulaRow}>
+                <Text style={styles.infoFormula}>Drop = Peak − End</Text>
+              </View>
+              <Text style={styles.infoNote}>
+                Recoveries shorter than 20 seconds won't show a Drop value — there isn't enough time for a meaningful measurement.
+              </Text>
+              <Text style={styles.infoNote}>
+                A larger drop means your heart rate recovered more quickly, which is generally a sign of good cardiovascular fitness.
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -218,6 +278,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textMuted,
   },
+  dropHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    width: 52,
+    gap: 2,
+  },
+  dropHeaderText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
   segmentCell: {
     flex: 1,
     textAlign: 'left',
@@ -249,11 +321,6 @@ const styles = StyleSheet.create({
   lockedRows: {
     opacity: 0.45,
   },
-  footnote: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: Spacing.sm,
-  },
   upsell: {
     marginTop: Spacing.md,
     gap: Spacing.xs,
@@ -282,5 +349,109 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.background,
+  },
+
+  // Drop info sheet
+  infoOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  infoSheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    borderTopWidth: 1,
+    borderTopColor: Colors.surfaceLight,
+    paddingBottom: Spacing.xl,
+  },
+  infoHandleRow: {
+    alignItems: 'center',
+    paddingTop: Spacing.sm,
+  },
+  infoHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.textMuted,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  infoTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  infoBody: {
+    paddingHorizontal: Spacing.lg,
+  },
+  infoText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 21,
+    marginBottom: Spacing.md,
+  },
+  infoCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  infoStep: {
+    flexDirection: 'row',
+    gap: Spacing.sm + 2,
+  },
+  infoStepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+  },
+  infoStepContent: {
+    flex: 1,
+  },
+  infoStepLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  infoStepDesc: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  infoFormulaRow: {
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm + 4,
+  },
+  infoFormula: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  infoNote: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    lineHeight: 18,
+    marginBottom: Spacing.sm,
   },
 });

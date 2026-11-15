@@ -1322,6 +1322,50 @@ returns table(
   order by push_count desc, sc.connected_at desc nulls last;
 $$ language sql security definer;
 
+-- ── Update Prompt Analytics ──────────────────────────────────
+-- Funnel of update prompt events: how many users saw required/optional
+-- prompts and what action they took.
+drop function if exists update_funnel(int);
+create or replace function update_funnel(num_days int default 30)
+returns table(step text, user_count int) as $$
+  with e as (
+    select anonymous_user_id, event_name
+    from events
+    where environment = 'production'
+      and event_name in (
+        'update_required_shown', 'update_required_tapped',
+        'update_suggested_shown', 'update_suggested_tapped',
+        'update_suggested_dismissed'
+      )
+      and created_at > now() - (num_days || ' days')::interval
+  )
+  select s.step, s.n::int
+  from (values
+    (1, 'Required: shown',     (select count(distinct anonymous_user_id) from e where event_name = 'update_required_shown')),
+    (2, 'Required: tapped',    (select count(distinct anonymous_user_id) from e where event_name = 'update_required_tapped')),
+    (3, 'Suggested: shown',    (select count(distinct anonymous_user_id) from e where event_name = 'update_suggested_shown')),
+    (4, 'Suggested: tapped',   (select count(distinct anonymous_user_id) from e where event_name = 'update_suggested_tapped')),
+    (5, 'Suggested: dismissed', (select count(distinct anonymous_user_id) from e where event_name = 'update_suggested_dismissed'))
+  ) as s(ord, step, n)
+  order by s.ord;
+$$ language sql security definer;
+
+-- Which runtime versions triggered update prompts.
+drop function if exists update_prompts_by_version(int);
+create or replace function update_prompts_by_version(num_days int default 30)
+returns table(runtime_version text, required_count int, suggested_count int) as $$
+  select
+    coalesce(metadata->>'runtime_version', 'unknown') as runtime_version,
+    count(distinct anonymous_user_id) filter (where event_name = 'update_required_shown')::int as required_count,
+    count(distinct anonymous_user_id) filter (where event_name = 'update_suggested_shown')::int as suggested_count
+  from events
+  where environment = 'production'
+    and event_name in ('update_required_shown', 'update_suggested_shown')
+    and created_at > now() - (num_days || ' days')::interval
+  group by 1
+  order by required_count desc, suggested_count desc;
+$$ language sql security definer;
+
 -- ── Access Control ───────────────────────────────────────────
 -- Keep this block last. Dropping and recreating a function restores the
 -- default execute grant to anon/authenticated (the mobile app's public key).
@@ -1372,7 +1416,9 @@ begin
     'lapsed_survey_breakdown(int)',
     'lapsed_survey_summary(int)',
     'lapsed_survey_comments(int, int)',
-    'run_reminder_funnel(int)'
+    'run_reminder_funnel(int)',
+    'update_funnel(int)',
+    'update_prompts_by_version(int)'
   ] loop
     execute format('revoke execute on function %s from public, anon, authenticated', fn);
     execute format('grant execute on function %s to service_role', fn);
@@ -1397,7 +1443,9 @@ begin
     'lapsed_survey_comments(int, int)',
     'run_reminder_funnel(int)',
     'training_calendar_stats(int)',
-    'training_calendar_per_day(int)'
+    'training_calendar_per_day(int)',
+    'update_funnel(int)',
+    'update_prompts_by_version(int)'
   ] loop
     execute format('alter function %s set search_path = public, pg_temp', fn);
   end loop;

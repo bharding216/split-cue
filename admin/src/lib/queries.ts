@@ -655,3 +655,36 @@ export async function getStravaUsers(days = 30): Promise<StravaUser[]> {
   const { data } = await supabase.rpc('strava_users', { num_days: days });
   return (data as StravaUser[]) ?? [];
 }
+
+// ── Update Prompt Analytics ──────────────────────────────────
+
+export type UpdatePromptsByVersion = {
+  runtime_version: string;
+  required_count: number;
+  suggested_count: number;
+};
+
+export type UpdateFunnelStep = {
+  step: string;
+  user_count: number;
+};
+
+/**
+ * Funnel of update prompt events: required shown/tapped, suggested shown/tapped/dismissed.
+ */
+export async function getUpdateFunnel(days = 30): Promise<UpdateFunnelStep[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('update_funnel', { num_days: days });
+  return (data as UpdateFunnelStep[]) ?? [];
+}
+
+/**
+ * Which runtime versions triggered update prompts and how many users per version.
+ */
+export async function getUpdatePromptsByVersion(days = 30): Promise<UpdatePromptsByVersion[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('update_prompts_by_version', { num_days: days });
+  return (data as UpdatePromptsByVersion[]) ?? [];
+}

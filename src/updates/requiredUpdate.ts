@@ -2,6 +2,11 @@
  * Store-build version gate. Over-the-air updates only reach builds with the
  * same runtime version, so builds older than the minimum in
  * `app_min_versions` are sent to the store instead.
+ *
+ * Three tiers:
+ *   - Below min_version  → update required (blocked)
+ *   - Below latest_version but ≥ min_version → update available (suggested)
+ *   - At or above latest_version → current
  */
 
 import { useEffect, useState } from 'react';
@@ -30,38 +35,49 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+export type VersionGate =
+  | { status: 'current' }
+  | { status: 'update-available'; latestVersion: string }
+  | { status: 'update-required' };
+
 /**
- * Whether this store build is below the platform's minimum. Only production
- * builds are gated; dev and preview builds have no runtime version or another
- * channel. Fails open when the minimum can't be fetched.
+ * Determine the version gate status for this store build. Only production
+ * builds are gated; dev and preview builds always return 'current'.
+ * Fails open (returns 'current') when the config can't be fetched.
  */
-export async function isUpdateRequired(): Promise<boolean> {
-  // runtimeVersion is the installed build's version under the appVersion
-  // policy, while expoConfig.version reports the running OTA update's.
+export async function checkVersionGate(): Promise<VersionGate> {
   const installed = Updates.runtimeVersion;
-  if (!installed || Updates.channel !== 'production') return false;
-  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
+  if (!installed || Updates.channel !== 'production') return { status: 'current' };
+  if (Platform.OS !== 'ios' && Platform.OS !== 'android') return { status: 'current' };
 
   const { data, error } = await supabase
     .from('app_min_versions')
-    .select('min_version')
+    .select('min_version, latest_version')
     .eq('platform', Platform.OS)
     .maybeSingle();
-  if (error || !data?.min_version) return false;
+  if (error || !data?.min_version) return { status: 'current' };
 
-  return compareVersions(installed, data.min_version) < 0;
+  if (compareVersions(installed, data.min_version) < 0) {
+    return { status: 'update-required' };
+  }
+
+  if (data.latest_version && compareVersions(installed, data.latest_version) < 0) {
+    return { status: 'update-available', latestVersion: data.latest_version };
+  }
+
+  return { status: 'current' };
 }
 
 /** Checks on launch and whenever the app returns to the foreground. */
-export function useRequiredUpdate(): boolean {
-  const [required, setRequired] = useState(false);
+export function useVersionGate(): VersionGate {
+  const [gate, setGate] = useState<VersionGate>({ status: 'current' });
 
   useEffect(() => {
     let cancelled = false;
     const check = () => {
-      isUpdateRequired()
+      checkVersionGate()
         .then((value) => {
-          if (!cancelled) setRequired(value);
+          if (!cancelled) setGate(value);
         })
         .catch(() => {});
     };
@@ -75,5 +91,13 @@ export function useRequiredUpdate(): boolean {
     };
   }, []);
 
-  return required;
+  return gate;
+}
+
+// Keep the old hook as a convenience alias for the layout's existing usage
+// until we finish wiring the new gate. It reads from useVersionGate.
+/** @deprecated Use useVersionGate() instead. */
+export function useRequiredUpdate(): boolean {
+  const gate = useVersionGate();
+  return gate.status === 'update-required';
 }
