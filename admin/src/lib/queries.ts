@@ -43,6 +43,29 @@ export type TrainingPlanStats = {
   startRate: number;
 };
 
+export type TrainingCalendarStats = {
+  viewers: number;
+  viewersWithAction: number;
+  workoutsAdded: number;
+  workoutsAddedPicker: number;
+  workoutsAddedVoice: number;
+  workoutsStarted: number;
+  workoutsEdited: number;
+  workoutsRemoved: number;
+  workoutsMoved: number;
+  runsViewed: number;
+  runsRepeated: number;
+  uniqueAdders: number;
+  uniqueStarters: number;
+};
+
+export type TrainingCalendarDaily = {
+  date: string;
+  viewers: number;
+  added: number;
+  started: number;
+};
+
 export type DailyCount = {
   date: string;
   count: number;
@@ -398,6 +421,41 @@ export async function getTrainingPlansByUser(days = 30): Promise<TrainingPlanUse
 
   const { data } = await supabase.rpc('training_plans_by_user', { num_days: days });
   return (data as TrainingPlanUserBreakdown[]) ?? [];
+}
+
+/**
+ * Training Calendar engagement summary (last N days).
+ */
+export async function getTrainingCalendarStats(days = 30): Promise<TrainingCalendarStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_calendar_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    viewers: row?.viewers ?? 0,
+    viewersWithAction: row?.viewers_with_action ?? 0,
+    workoutsAdded: row?.workouts_added ?? 0,
+    workoutsAddedPicker: row?.workouts_added_picker ?? 0,
+    workoutsAddedVoice: row?.workouts_added_voice ?? 0,
+    workoutsStarted: row?.workouts_started ?? 0,
+    workoutsEdited: row?.workouts_edited ?? 0,
+    workoutsRemoved: row?.workouts_removed ?? 0,
+    workoutsMoved: row?.workouts_moved ?? 0,
+    runsViewed: row?.runs_viewed ?? 0,
+    runsRepeated: row?.runs_repeated ?? 0,
+    uniqueAdders: row?.unique_adders ?? 0,
+    uniqueStarters: row?.unique_starters ?? 0,
+  };
+}
+
+/**
+ * Training Calendar daily time-series (last N days).
+ */
+export async function getTrainingCalendarDaily(days = 30): Promise<TrainingCalendarDaily[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_calendar_per_day', { num_days: days });
+  return (data as TrainingCalendarDaily[]) ?? [];
 }
 
 /**

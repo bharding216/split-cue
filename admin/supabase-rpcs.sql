@@ -40,6 +40,8 @@ drop function if exists users_by_country(int);
 drop function if exists users_by_app_version(int);
 drop function if exists training_plan_stats(int);
 drop function if exists training_plans_by_user(int);
+drop function if exists training_calendar_stats(int);
+drop function if exists training_calendar_per_day(int);
 
 -- Total registered users
 create or replace function total_users()
@@ -441,6 +443,76 @@ returns table(
       else round(count(*) filter (where is_accepted)::numeric / count(*)::numeric * 100, 1)
     end as acceptance_rate
   from plans;
+$$ language sql security definer;
+
+-- Training Calendar engagement stats (last N days). Counts unique users and
+-- event totals from the training_* client events.
+create or replace function training_calendar_stats(num_days int default 30)
+returns table(
+  viewers int,
+  viewers_with_action int,
+  workouts_added int,
+  workouts_added_picker int,
+  workouts_added_voice int,
+  workouts_started int,
+  workouts_edited int,
+  workouts_removed int,
+  workouts_moved int,
+  runs_viewed int,
+  runs_repeated int,
+  unique_adders int,
+  unique_starters int
+) as $$
+  with e as (
+    select anonymous_user_id, event_name, metadata
+    from events
+    where event_name like 'training_%'
+      and created_at > now() - (num_days || ' days')::interval
+  )
+  select
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_screen_viewed')::int as viewers,
+    (select count(distinct anonymous_user_id) from e
+      where event_name <> 'training_screen_viewed'
+        and event_name <> 'training_view_mode_changed')::int as viewers_with_action,
+    (select count(*) from e where event_name = 'training_workout_added')::int as workouts_added,
+    (select count(*) from e where event_name = 'training_workout_added'
+      and metadata->>'source' = 'picker')::int as workouts_added_picker,
+    (select count(*) from e where event_name = 'training_workout_added'
+      and metadata->>'source' = 'voice_builder')::int as workouts_added_voice,
+    (select count(*) from e where event_name = 'training_workout_started')::int as workouts_started,
+    (select count(*) from e where event_name = 'training_workout_edited')::int as workouts_edited,
+    (select count(*) from e where event_name = 'training_workout_removed')::int as workouts_removed,
+    (select count(*) from e where event_name = 'training_workout_moved')::int as workouts_moved,
+    (select count(*) from e where event_name = 'training_run_viewed')::int as runs_viewed,
+    (select count(*) from e where event_name = 'training_run_repeated')::int as runs_repeated,
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_workout_added')::int as unique_adders,
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_workout_started')::int as unique_starters;
+$$ language sql security definer;
+
+-- Training Calendar daily time-series: viewers and workouts added per day.
+create or replace function training_calendar_per_day(num_days int default 30)
+returns table(date text, viewers int, added int, started int) as $$
+  select
+    to_char(d.day, 'YYYY-MM-DD') as date,
+    coalesce(count(distinct e.anonymous_user_id) filter (
+      where e.event_name = 'training_screen_viewed'), 0)::int as viewers,
+    coalesce(count(*) filter (
+      where e.event_name = 'training_workout_added'), 0)::int as added,
+    coalesce(count(*) filter (
+      where e.event_name = 'training_workout_started'), 0)::int as started
+  from generate_series(
+    current_date - (num_days - 1),
+    current_date,
+    '1 day'::interval
+  ) as d(day)
+  left join events e
+    on e.created_at::date = d.day
+    and e.event_name in ('training_screen_viewed', 'training_workout_added', 'training_workout_started')
+  group by d.day
+  order by d.day;
 $$ language sql security definer;
 
 -- DAU per day for the last N days (unique devices that opened the app)
@@ -1280,6 +1352,8 @@ begin
     'strava_users(int)',
     'todays_events_by_user()',
     'total_users()',
+    'training_calendar_stats(int)',
+    'training_calendar_per_day(int)',
     'training_plan_stats(int)',
     'training_plans_by_user(int)',
     'users_by_app_version(int)',
@@ -1321,7 +1395,9 @@ begin
     'run_ladder(int)',
     'lapsed_survey_summary(int)',
     'lapsed_survey_comments(int, int)',
-    'run_reminder_funnel(int)'
+    'run_reminder_funnel(int)',
+    'training_calendar_stats(int)',
+    'training_calendar_per_day(int)'
   ] loop
     execute format('alter function %s set search_path = public, pg_temp', fn);
   end loop;

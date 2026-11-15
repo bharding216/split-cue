@@ -6,6 +6,8 @@ import {
   getOnboardingFunnel,
   getAIAdoptionRate,
   getTrainingPlanStats,
+  getTrainingCalendarStats,
+  getTrainingCalendarDaily,
   getDAUOverTime,
   getWorkoutsOverTime,
   getSignupsOverTime,
@@ -35,6 +37,7 @@ import PlatformsSection from '@/components/PlatformsSection';
 import CountriesSection from '@/components/CountriesSection';
 import AppVersionsSection from '@/components/AppVersionsSection';
 import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
+import TrainingCalendarSection from '@/components/TrainingCalendarSection';
 import StravaUsersBreakdown from '@/components/StravaUsersBreakdown';
 import SignOutButton from '@/components/SignOutButton';
 import Link from 'next/link';
@@ -66,6 +69,8 @@ export default async function DashboardPage() {
     hrStats,
     hrRetention,
     shareFunnel,
+    calendarStats,
+    calendarDaily,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -87,6 +92,8 @@ export default async function DashboardPage() {
     getHeartRateFeatureStats(30),
     getHeartRateRetention(90),
     getShareFunnel(30),
+    getTrainingCalendarStats(30),
+    getTrainingCalendarDaily(30),
   ]);
 
   return (
@@ -162,6 +169,9 @@ export default async function DashboardPage() {
           detail="Errors before a plan was saved"
         />
       </section>
+
+      {/* ── Training Calendar ─────────────────────────────── */}
+      <TrainingCalendarSection stats={calendarStats} daily={calendarDaily} days={30} />
 
       {/* ── Workouts ──────────────────────────────────────── */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
