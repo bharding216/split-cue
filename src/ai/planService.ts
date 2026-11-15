@@ -18,6 +18,7 @@ import { migrateToBlockModel } from '../workout/workoutStorage';
 import type { TrainingPlan, PlanWorkout, PlanOutlineWeek, PlanPhase, RaceType, GoalType } from '../types/database';
 import { sanitizeBlock, type AIContext } from './aiWorkoutService';
 import { buildHistorySummary, serializeHistorySummary } from './historySummary';
+import { invokeEdgeFunction } from './invokeEdgeFunction';
 import { buildCompletedWorkoutPayload } from './runPayload';
 
 // ── Types ────────────────────────────────────────────────────
@@ -203,60 +204,64 @@ export async function generatePlanOutline(
   input: PlanGenerationInput,
   revision?: PlanRevisionRequest,
 ): Promise<PlanOutlineResult> {
-  const { data, error } = await supabase.functions.invoke('generate-plan-outline', {
-    body: {
-      profile: {
-        experience_level: input.profile.experience_level,
-        typical_run_minutes: input.profile.typical_run_minutes,
-        typical_run_minutes_max: input.profile.typical_run_minutes_max,
-        easy_pace: input.profile.easy_pace,
-        fast_pace: input.profile.fast_pace,
-        race_times: input.profile.race_times,
-        weekly_mileage: input.profile.weekly_mileage,
-        longest_recent_run_minutes: input.profile.longest_recent_run_minutes,
-        max_workout_minutes: input.profile.max_workout_minutes,
-        preferred_days: input.profile.preferred_days,
-        cross_training: input.profile.cross_training,
+  const { data, error, attempts } = await invokeEdgeFunction<PlanOutlineResult & { error?: string }>(
+    'generate-plan-outline',
+    {
+      body: {
+        profile: {
+          experience_level: input.profile.experience_level,
+          typical_run_minutes: input.profile.typical_run_minutes,
+          typical_run_minutes_max: input.profile.typical_run_minutes_max,
+          easy_pace: input.profile.easy_pace,
+          fast_pace: input.profile.fast_pace,
+          race_times: input.profile.race_times,
+          weekly_mileage: input.profile.weekly_mileage,
+          longest_recent_run_minutes: input.profile.longest_recent_run_minutes,
+          max_workout_minutes: input.profile.max_workout_minutes,
+          preferred_days: input.profile.preferred_days,
+          cross_training: input.profile.cross_training,
+        },
+        goals: input.goals,
+        preferences: input.preferences,
+        limitations: input.limitations,
+        race_type: input.raceType,
+        race_distance_meters: input.raceType === 'custom' ? (input.customDistanceMeters ?? null) : getRaceDistanceMeters(input.raceType),
+        race_date: input.raceDate,
+        goal_time_minutes: input.goalTimeMinutes,
+        goal_type: input.goalType ?? 'race',
+        goal_pace: input.goalPace ?? null,
+        pace_baseline: input.paceBaseline ?? null,
+        start_date: input.startDate,
+        days_per_week: input.daysPerWeek,
+        days_per_week_min: input.daysPerWeekMin ?? null,
+        history_summary: input.historySummary,
+        use_effort_based: input.useEffortBased ?? false,
+        revision: revision
+          ? {
+              previous: {
+                approach: revision.previous.approach ?? null,
+                phases: revision.previous.phases ?? null,
+                goal_pace: revision.previous.suggested_goal_pace ?? null,
+                weeks: revision.previous.weeks.map((w) => ({
+                  theme: w.theme,
+                  total_miles_target: w.total_miles_target,
+                  days: w.days.map((d) => ({ day_label: d.day_label, description: d.description })),
+                })),
+              },
+              feedback: revision.feedback,
+              prior_feedback: revision.priorFeedback ?? [],
+            }
+          : null,
       },
-      goals: input.goals,
-      preferences: input.preferences,
-      limitations: input.limitations,
-      race_type: input.raceType,
-      race_distance_meters: input.raceType === 'custom' ? (input.customDistanceMeters ?? null) : getRaceDistanceMeters(input.raceType),
-      race_date: input.raceDate,
-      goal_time_minutes: input.goalTimeMinutes,
-      goal_type: input.goalType ?? 'race',
-      goal_pace: input.goalPace ?? null,
-      pace_baseline: input.paceBaseline ?? null,
-      start_date: input.startDate,
-      days_per_week: input.daysPerWeek,
-      days_per_week_min: input.daysPerWeekMin ?? null,
-      history_summary: input.historySummary,
-      use_effort_based: input.useEffortBased ?? false,
-      revision: revision
-        ? {
-            previous: {
-              approach: revision.previous.approach ?? null,
-              phases: revision.previous.phases ?? null,
-              goal_pace: revision.previous.suggested_goal_pace ?? null,
-              weeks: revision.previous.weeks.map((w) => ({
-                theme: w.theme,
-                total_miles_target: w.total_miles_target,
-                days: w.days.map((d) => ({ day_label: d.day_label, description: d.description })),
-              })),
-            },
-            feedback: revision.feedback,
-            prior_feedback: revision.priorFeedback ?? [],
-          }
-        : null,
     },
-  });
+  );
 
   if (error) {
-    throw new Error(await extractFunctionError(error, 'Failed to generate plan outline'));
+    const message = await extractFunctionError(error, 'Failed to generate plan outline');
+    throw Object.assign(new Error(message), { attempts, functionName: 'generate-plan-outline' });
   }
   if (data?.error) {
-    throw new Error(data.error);
+    throw Object.assign(new Error(data.error), { attempts, functionName: 'generate-plan-outline' });
   }
 
   return data as PlanOutlineResult;
@@ -289,7 +294,7 @@ export async function generateWorkoutDetails(
 
   const totalWeeks = outline.length || Math.max(...workoutsToDetail.map((w) => w.week_number), 1);
 
-  const { data, error } = await supabase.functions.invoke('generate-workouts', {
+  const { data, error, attempts } = await invokeEdgeFunction('generate-workouts', {
     body: {
       profile: context?.profile,
       history_summary: context?.historySummary ?? null,
@@ -305,7 +310,8 @@ export async function generateWorkoutDetails(
   });
 
   if (error) {
-    throw new Error(await extractFunctionError(error, 'Failed to generate workout details'));
+    const message = await extractFunctionError(error, 'Failed to generate workout details');
+    throw Object.assign(new Error(message), { attempts, functionName: 'generate-workouts' });
   }
   if (data?.error) {
     throw new Error(data.error);
@@ -530,24 +536,14 @@ export async function adjustPlan(input: PlanAdjustmentInput): Promise<PlanAdjust
   console.log('[adjustPlan] workouts count:', input.planSummary.workouts.length);
   console.log('[adjustPlan] conversation length:', input.conversation?.length ?? 0);
 
-  const { data, error } = await supabase.functions.invoke('adjust-plan', {
+  const { data, error, attempts } = await invokeEdgeFunction('adjust-plan', {
     body: requestBody,
   });
 
   if (error) {
-    let message = 'Failed to adjust plan';
-    try {
-      if (error.context && typeof error.context.json === 'function') {
-        const body = await error.context.json().catch(() => null);
-        if (body?.error) message = body.error;
-      } else if (error.message) {
-        message = error.message;
-      }
-    } catch {
-      // ignore parse errors
-    }
-    console.error('[adjustPlan] error:', message);
-    throw new Error(message);
+    const message = await extractFunctionError(error, 'Failed to adjust plan');
+    console.error('[adjustPlan] error:', message, `(attempts=${attempts})`);
+    throw Object.assign(new Error(message), { attempts, functionName: 'adjust-plan' });
   }
 
   if (data?.error) {
@@ -652,15 +648,17 @@ export async function reviewCompletedRun(input: {
 export async function analyzeCompletedWorkout(
   input: WorkoutAnalysisInput,
 ): Promise<WorkoutAnalysis> {
-  const { data, error } = await supabase.functions.invoke('analyze-workout', {
-    body: input,
-  });
+  const { data, error, attempts } = await invokeEdgeFunction<WorkoutAnalysis & { error?: string }>(
+    'analyze-workout',
+    { body: input },
+  );
 
   if (error) {
-    throw new Error(await extractFunctionError(error, 'Failed to analyze workout'));
+    const message = await extractFunctionError(error, 'Failed to analyze workout');
+    throw Object.assign(new Error(message), { attempts, functionName: 'analyze-workout' });
   }
   if (data?.error) {
-    throw new Error(data.error);
+    throw Object.assign(new Error(data.error), { attempts, functionName: 'analyze-workout' });
   }
 
   return data as WorkoutAnalysis;

@@ -546,10 +546,22 @@ export default function PlanSetupScreen() {
         race_type: effectiveRaceType,
         goal_type: goalType,
         error: String(err?.message ?? err).slice(0, 200),
+        attempts: typeof err?.attempts === 'number' ? err.attempts : undefined,
+        function_name: err?.functionName,
+        phase: 'outline',
       });
       if (mountedRef.current) {
         setGenPhase('idle');
-        Alert.alert('Error', err.message || 'Failed to generate plan. Please try again.');
+        const raw = String(err?.message ?? '');
+        const networkHiccup = /failed to send a request to the edge function/i.test(raw)
+          || /network request failed/i.test(raw)
+          || /fetch failed/i.test(raw);
+        Alert.alert(
+          'Error',
+          networkHiccup
+            ? "Couldn't reach the plan service. Please check your connection and try again."
+            : (err.message || 'Failed to generate plan. Please try again.'),
+        );
       }
     }
   }, [user, canGeneratePlan, plans, goalType, raceType, customDistance, customDistanceUnit, validatePaceGoal, coachPicksPace, typedPace, selectedTierId, paceBaseline, paceDistanceLabel, paceDistanceContext, raceDate, goalTimeHours, goalTimeMinutes, selectedDays, startDate, profile, goals, preferences, limitations, router]);
@@ -644,6 +656,9 @@ export default function PlanSetupScreen() {
         race_type: input.raceType,
         goal_type: input.goalType ?? 'race',
         error: String(err?.message ?? err).slice(0, 200),
+        attempts: typeof err?.attempts === 'number' ? err.attempts : undefined,
+        function_name: err?.functionName,
+        phase: 'save',
       });
       if (mountedRef.current) {
         setApproving(false);
