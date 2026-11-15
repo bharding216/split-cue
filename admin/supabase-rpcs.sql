@@ -40,6 +40,8 @@ drop function if exists users_by_country(int);
 drop function if exists users_by_app_version(int);
 drop function if exists training_plan_stats(int);
 drop function if exists training_plans_by_user(int);
+drop function if exists training_calendar_stats(int);
+drop function if exists training_calendar_per_day(int);
 
 -- Total registered users
 create or replace function total_users()
@@ -441,6 +443,76 @@ returns table(
       else round(count(*) filter (where is_accepted)::numeric / count(*)::numeric * 100, 1)
     end as acceptance_rate
   from plans;
+$$ language sql security definer;
+
+-- Training Calendar engagement stats (last N days). Counts unique users and
+-- event totals from the training_* client events.
+create or replace function training_calendar_stats(num_days int default 30)
+returns table(
+  viewers int,
+  viewers_with_action int,
+  workouts_added int,
+  workouts_added_picker int,
+  workouts_added_voice int,
+  workouts_started int,
+  workouts_edited int,
+  workouts_removed int,
+  workouts_moved int,
+  runs_viewed int,
+  runs_repeated int,
+  unique_adders int,
+  unique_starters int
+) as $$
+  with e as (
+    select anonymous_user_id, event_name, metadata
+    from events
+    where event_name like 'training_%'
+      and created_at > now() - (num_days || ' days')::interval
+  )
+  select
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_screen_viewed')::int as viewers,
+    (select count(distinct anonymous_user_id) from e
+      where event_name <> 'training_screen_viewed'
+        and event_name <> 'training_view_mode_changed')::int as viewers_with_action,
+    (select count(*) from e where event_name = 'training_workout_added')::int as workouts_added,
+    (select count(*) from e where event_name = 'training_workout_added'
+      and metadata->>'source' = 'picker')::int as workouts_added_picker,
+    (select count(*) from e where event_name = 'training_workout_added'
+      and metadata->>'source' = 'voice_builder')::int as workouts_added_voice,
+    (select count(*) from e where event_name = 'training_workout_started')::int as workouts_started,
+    (select count(*) from e where event_name = 'training_workout_edited')::int as workouts_edited,
+    (select count(*) from e where event_name = 'training_workout_removed')::int as workouts_removed,
+    (select count(*) from e where event_name = 'training_workout_moved')::int as workouts_moved,
+    (select count(*) from e where event_name = 'training_run_viewed')::int as runs_viewed,
+    (select count(*) from e where event_name = 'training_run_repeated')::int as runs_repeated,
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_workout_added')::int as unique_adders,
+    (select count(distinct anonymous_user_id) from e
+      where event_name = 'training_workout_started')::int as unique_starters;
+$$ language sql security definer;
+
+-- Training Calendar daily time-series: viewers and workouts added per day.
+create or replace function training_calendar_per_day(num_days int default 30)
+returns table(date text, viewers int, added int, started int) as $$
+  select
+    to_char(d.day, 'YYYY-MM-DD') as date,
+    coalesce(count(distinct e.anonymous_user_id) filter (
+      where e.event_name = 'training_screen_viewed'), 0)::int as viewers,
+    coalesce(count(*) filter (
+      where e.event_name = 'training_workout_added'), 0)::int as added,
+    coalesce(count(*) filter (
+      where e.event_name = 'training_workout_started'), 0)::int as started
+  from generate_series(
+    current_date - (num_days - 1),
+    current_date,
+    '1 day'::interval
+  ) as d(day)
+  left join events e
+    on e.created_at::date = d.day
+    and e.event_name in ('training_screen_viewed', 'training_workout_added', 'training_workout_started')
+  group by d.day
+  order by d.day;
 $$ language sql security definer;
 
 -- DAU per day for the last N days (unique devices that opened the app)
@@ -1081,6 +1153,65 @@ returns table(
   order by share_count desc;
 $$ language sql security definer;
 
+-- Share funnel for links created in the last N days, by share type plus an
+-- 'all' row, from share_events: landing page opens (people, not preview bots),
+-- store taps, imports, installs that picked up a link, completed runs, distinct
+-- runners who finished a shared workout, and re-shares. activated_per_sharer is
+-- the viral coefficient. Same definition as the share_hardening migration.
+drop function if exists public.share_funnel(int);
+create or replace function public.share_funnel(num_days int default 30)
+returns table(
+  share_type text,
+  shares int,
+  sharers int,
+  with_image int,
+  opens int,
+  store_clicks int,
+  imports int,
+  deferred_installs int,
+  completions int,
+  activated_runners int,
+  reshares int,
+  activated_per_sharer numeric
+) as $$
+  with shares as (
+    select sw.code, coalesce(sw.share_type, 'unknown') as share_type, sw.image_path,
+      coalesce(sw.user_id::text, sw.anonymous_id) as sharer
+    from shared_workouts sw
+    where sw.created_at > now() - (num_days || ' days')::interval
+  ),
+  ev as (
+    select e.share_code, e.event_type, e.anonymous_id, e.referrer
+    from share_events e
+    join shares s on s.code = e.share_code
+  )
+  select
+    case when grouping(s.share_type) = 1 then 'all' else s.share_type end as share_type,
+    count(distinct s.code)::int as shares,
+    count(distinct s.sharer)::int as sharers,
+    count(distinct s.code) filter (where s.image_path is not null)::int as with_image,
+    count(ev.*) filter (where ev.event_type = 'open')::int as opens,
+    count(ev.*) filter (where ev.event_type = 'store_click')::int as store_clicks,
+    count(ev.*) filter (where ev.event_type = 'import')::int as imports,
+    count(distinct ev.anonymous_id) filter (where ev.event_type = 'import' and ev.referrer = 'deferred')::int
+      as deferred_installs,
+    count(ev.*) filter (where ev.event_type = 'complete')::int as completions,
+    count(distinct ev.anonymous_id) filter (where ev.event_type = 'complete')::int as activated_runners,
+    count(ev.*) filter (where ev.event_type = 'reshare')::int as reshares,
+    round(
+      (count(distinct ev.anonymous_id) filter (where ev.event_type = 'complete'))::numeric
+        / nullif(count(distinct s.sharer), 0),
+      3
+    ) as activated_per_sharer
+  from shares s
+  left join ev on ev.share_code = s.code
+  group by rollup(s.share_type)
+  order by grouping(s.share_type), shares desc;
+$$ language sql security definer set search_path = public;
+
+revoke execute on function public.share_funnel(int) from public, anon, authenticated;
+grant execute on function public.share_funnel(int) to service_role;
+
 -- ── Strava ───────────────────────────────────────────────────
 -- Push counts come from the client's strava_workout_pushed events, which are
 -- only sent after a successful upload; pushes before that event shipped are
@@ -1221,6 +1352,8 @@ begin
     'strava_users(int)',
     'todays_events_by_user()',
     'total_users()',
+    'training_calendar_stats(int)',
+    'training_calendar_per_day(int)',
     'training_plan_stats(int)',
     'training_plans_by_user(int)',
     'users_by_app_version(int)',
@@ -1262,7 +1395,9 @@ begin
     'run_ladder(int)',
     'lapsed_survey_summary(int)',
     'lapsed_survey_comments(int, int)',
-    'run_reminder_funnel(int)'
+    'run_reminder_funnel(int)',
+    'training_calendar_stats(int)',
+    'training_calendar_per_day(int)'
   ] loop
     execute format('alter function %s set search_path = public, pg_temp', fn);
   end loop;

@@ -31,20 +31,29 @@ const SUMMARY_KEYS = [
   'qualifies',
   'run_number',
   'completion_pct',
+  'app_state_at_save',
+  'interval_index',
   'suggested_date',
   'reason',
   'tag',
   'moment_id',
 ];
 
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString('en-US', {
+/** Formats in the runner's own timezone when known, so times read as their local time of day. */
+function formatWhen(iso: string, timeZone?: string | null): string {
+  const options: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  });
+    timeZoneName: 'short',
+  };
+  try {
+    return new Date(iso).toLocaleString('en-US', { ...options, timeZone: timeZone ?? 'UTC' });
+  } catch {
+    return new Date(iso).toLocaleString('en-US', { ...options, timeZone: 'UTC' });
+  }
 }
 
 /** Same rule as the qualifying_runs view in Postgres. */
@@ -61,7 +70,7 @@ function minutes(meta: Record<string, unknown>): string | null {
   return Number.isFinite(ms) && ms > 0 ? `${Math.round(ms / 60000)} min` : null;
 }
 
-function EventRow({ event }: { event: TimelineEvent }) {
+function EventRow({ event, timeZone }: { event: TimelineEvent; timeZone?: string | null }) {
   const meta = event.metadata ?? {};
   const isRun = RUN_EVENTS.has(event.event_name);
   const summary = SUMMARY_KEYS.filter((k) => meta[k] != null && meta[k] !== '').map(
@@ -75,7 +84,7 @@ function EventRow({ event }: { event: TimelineEvent }) {
       <details>
         <summary className="flex cursor-pointer list-none items-baseline gap-3 [&::-webkit-details-marker]:hidden">
           <span className="w-40 shrink-0 text-xs tabular-nums text-gray-500">
-            {formatWhen(event.created_at)}
+            {formatWhen(event.created_at, timeZone)}
           </span>
           <span
             className={`text-sm ${
@@ -145,8 +154,8 @@ export default async function UserTimelinePage({ params }: { params: Promise<{ i
     ['Notifications', device?.notifications],
     ['Location', device?.location_foreground],
     ['Tier', device?.subscription_tier],
-    ['First seen', firstSeen ? formatWhen(firstSeen) : null],
-    ['Last seen', device?.last_seen_at ? formatWhen(device.last_seen_at) : null],
+    ['First seen', firstSeen ? formatWhen(firstSeen, device?.timezone) : null],
+    ['Last seen', device?.last_seen_at ? formatWhen(device.last_seen_at, device?.timezone) : null],
   ];
 
   return (
@@ -191,7 +200,7 @@ export default async function UserTimelinePage({ params }: { params: Promise<{ i
       ) : (
         <ul className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-2">
           {events.map((e, i) => (
-            <EventRow key={`${e.created_at}-${i}`} event={e} />
+            <EventRow key={`${e.created_at}-${i}`} event={e} timeZone={device?.timezone} />
           ))}
         </ul>
       )}

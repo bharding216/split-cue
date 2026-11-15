@@ -43,6 +43,29 @@ export type TrainingPlanStats = {
   startRate: number;
 };
 
+export type TrainingCalendarStats = {
+  viewers: number;
+  viewersWithAction: number;
+  workoutsAdded: number;
+  workoutsAddedPicker: number;
+  workoutsAddedVoice: number;
+  workoutsStarted: number;
+  workoutsEdited: number;
+  workoutsRemoved: number;
+  workoutsMoved: number;
+  runsViewed: number;
+  runsRepeated: number;
+  uniqueAdders: number;
+  uniqueStarters: number;
+};
+
+export type TrainingCalendarDaily = {
+  date: string;
+  viewers: number;
+  added: number;
+  started: number;
+};
+
 export type DailyCount = {
   date: string;
   count: number;
@@ -99,6 +122,32 @@ export type StravaStats = {
   pushes: number;
   autoPushes: number;
   uniquePushers: number;
+};
+
+export type HeartRateFeatureStats = {
+  activeDevices: number;
+  hrDevices: number;
+  adoptionPct: number;
+  hrWorkoutsStarted: number;
+  hrWorkoutsCompleted: number;
+  completionPct: number;
+  hrCompleters: number;
+  analysisViewers: number;
+  analysisPct: number;
+  upgradeClickers: number;
+  upgradeConverted: number;
+  conversionPct: number;
+  consentGranted: number;
+  consentDeclined: number;
+  connectionFailures: number;
+};
+
+export type HeartRateRetentionRow = {
+  cohort: string;
+  runners: number;
+  second_run_pct: number;
+  runs_per_active_week: number | null;
+  pro_pct: number;
 };
 
 export type StravaUser = {
@@ -375,6 +424,41 @@ export async function getTrainingPlansByUser(days = 30): Promise<TrainingPlanUse
 }
 
 /**
+ * Training Calendar engagement summary (last N days).
+ */
+export async function getTrainingCalendarStats(days = 30): Promise<TrainingCalendarStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_calendar_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    viewers: row?.viewers ?? 0,
+    viewersWithAction: row?.viewers_with_action ?? 0,
+    workoutsAdded: row?.workouts_added ?? 0,
+    workoutsAddedPicker: row?.workouts_added_picker ?? 0,
+    workoutsAddedVoice: row?.workouts_added_voice ?? 0,
+    workoutsStarted: row?.workouts_started ?? 0,
+    workoutsEdited: row?.workouts_edited ?? 0,
+    workoutsRemoved: row?.workouts_removed ?? 0,
+    workoutsMoved: row?.workouts_moved ?? 0,
+    runsViewed: row?.runs_viewed ?? 0,
+    runsRepeated: row?.runs_repeated ?? 0,
+    uniqueAdders: row?.unique_adders ?? 0,
+    uniqueStarters: row?.unique_starters ?? 0,
+  };
+}
+
+/**
+ * Training Calendar daily time-series (last N days).
+ */
+export async function getTrainingCalendarDaily(days = 30): Promise<TrainingCalendarDaily[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('training_calendar_per_day', { num_days: days });
+  return (data as TrainingCalendarDaily[]) ?? [];
+}
+
+/**
  * Run ladder: of runners whose first run was at least N days ago, how many
  * reached run 2, 3, 4, 5 within N days (runs under 6 hours apart merge).
  */
@@ -383,6 +467,32 @@ export async function getRunLadder(windowDays = 14): Promise<RunLadderStep[]> {
 
   const { data } = await supabase.rpc('run_ladder', { window_days: windowDays });
   return (data as RunLadderStep[]) ?? [];
+}
+
+export interface ShareFunnelRow {
+  share_type: string;
+  shares: number;
+  sharers: number;
+  with_image: number;
+  opens: number;
+  store_clicks: number;
+  imports: number;
+  deferred_installs: number;
+  completions: number;
+  activated_runners: number;
+  reshares: number;
+  activated_per_sharer: number | null;
+}
+
+/**
+ * Share funnel for links created in the last N days, by share type plus an
+ * 'all' row: opens, store taps, imports, installs, completions, re-shares.
+ */
+export async function getShareFunnel(days = 30): Promise<ShareFunnelRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('share_funnel', { num_days: days });
+  return (data as ShareFunnelRow[]) ?? [];
 }
 
 /**
@@ -495,6 +605,45 @@ export async function getRunReminderFunnel(days = 30): Promise<FunnelCount[]> {
 
   const { data } = await supabase.rpc('run_reminder_funnel', { num_days: days });
   return (data as FunnelCount[]) ?? [];
+}
+
+/**
+ * Heart rate feature adoption, completion, analysis views, upgrades, consent
+ * and connection failures (last N days). Built from usage events only.
+ */
+export async function getHeartRateFeatureStats(days = 30): Promise<HeartRateFeatureStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_feature_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    activeDevices: row?.active_devices ?? 0,
+    hrDevices: row?.hr_devices ?? 0,
+    adoptionPct: Number(row?.adoption_pct ?? 0),
+    hrWorkoutsStarted: row?.hr_workouts_started ?? 0,
+    hrWorkoutsCompleted: row?.hr_workouts_completed ?? 0,
+    completionPct: Number(row?.completion_pct ?? 0),
+    hrCompleters: row?.hr_completers ?? 0,
+    analysisViewers: row?.analysis_viewers ?? 0,
+    analysisPct: Number(row?.analysis_pct ?? 0),
+    upgradeClickers: row?.upgrade_clickers ?? 0,
+    upgradeConverted: row?.upgrade_converted ?? 0,
+    conversionPct: Number(row?.conversion_pct ?? 0),
+    consentGranted: row?.consent_granted ?? 0,
+    consentDeclined: row?.consent_declined ?? 0,
+    connectionFailures: row?.connection_failures ?? 0,
+  };
+}
+
+/**
+ * Runners who recorded heart rate vs. those who didn't, for runners whose
+ * first qualifying run was in the last N days.
+ */
+export async function getHeartRateRetention(days = 90): Promise<HeartRateRetentionRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_retention_comparison', { num_days: days });
+  return (data as HeartRateRetentionRow[]) ?? [];
 }
 
 /**
