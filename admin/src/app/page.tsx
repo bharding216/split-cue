@@ -118,6 +118,12 @@ export default async function DashboardPage() {
           >
             Notifications
           </Link>
+          <Link
+            href="/versions"
+            className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            Versions
+          </Link>
           <SignOutButton />
         </div>
       </header>
