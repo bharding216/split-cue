@@ -145,12 +145,14 @@ export default function TrainingScreen() {
   // and call out the workout.
   const params = useLocalSearchParams<{ date?: string; highlight?: string; from?: string; kind?: string }>();
   const [highlight, setHighlight] = useState<{ id: string; from: CalendarHighlightSource } | null>(null);
+  const [highlightRunId, setHighlightRunId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const dayDetailY = useRef(0);
 
-  const focusDay = useCallback((date: string | undefined, highlightId: string | undefined, source: CalendarHighlightSource) => {
+  const focusDay = useCallback((date: string | undefined, highlightId: string | undefined, source: CalendarHighlightSource, runId?: string) => {
     if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
     setHighlight(highlightId ? { id: highlightId, from: source } : null);
+    setHighlightRunId(runId ?? null);
     setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, dayDetailY.current - Spacing.lg), animated: true }), 350);
   }, []);
 
@@ -202,8 +204,16 @@ export default function TrainingScreen() {
         returnToPickerDate.current = null;
       }
       const request = consumeCalendarRequest();
-      if (request) focusDay(request.date, request.highlightId, request.from ?? 'home');
-    }, [refresh, focusDay])
+      if (request) {
+        focusDay(request.date, request.highlightId, request.from ?? 'home', request.highlightRunId);
+      } else {
+        track('training_screen_viewed', {
+          has_plan: racePlans.length > 0,
+          plan_count: racePlans.length,
+          signed_in: !!user,
+        });
+      }
+    }, [refresh, focusDay, racePlans.length, user])
   );
 
   // Primary plan info
@@ -239,10 +249,12 @@ export default function TrainingScreen() {
 
   const goToNextDay = useCallback(() => {
     setSelectedDate((prev) => shiftDateKey(prev, 1));
+    setHighlightRunId(null);
   }, []);
 
   const goToPrevDay = useCallback(() => {
     setSelectedDate((prev) => shiftDateKey(prev, -1));
+    setHighlightRunId(null);
   }, []);
 
   const daySwipeGesture = useMemo(
@@ -287,17 +299,29 @@ export default function TrainingScreen() {
     const pw = planWorkoutId ? planWorkouts.find((w) => w.id === planWorkoutId) : undefined;
     const ownerPlan = pw ? plans.find((p) => p.id === pw.plan_id) : undefined;
     const fromReminder = !!planWorkoutId && highlight?.id === planWorkoutId && highlight.from === 'reminder';
+    track('training_workout_started', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      plan_workout_id: planWorkoutId ?? null,
+      date: selectedDate,
+    });
     setTempWorkout(workout, { source: fromReminder ? 'reminder' : planWorkoutSource(ownerPlan), planWorkoutId });
     if (planWorkoutId && highlight?.id === planWorkoutId) setHighlight(null);
     router.push(`/workout/run/${workout.id}`);
-  }, [router, planWorkouts, plans, highlight]);
+  }, [router, planWorkouts, plans, highlight, selectedDate]);
 
   const handleRemoveWorkout = useCallback(async (workoutId: string) => {
+    track('training_workout_removed', { plan_workout_id: workoutId, date: selectedDate });
     await removeWorkout(workoutId);
-  }, [removeWorkout]);
+  }, [removeWorkout, selectedDate]);
 
   const handleMoveWorkout = useCallback(async (newDate: string) => {
     if (!moveTarget) return;
+    track('training_workout_moved', {
+      plan_workout_id: moveTarget.id,
+      from_date: moveTarget.date,
+      to_date: newDate,
+    });
     setMoveTarget(null);
     await moveWorkout(moveTarget.id, newDate);
   }, [moveTarget, moveWorkout]);
@@ -308,15 +332,27 @@ export default function TrainingScreen() {
       id: workoutData.id || generateId(),
       updatedAt: Date.now(),
     };
+    track('training_workout_edited', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      plan_workout_id: planWorkoutId ?? null,
+      date: selectedDate,
+    });
     setTempWorkout(workout, { planWorkoutId });
     router.push(`/workout/${workout.id}`);
-  }, [router]);
+  }, [router, selectedDate]);
 
   const handleViewRun = useCallback((historyEntryId: string) => {
+    track('training_run_viewed', { entry_id: historyEntryId, date: selectedDate });
     router.push(`/run/${historyEntryId}` as any);
-  }, [router]);
+  }, [router, selectedDate]);
 
   const handleRunAgain = useCallback(async (run: import('../../../src/workout/workoutTypes').CompletedWorkout) => {
+    track('training_run_repeated', {
+      entry_id: run.id,
+      workout_name: run.workoutName,
+      date: selectedDate,
+    });
     if (run.configuration) {
       const draft = { ...run.configuration, id: generateId(), updatedAt: Date.now() };
       setTempWorkout(draft, { source: 'history_repeat', templateId: run.templateId });
@@ -324,7 +360,7 @@ export default function TrainingScreen() {
     } else {
       router.push(`/workout/run/${run.workoutId}`);
     }
-  }, [router]);
+  }, [router, selectedDate]);
 
   const handleMoveWorkoutFromDay = useCallback((workoutId: string) => {
     const pw = planWorkouts.find((w) => w.id === workoutId);
@@ -357,6 +393,7 @@ export default function TrainingScreen() {
   }, [aiContext, user]);
 
   const handleAddWorkout = useCallback((date: string) => {
+    track('training_add_workout_tapped', { date });
     setPickerDate(date);
   }, []);
 
@@ -364,6 +401,7 @@ export default function TrainingScreen() {
     const date = pickerDate ?? selectedDate;
     setPickerDate(null);
     setVoiceDate(date);
+    track('training_voice_builder_opened', { date });
     loadAiContext();
   }, [pickerDate, selectedDate, loadAiContext]);
 
@@ -375,23 +413,38 @@ export default function TrainingScreen() {
 
   const handleVoiceWorkoutAccepted = useCallback(async (workout: WorkoutDefinition) => {
     if (!user || !voiceDate) return;
+    const date = voiceDate;
     setVoiceDate(null);
     const activePlan = await ensurePlan();
-    await addWorkoutToCalendar(activePlan.id, user.id, voiceDate, workout, activePlan.start_date);
+    await addWorkoutToCalendar(activePlan.id, user.id, date, workout, activePlan.start_date);
+    track('training_workout_added', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      date,
+      source: 'voice_builder',
+    });
     await refresh();
   }, [user, voiceDate, ensurePlan, refresh]);
 
   const handleCreateNewForPlan = useCallback(() => {
     returnToPickerDate.current = pickerDate;
+    track('training_create_new_tapped', { date: pickerDate });
     setPickerDate(null);
     router.push(`/workout/new?addToDate=${returnToPickerDate.current}` as any);
   }, [pickerDate, router]);
 
   const handleWorkoutPicked = useCallback(async (workout: WorkoutDefinition) => {
     if (!user || !pickerDate) return;
+    const date = pickerDate;
     setPickerDate(null);
     const activePlan = await ensurePlan();
-    await addWorkoutToCalendar(activePlan.id, user.id, pickerDate, workout, activePlan.start_date);
+    await addWorkoutToCalendar(activePlan.id, user.id, date, workout, activePlan.start_date);
+    track('training_workout_added', {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      date,
+      source: 'picker',
+    });
     await refresh();
   }, [user, pickerDate, ensurePlan, refresh]);
 
@@ -619,9 +672,9 @@ export default function TrainingScreen() {
           <TrainingCalendar
             dayEntries={dayEntries}
             selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
+            onSelectDate={(date) => { setSelectedDate(date); setHighlightRunId(null); }}
             viewMode={calendarViewMode}
-            onChangeViewMode={setCalendarViewMode}
+            onChangeViewMode={(mode) => { setCalendarViewMode(mode); track('training_view_mode_changed', { mode }); }}
             raceDates={raceDates}
             goalDates={goalDates}
             showAIWindow={hasPlan}
@@ -646,6 +699,7 @@ export default function TrainingScreen() {
                 onRunAgain={handleRunAgain}
                 onAddWorkout={handleAddWorkout}
                 highlightWorkoutId={highlight?.id}
+                highlightRunId={highlightRunId}
                 highlightContent={
                   highlightedWorkout && highlight?.from === 'suggestion' ? (
                     <NewlyPlannedHint

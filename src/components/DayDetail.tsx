@@ -37,6 +37,8 @@ interface DayDetailProps {
   onAddWorkout?: (date: string) => void;
   /** Plan workout to call out, e.g. one just added from the post-run suggestion. */
   highlightWorkoutId?: string | null;
+  /** Completed-run history ID to call out, e.g. the run just finished. */
+  highlightRunId?: string | null;
   /** Shown above the highlighted workout's actions. */
   highlightContent?: React.ReactNode;
 }
@@ -181,6 +183,7 @@ export function DayDetail({
   onRunAgain,
   onAddWorkout,
   highlightWorkoutId,
+  highlightRunId,
   highlightContent,
 }: DayDetailProps) {
   const dateDisplay = formatDateDisplay(selectedDate);
@@ -355,7 +358,7 @@ export function DayDetail({
 
       {/* Completed runs */}
       {entry.completedRuns.map((run) => (
-        <View key={run.id} style={styles.runCard}>
+        <View key={run.id} style={[styles.runCard, run.id === highlightRunId && styles.runCardHighlighted]}>
           <View style={styles.runHeader}>
             <View style={[styles.statusBadge, { backgroundColor: Colors.primary + '22' }]}>
               <Ionicons name="checkmark" size={12} color={Colors.primary} />
@@ -624,6 +627,10 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  runCardHighlighted: {
+    borderColor: Colors.primary,
+    borderWidth: 2,
   },
   runHeader: {
     gap: Spacing.xs,

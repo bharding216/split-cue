@@ -473,8 +473,9 @@ function ActiveWorkoutInner({
     hapticTap();
     track('post_workout_done', { selected_feel: selectedFeel });
     leaveFinishedScreen();
-    router.navigate('/(tabs)' as any);
-  }, [leaveFinishedScreen, router, selectedFeel]);
+    requestCalendarDate(localDateKey(0), undefined, 'workout_complete', runner.completedEntryId ?? undefined);
+    router.navigate('/(tabs)/training' as any);
+  }, [leaveFinishedScreen, router, selectedFeel, runner.completedEntryId]);
 
   const handleViewDetails = useCallback(() => {
     const entryId = runner.completedEntryId;
