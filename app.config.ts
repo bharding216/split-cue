@@ -189,6 +189,18 @@ const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
         groupIdentifier: APP_GROUP,
       },
     ],
+    [
+      'expo-build-properties',
+      {
+        android: {
+          enableMinifyInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+          extraProguardRules: `-dontwarn com.google.crypto.tink.**
+-dontwarn org.joda.time.**
+-dontwarn okio.**`,
+        },
+      },
+    ],
     '@react-native-community/datetimepicker',
     'expo-localization',
     [
