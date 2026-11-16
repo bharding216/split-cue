@@ -3,15 +3,15 @@
  * Answers: What is SplitCue? Who is it for? What problems does it solve?
  */
 
-import { renderPage, APP_STORE_URL, phoneFrame, ctaBanner } from '../layout';
+import { renderPage, phoneFrame, ctaBanner, storeButtons } from '../layout';
 
 export function homePage(): string {
   return renderPage(
     {
       title:
-        'SplitCue — Real-Time Voice Pace Coaching and Interval Training App for Runners',
+        'SplitCue — Adaptive Training Plans and Real-Time Voice Coaching for Runners',
       description:
-        'SplitCue is an iPhone running app that provides real-time audio pace announcements, structured interval workouts with voice coaching, GPS pace tracking, and an AI workout builder. Available on iOS.',
+        'SplitCue is a running app for iPhone and Android with adaptive AI training plans, real-time audio pace announcements, voice-coached interval workouts, heart rate monitor support, and an AI workout builder. Available on the App Store and Google Play.',
       path: '/',
     },
     `
@@ -22,17 +22,14 @@ export function homePage(): string {
       <div class="hero-content">
         <img src="/icon.png" alt="SplitCue app icon" class="hero-logo" width="80" height="80">
         <h1>Real-Time <span class="green">Voice Pace Coaching</span> for Runners</h1>
-        <p class="subtitle">SplitCue is an interval running app for iPhone that coaches you with audio announcements for pace, distance, elapsed time, and interval transitions — so you can focus on running, not your screen.</p>
-        <div class="btn-row">
-          <a href="${APP_STORE_URL}" class="btn btn-primary btn-glow" rel="noopener">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-            Download on App Store
-          </a>
+        <p class="subtitle">SplitCue is a running app for iPhone and Android that builds a training plan around your goal, adapts it after every run, and coaches you through each workout with voice cues for pace, distance, and interval transitions — so you can focus on running, not your screen.</p>
+        <div id="download">
+          ${storeButtons()}
         </div>
         <div class="stats-row">
           <div class="stat"><span class="stat-value">11</span><span class="stat-label">Built-in Workouts</span></div>
-          <div class="stat"><span class="stat-value">4</span><span class="stat-label">Audio Cue Modes</span></div>
-          <div class="stat"><span class="stat-value">AI</span><span class="stat-label">Workout Builder</span></div>
+          <div class="stat"><span class="stat-value">5K–26.2</span><span class="stat-label">AI Training Plans</span></div>
+          <div class="stat"><span class="stat-value">HR</span><span class="stat-label">Monitor &amp; Watch Support</span></div>
         </div>
       </div>
     </section>
@@ -64,11 +61,26 @@ export function homePage(): string {
     <section class="section section-alt">
       <div class="container-wide">
         <span class="section-label">What Is SplitCue</span>
-        <h2>Voice-Coached Interval Training and GPS Pace Tracking</h2>
-        <p>SplitCue is a running app designed for runners who want structured interval workouts with hands-free voice coaching. Instead of constantly checking your phone or watch, SplitCue announces your current pace, elapsed time, distance, and interval transitions out loud.</p>
-        <p>Whether you're doing 400-meter repeats, tempo runs, fartlek sessions, or run/walk intervals, SplitCue guides you through every phase with clear audio cues.</p>
+        <h2>Adaptive Training Plans With Hands-Free Voice Coaching</h2>
+        <p>SplitCue is a running app for runners who want structure without staring at a screen. Get an AI training plan for your next race, or build your own interval workouts. Instead of constantly checking your phone or watch, SplitCue announces your current pace, elapsed time, distance, and interval transitions out loud.</p>
+        <p>Whether you're training for a marathon, doing 400-meter repeats, tempo runs, fartlek sessions, or run/walk intervals, SplitCue guides you through every phase with clear audio cues.</p>
 
         <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon fi-green" aria-hidden="true">📅</div>
+            <h3>AI Training Plans</h3>
+            <p>Training for a 5K, 10K, half marathon, marathon, or a target pace? SplitCue builds a phased plan around your race date, running days, and recent runs. <a href="/features/training-plans">Learn more</a></p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon fi-yellow" aria-hidden="true">🔁</div>
+            <h3>Adapts After Every Run</h3>
+            <p>After each plan workout, the AI coach reviews how it went and suggests changes to what's ahead. Need an easier week or to swap days? Just ask, by text or voice.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon fi-red" aria-hidden="true">❤️</div>
+            <h3>Heart Rate Monitors and Watches</h3>
+            <p>Connect a Bluetooth chest strap or a watch that broadcasts heart rate — Garmin, Polar, COROS, Amazfit, WHOOP, and more — and record heart rate on every run. <a href="/help/heart-rate-monitors">Supported devices</a></p>
+          </div>
           <div class="feature-card">
             <div class="feature-icon fi-green" aria-hidden="true">🎙️</div>
             <h3>Voice Pace Announcements</h3>
@@ -97,7 +109,12 @@ export function homePage(): string {
           <div class="feature-card">
             <div class="feature-icon fi-blue" aria-hidden="true">📤</div>
             <h3>Workout Sharing</h3>
-            <p>Share your workout structures and completed results with other runners via a link. Recipients can import the workout directly into SplitCue.</p>
+            <p>Share your workout structures and completed results with other runners via a link, or challenge a friend to beat your result. Recipients can import the workout directly into SplitCue.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon fi-green" aria-hidden="true">🗺️</div>
+            <h3>Route Maps and Strava Upload</h3>
+            <p>Review every run with a route map, elevation profile, uphill/flat/downhill pace, splits, and personal records. Upload runs to Strava, heart rate included.</p>
           </div>
         </div>
       </div>
@@ -133,6 +150,10 @@ export function homePage(): string {
         <h2>Built for Every Kind of Runner</h2>
         <div class="features-grid">
           <div class="feature-card">
+            <h3>Runners Training for a Race</h3>
+            <p>From your first 5K to a marathon, get a plan that fits your schedule and adjusts as your fitness changes.</p>
+          </div>
+          <div class="feature-card">
             <h3>Interval Runners</h3>
             <p>Speed work, tempo runs, fartlek, hill repeats — SplitCue handles the timing so you can focus on effort.</p>
           </div>
@@ -146,7 +167,7 @@ export function homePage(): string {
           </div>
           <div class="feature-card">
             <h3>Self-Coached Athletes</h3>
-            <p>No coach? The AI builder creates workouts tailored to your fitness level and training goals.</p>
+            <p>No coach? AI training plans and the AI workout builder create workouts tailored to your fitness level and goals.</p>
           </div>
         </div>
       </div>
@@ -201,6 +222,9 @@ export function homePage(): string {
         <span class="section-label">Why SplitCue</span>
         <h2>Problems SplitCue Solves</h2>
         <div class="prose">
+          <h3>Training plans that ignore how your runs actually go</h3>
+          <p>A fixed plan doesn't know you were sick last week or crushed yesterday's tempo run. SplitCue <strong>reviews every plan workout and proposes changes</strong> to what's ahead, and you can reshape your plan anytime just by asking.</p>
+
           <h3>Constantly checking your phone or watch</h3>
           <p>Most runners glance at their screen dozens of times per workout to check pace or see when to switch intervals. SplitCue eliminates this by <strong>announcing everything out loud</strong>. You hear your pace, when to speed up or slow down, and countdown warnings before each transition.</p>
 
@@ -222,7 +246,7 @@ export function homePage(): string {
         <span class="section-label">Audio & Platform</span>
         <h2>Customizable Audio Cues</h2>
         <div class="prose">
-          <p>SplitCue is available on <strong>iOS</strong> (iPhone). It works with wired headphones, Bluetooth earbuds, or your phone's speaker.</p>
+          <p>SplitCue is available on <strong>iPhone</strong> (App Store) and <strong>Android</strong> (Google Play). It works with wired headphones, Bluetooth earbuds, or your phone's speaker.</p>
 
           <h3>Audio Cue Modes</h3>
           <ul>
@@ -243,8 +267,12 @@ export function homePage(): string {
 
           <h3>Additional Features</h3>
           <ul>
+            <li>Heart rate from Bluetooth monitors and compatible watches, with heart rate graphs (per-interval and recovery analysis with Pro)</li>
+            <li>Route maps, elevation profiles, and pace by terrain</li>
+            <li>Strava upload, including heart rate</li>
+            <li>Personal records, awards, and progress trends</li>
             <li>Home screen widgets for quick workout access</li>
-            <li>iOS Live Activities showing workout progress on the lock screen</li>
+            <li>iOS Live Activities showing workout progress on the iPhone lock screen</li>
             <li>Haptic feedback at interval transitions</li>
             <li>Workout history with per-interval split times and distances</li>
             <li>Cloud sync to keep workouts across devices</li>
@@ -254,7 +282,7 @@ export function homePage(): string {
     </section>
 
     <!-- ── CTA ───────────────────────────────────────────────── -->
-    ${ctaBanner('Start Running With Real-Time Voice Coaching', 'Download SplitCue free and try a built-in workout today.')}
+    ${ctaBanner('Start Running With Real-Time Voice Coaching', 'Download SplitCue free and build your first training plan or try a built-in workout today.')}
     `,
   );
 }

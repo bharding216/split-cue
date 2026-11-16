@@ -18,6 +18,13 @@ import {
   type SegmentTarget,
 } from './workoutTypes';
 import { PREMIUM_VOICES, DEFAULT_PREMIUM_VOICE_ID } from '../audio/voiceCatalog';
+import {
+  clearAllHeartRateSamples,
+  deleteHeartRateSamples,
+  hasHeartRateSamples,
+  saveHeartRateSamples,
+} from '../heartRate/hrSampleStore';
+import type { HrSample } from '../heartRate/hrTypes';
 
 const STORAGE_KEYS = {
   WORKOUTS: '@pacecue/workouts',
@@ -240,6 +247,18 @@ export function withHistoryLock<T>(fn: () => Promise<T>): Promise<T> {
   return prev.then(fn).finally(() => release!());
 }
 
+/**
+ * Early 1.10.0 builds kept heart rate readings inside the history entry.
+ * Move them to the run's sample file and keep only the summary.
+ */
+export function moveInlineHeartRate(entry: CompletedWorkout): CompletedWorkout {
+  const hr = entry.heartRate as (CompletedWorkout['heartRate'] & { samples?: HrSample[] }) | undefined;
+  if (!hr?.samples) return entry;
+  const { samples, ...summary } = hr;
+  if (!hasHeartRateSamples(entry.id)) saveHeartRateSamples(entry.id, samples);
+  return { ...entry, heartRate: { ...summary, sampleCount: samples.length } };
+}
+
 export async function loadHistory(): Promise<CompletedWorkout[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEYS.HISTORY);
   if (!raw) return [];
@@ -248,7 +267,7 @@ export async function loadHistory(): Promise<CompletedWorkout[]> {
     if (entry.configuration) {
       entry.configuration = migrateToBlockModel(entry.configuration);
     }
-    return entry;
+    return moveInlineHeartRate(entry);
   });
 }
 
@@ -285,6 +304,7 @@ export async function deleteHistoryEntry(id: string): Promise<CompletedWorkout[]
   const history = await loadHistory();
   const updated = history.filter((h) => h.id !== id);
   await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(updated));
+  deleteHeartRateSamples(id);
 
   import('../sync/cloudSync').then(({ trackHistoryDeletion }) => {
     trackHistoryDeletion(id);
@@ -295,6 +315,7 @@ export async function deleteHistoryEntry(id: string): Promise<CompletedWorkout[]
 
 export async function clearHistory(): Promise<void> {
   await AsyncStorage.removeItem(STORAGE_KEYS.HISTORY);
+  clearAllHeartRateSamples();
 }
 
 export async function clearAllUserData(): Promise<void> {
@@ -306,6 +327,10 @@ export async function clearAllUserData(): Promise<void> {
     '@pacecue/deleted_history_ids',
     '@pacecue/plan_cache',
   ]);
+  clearAllHeartRateSamples();
+  await import('../heartRate/hrConsent')
+    .then(({ clearHrCloudConsent }) => clearHrCloudConsent())
+    .catch(() => {});
 }
 
 // ── Settings ─────────────────────────────────────────────────────────

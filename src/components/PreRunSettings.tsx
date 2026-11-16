@@ -7,10 +7,23 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AppSettings, AudioCueMode } from '../workout/workoutTypes';
+import { DEFAULT_SETTINGS, type AppSettings, type AudioCueMode } from '../workout/workoutTypes';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
-import { cueDistanceLabel } from '../audio/cueSchedule';
+import { CUE_DISTANCE_PRESETS, cueDistanceLabel, paceCuesEnabled } from '../audio/cueSchedule';
+import type { ProgressCueBasis } from '../pace/paceTypes';
+import {
+  CueBasisToggle,
+  CueDistanceChips,
+  PACE_CUE_FREQUENCY_OPTIONS,
+  PROGRESS_TIME_OPTIONS,
+  TimeStepChips,
+} from './CueScheduleControls';
+
+const PACE_BASIS_OPTIONS: readonly ProgressCueBasis[] = ['time', 'distance'];
+/** The switch turns pace cues off, so the step chips leave out 'Off'. */
+const PACE_FREQUENCY_STEPS = PACE_CUE_FREQUENCY_OPTIONS.filter((o) => o.value !== 0);
+const PACE_DISTANCE_STEPS = CUE_DISTANCE_PRESETS.filter((p) => p !== 'off');
 
 interface PreRunSettingsProps {
   settings: AppSettings;
@@ -33,7 +46,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
 
   // Build a compact cue-schedule label for the summary chip.
   const cueLabel = (() => {
-    if (settings.audioCueMode === 'silent') return null;
+    if (settings.audioCueMode !== 'voice' && settings.audioCueMode !== 'both') return null;
     const v = settings.timeRemainingInterval;
     const timeLabel = v === 0 ? null : v >= 60 ? `${v / 60} min` : `${v}s`;
     const distanceLabel =
@@ -44,6 +57,51 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
     if (settings.progressCueBasis === 'time') return timeLabel;
     if (timeLabel && distanceLabel) return `${timeLabel} / ${distanceLabel}`;
     return timeLabel ?? distanceLabel;
+  })();
+
+  const speaksProgress = settings.audioCueMode === 'voice' || settings.audioCueMode === 'both';
+  const progressScheduleLabel = (() => {
+    const v = settings.timeRemainingInterval;
+    const timeLabel = v === 0 ? 'off' : v >= 60 ? `every ${v / 60} min` : `every ${v}s`;
+    const distanceLabel =
+      settings.progressCueDistance === 'off'
+        ? 'off'
+        : `every ${cueDistanceLabel(settings.progressCueDistance, settings.paceUnit)}`;
+    if (settings.progressCueBasis === 'distance') return `Distance covered, ${distanceLabel}`;
+    if (settings.progressCueBasis === 'time') return `Elapsed time, ${timeLabel}`;
+    return `Timed & Free Runs: ${timeLabel} · distance intervals: ${distanceLabel}`;
+  })();
+
+  const paceCuesOn = paceCuesEnabled(settings);
+  const paceScheduleLabel = (() => {
+    const v = settings.paceCueFrequency;
+    const timeLabel = v === 0 ? null : v >= 60 ? `every ${v / 60} min` : `every ${v}s`;
+    const distanceLabel =
+      settings.paceCueDistance === 'off'
+        ? null
+        : `every ${cueDistanceLabel(settings.paceCueDistance, settings.paceUnit)}`;
+    if (settings.paceCueBasis === 'distance') return distanceLabel ?? 'off';
+    if (settings.paceCueBasis === 'time') return timeLabel ?? 'off';
+    return `Timed & Free Runs: ${timeLabel ?? 'off'} · distance intervals: ${distanceLabel ?? 'off'}`;
+  })();
+
+  const paceChipLabel = (() => {
+    if (settings.audioCueMode === 'silent' || !settings.paceTrackingEnabled || !paceCuesOn) {
+      return null;
+    }
+    const v = settings.paceCueFrequency;
+    const timeLabel = v === 0 ? null : v >= 60 ? `${v / 60} min` : `${v}s`;
+    const distanceLabel =
+      settings.paceCueDistance === 'off'
+        ? null
+        : cueDistanceLabel(settings.paceCueDistance, settings.paceUnit);
+    const step =
+      settings.paceCueBasis === 'distance'
+        ? distanceLabel
+        : settings.paceCueBasis === 'time'
+          ? timeLabel
+          : [timeLabel, distanceLabel].filter(Boolean).join(' / ');
+    return step ? `Pace ${step}` : null;
   })();
 
   return (
@@ -86,8 +144,14 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
                 color={Colors.primary}
               />
               <Text style={[styles.chipText, styles.chipTextActive]}>
-                {cueLabel}
+                Progress {cueLabel}
               </Text>
+            </View>
+          )}
+          {paceChipLabel && (
+            <View style={[styles.chip, styles.chipActive]}>
+              <Ionicons name="speedometer-outline" size={12} color={Colors.primary} />
+              <Text style={[styles.chipText, styles.chipTextActive]}>{paceChipLabel}</Text>
             </View>
           )}
         </View>
@@ -143,22 +207,115 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             </View>
           </View>
 
+          {/* Interval progress (spoken, so only with voice) */}
+          {speaksProgress && (
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
+                <View style={styles.settingText}>
+                  <Text style={styles.settingLabel}>Interval Progress</Text>
+                  <Text style={styles.settingHint}>{progressScheduleLabel}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+          {speaksProgress && (
+            <View style={styles.paceScheduleControls}>
+              <CueBasisToggle<ProgressCueBasis>
+                value={settings.progressCueBasis}
+                options={PACE_BASIS_OPTIONS}
+                onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
+              />
+              {settings.progressCueBasis === 'time' && (
+                <TimeStepChips
+                  value={settings.timeRemainingInterval}
+                  options={PROGRESS_TIME_OPTIONS}
+                  onChange={(timeRemainingInterval) => onUpdate({ timeRemainingInterval })}
+                />
+              )}
+              {settings.progressCueBasis === 'distance' && (
+                <CueDistanceChips
+                  value={settings.progressCueDistance}
+                  unit={settings.paceUnit}
+                  onChange={(progressCueDistance) => onUpdate({ progressCueDistance })}
+                />
+              )}
+            </View>
+          )}
+
           {/* Pace announcements (when GPS is on) */}
           {settings.paceTrackingEnabled && (
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Ionicons name="megaphone-outline" size={18} color={Colors.textSecondary} />
-                <Text style={styles.settingLabel}>Pace Announcements</Text>
+                <View style={styles.settingText}>
+                  <Text style={styles.settingLabel}>Pace Announcements</Text>
+                  {paceCuesOn && settings.paceCueBasis === 'auto' && (
+                    <Text style={styles.settingHint}>{paceScheduleLabel}</Text>
+                  )}
+                </View>
               </View>
               <Switch
-                value={settings.paceCueEnabled !== false}
+                value={paceCuesOn}
                 onValueChange={(v) => {
                   hapticTap();
-                  onUpdate({ paceCueEnabled: v });
+                  onUpdate(
+                    v
+                      ? {
+                          paceCueFrequency:
+                            settings.paceCueFrequency || DEFAULT_SETTINGS.paceCueFrequency,
+                          paceCueDistance:
+                            settings.paceCueDistance === 'off'
+                              ? DEFAULT_SETTINGS.paceCueDistance
+                              : settings.paceCueDistance,
+                        }
+                      : { paceCueFrequency: 0, paceCueDistance: 'off' },
+                  );
                 }}
                 trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
                 thumbColor={Colors.white}
               />
+            </View>
+          )}
+
+          {settings.paceTrackingEnabled && paceCuesOn && (
+            <View style={styles.paceScheduleControls}>
+              <CueBasisToggle<ProgressCueBasis>
+                value={settings.paceCueBasis}
+                options={PACE_BASIS_OPTIONS}
+                onChange={(paceCueBasis) =>
+                  onUpdate(
+                    paceCueBasis === 'time'
+                      ? {
+                          paceCueBasis,
+                          paceCueFrequency:
+                            settings.paceCueFrequency || DEFAULT_SETTINGS.paceCueFrequency,
+                        }
+                      : {
+                          paceCueBasis,
+                          paceCueDistance:
+                            settings.paceCueDistance === 'off'
+                              ? DEFAULT_SETTINGS.paceCueDistance
+                              : settings.paceCueDistance,
+                        },
+                  )
+                }
+              />
+              {settings.paceCueBasis === 'time' && (
+                <TimeStepChips
+                  value={settings.paceCueFrequency}
+                  options={PACE_FREQUENCY_STEPS}
+                  onChange={(paceCueFrequency) => onUpdate({ paceCueFrequency })}
+                />
+              )}
+              {settings.paceCueBasis === 'distance' && (
+                <CueDistanceChips
+                  value={settings.paceCueDistance}
+                  unit={settings.paceUnit}
+                  presets={PACE_DISTANCE_STEPS}
+                  onChange={(paceCueDistance) => onUpdate({ paceCueDistance })}
+                />
+              )}
             </View>
           )}
 
@@ -245,6 +402,18 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textPrimary,
     fontWeight: '500',
+  },
+  paceScheduleControls: {
+    marginTop: -Spacing.sm,
+    paddingLeft: 18 + Spacing.sm,
+  },
+  settingText: {
+    flexShrink: 1,
+  },
+  settingHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   audioSettingRow: {
     paddingVertical: Spacing.sm,

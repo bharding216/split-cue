@@ -63,6 +63,8 @@ export function aiBuilderPage(): string {
         </ul>
         <p>Once generated, the workout appears in your workout list. You can edit any part of it manually — change durations, add or remove intervals, adjust target paces — and then run it with full voice coaching like any other SplitCue workout.</p>
 
+        <p>Want more than one workout? <a href="/features/training-plans">AI Training Plans</a> build a full multi-week schedule around your race date and adapt it after every run.</p>
+
         <h2>Example: Generating a Speed Session</h2>
         <p>If you type <em>"6 × 3 minutes hard with 2 minutes easy, plus a 10-minute warmup"</em>, the AI builder creates:</p>
         <ul>

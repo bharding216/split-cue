@@ -33,6 +33,7 @@ import {
   hasDistanceFeature,
   WORKOUT_TAG_GROUPS,
   categorizeWorkout,
+  estimatedPlannedSeconds,
   type CompletedWorkout,
 } from '../../../src/workout/workoutTypes';
 import { resolveWorkoutSource, runQualifies, getRunHistoryContext } from '../../../src/analytics/workoutContext';
@@ -49,6 +50,8 @@ import {
   CueBasisToggle,
   CueDistanceChips,
   PROGRESS_CUE_BASES,
+  AUTO_TIME_STEP_LABEL,
+  AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 import { loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../../src/workout/tempWorkoutCache';
@@ -73,6 +76,8 @@ import { hapticTap } from '../../../src/audio/haptics';
 import { setDuckingEnabled, setVoiceIdentifier, playCue } from '../../../src/audio/audioManager';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
 import { PreRunSettings } from '../../../src/components/PreRunSettings';
+import { HeartRateBadge } from '../../../src/components/HeartRateBadge';
+import { PreRunHeartRateCard } from '../../../src/components/PreRunHeartRateCard';
 import { PreRunLocationCard, BackgroundLocationCard } from '../../../src/components/LocationPermissionCards';
 import { useLocationAccess } from '../../../src/hooks/useLocationAccess';
 
@@ -82,12 +87,24 @@ import { useStrava } from '../../../src/strava/useStrava';
 import { pushWorkoutToStrava } from '../../../src/strava/stravaService';
 import { useRunAnnotations } from '../../../src/hooks/useRunAnnotations';
 import { track } from '../../../src/analytics/track';
+import { requestReviewAfterRun } from '../../../src/review/storeReview';
 import { requestCalendarDate } from '../../../src/navigation/calendarFocus';
 import { loadHistory } from '../../../src/workout/workoutStorage';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { RunReviewCard } from '../../../src/components/RunReviewCard';
 import { detectNewRecords, detectNewAwards } from '../../../src/stats/personalRecords';
 import type { PersonalRecord, AwardBadge } from '../../../src/stats/personalRecords';
+import { useShareSheet } from '../../../src/components/ShareSheet';
+import { PostRunShareCard } from '../../../src/components/PostRunShareCard';
+import { SharedResultComparison } from '../../../src/components/SharedResultComparison';
+import { compareResults, resultOf } from '../../../src/sharing/shareText';
+import { recordShareEvent } from '../../../src/sharing/shareWorkout';
+import { markInvitePromptShown, shouldShowInvitePrompt } from '../../../src/sharing/shareApp';
+import { InviteFriendCard } from '../../../src/components/InviteFriendCard';
+import { AchievementMomentCard } from '../../../src/components/AchievementMomentCard';
+import { pickAchievementMoment } from '../../../src/stats/achievementMoment';
+import { computeIntervalConsistency } from '../../../src/stats/intervalConsistency';
+import type { AchievementMoment } from '../../../src/sharing/shareText';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -303,11 +320,35 @@ function ActiveWorkoutInner({
   };
 
   // Detect new personal records when the workout finishes
+  const [showInvite, setShowInvite] = useState(false);
+  const [moment, setMoment] = useState<AchievementMoment | null>(null);
   useEffect(() => {
     if (state.phase !== 'finished' || !runner.completedEntryId) return;
-    loadHistory().then((history) => {
-      setNewRecords(detectNewRecords(history, runner.completedEntryId!, settings.paceUnit));
-      setNewAwards(detectNewAwards(history, runner.completedEntryId!));
+    loadHistory().then(async (history) => {
+      const records = detectNewRecords(history, runner.completedEntryId!, settings.paceUnit);
+      const awards = detectNewAwards(history, runner.completedEntryId!);
+      setNewRecords(records);
+      setNewAwards(awards);
+      const finished = history.find((w) => w.id === runner.completedEntryId);
+      const picked = finished
+        ? pickAchievementMoment({
+            records,
+            awards,
+            run: finished,
+            totals: {
+              workouts: history.length,
+              distanceMeters: history.reduce((s, w) => s + (w.totalDistanceMeters ?? 0), 0),
+            },
+            unit: settings.paceUnit,
+          })
+        : null;
+      setMoment(picked);
+      if (picked) track('achievement_moment_shown', { achievement_id: picked.id, kicker: picked.kicker });
+      if (await shouldShowInvitePrompt(history.length)) {
+        markInvitePromptShown();
+        track('invite_prompt_shown', { completed_runs: history.length });
+        setShowInvite(true);
+      }
     }).catch(() => {});
   }, [state.phase, runner.completedEntryId, settings.paceUnit]);
 
@@ -359,6 +400,7 @@ function ActiveWorkoutInner({
       totalDistanceMeters: distance > 0 ? distance : undefined,
       route: runner.completedRoute ?? undefined,
       splits: runner.completedSplits ?? undefined,
+      heartRate: runner.completedHeartRate ?? undefined,
       configuration: workout,
       tags: annotations.tags.length > 0 ? annotations.tags : undefined,
     };
@@ -384,7 +426,8 @@ function ActiveWorkoutInner({
     annotations.flush();
     startAutoUploadRef.current();
     router.dismissAll();
-  }, [annotations, router]);
+    requestReviewAfterRun({ completed: runner.runCompleted, feel: selectedFeel });
+  }, [annotations, router, runner.runCompleted, selectedFeel]);
 
   // Keep screen awake during workout
   useEffect(() => {
@@ -430,8 +473,9 @@ function ActiveWorkoutInner({
     hapticTap();
     track('post_workout_done', { selected_feel: selectedFeel });
     leaveFinishedScreen();
-    router.navigate('/(tabs)' as any);
-  }, [leaveFinishedScreen, router, selectedFeel]);
+    requestCalendarDate(localDateKey(0), undefined, 'workout_complete', runner.completedEntryId ?? undefined);
+    router.navigate('/(tabs)/training' as any);
+  }, [leaveFinishedScreen, router, selectedFeel, runner.completedEntryId]);
 
   const handleViewDetails = useCallback(() => {
     const entryId = runner.completedEntryId;
@@ -442,9 +486,61 @@ function ActiveWorkoutInner({
     router.push(`/run/${entryId}` as any);
   }, [leaveFinishedScreen, router, runner.completedEntryId, selectedFeel]);
 
+  // ── Sharing ──
+  const { openShare, shareSheet } = useShareSheet();
+  const sharedFrom = workout.sharedFrom;
+
+  const handleShareRun = (kind: 'results' | 'challenge' | 'achievement') => {
+    const entry = buildCompletedEntry();
+    if (!entry) return;
+    openShare({
+      kind,
+      workout,
+      workoutName: workout.name,
+      run: entry,
+      replyTo: kind === 'challenge' ? sharedFrom : undefined,
+      achievement: kind === 'achievement' ? moment ?? undefined : undefined,
+      surface:
+        kind === 'achievement'
+          ? 'achievement_moment'
+          : sharedFrom && kind === 'challenge'
+            ? 'workout_complete_reply'
+            : 'workout_complete',
+      records: newRecords,
+      awards: newAwards,
+    });
+  };
+
+  // Count a finished run of a friend's shared workout once.
+  const shareCompletionTracked = useRef(false);
+  useEffect(() => {
+    if (state.phase !== 'finished' || !runner.completedEntryId || !sharedFrom) return;
+    if (shareCompletionTracked.current) return;
+    shareCompletionTracked.current = true;
+    recordShareEvent(sharedFrom.code, 'complete');
+    const entry = buildCompletedEntry();
+    const mine = resultOf({ totalDurationMs: state.totalElapsedMs, totalDistanceMeters: runner.paceState.totalDistanceMeters });
+    const consistency = computeIntervalConsistency(entry?.splits);
+    if (consistency) mine.consistency = consistency.score;
+    const comparison =
+      sharedFrom.result && !sharedFrom.modified
+        ? compareResults(mine, sharedFrom.result, settings.paceUnit, sharedFrom.challengeType)
+        : null;
+    track('shared_workout_completed', {
+      workout_id: workout.id,
+      share_code: sharedFrom.code ?? null,
+      has_sender_result: !!sharedFrom.result,
+      beat_sender: comparison ? comparison.deltaSeconds > 0 : null,
+      comparison_basis: comparison?.basis ?? null,
+      challenge_type: sharedFrom.challengeType ?? null,
+      modified_workout: !!sharedFrom.modified,
+      consistency_score: consistency?.score ?? null,
+    });
+  }, [state.phase, runner.completedEntryId]);
+
   // ── Next-run suggestion ──
   // Offered after a run that counts, unless the calendar already has one in the next few days.
-  const plannedMs = state.intervals.reduce((s, i) => s + i.durationSeconds, 0) * 1000;
+  const plannedMs = estimatedPlannedSeconds(state.intervals) * 1000;
   const runCounts =
     runQualifies(state.totalElapsedMs, plannedMs) || runner.paceState.totalDistanceMeters >= 1000;
   const hasUpcomingPlanned = planWorkouts.some(
@@ -594,6 +690,7 @@ function ActiveWorkoutInner({
         {needsGps && locationAccess === 'granted' && (
           <BackgroundLocationCard placement="preRun" />
         )}
+        <PreRunHeartRateCard />
         <PreRunSettings
           settings={settings}
           onUpdate={onUpdateSettings}
@@ -711,7 +808,9 @@ function ActiveWorkoutInner({
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {newRecords.length > 0 || newAwards.length > 0 ? (
+        {moment && completedEntry ? (
+          <AchievementMomentCard moment={moment} onShare={() => handleShareRun('achievement')} />
+        ) : newRecords.length > 0 || newAwards.length > 0 ? (
           <PrimaryAchievement records={newRecords} awards={newAwards} />
         ) : (
           <>
@@ -780,6 +879,24 @@ function ActiveWorkoutInner({
           </View>
         </View>
 
+        {completedEntry && sharedFrom?.result ? (
+          <SharedResultComparison
+            sharedFrom={{ ...sharedFrom, result: sharedFrom.result }}
+            mine={resultOf(completedEntry)}
+            mySplits={completedEntry.splits}
+            paceUnit={settings.paceUnit}
+            onReply={() => handleShareRun('challenge')}
+          />
+        ) : completedEntry && runCounts ? (
+          <PostRunShareCard
+            achievement={!moment && (newRecords.length > 0 || newAwards.length > 0)}
+            onShare={() => handleShareRun('results')}
+            onChallenge={() => handleShareRun('challenge')}
+          />
+        ) : null}
+
+        {showInvite && <InviteFriendCard />}
+
         {sessionMeta?.planWorkoutId && (
           <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
         )}
@@ -809,6 +926,7 @@ function ActiveWorkoutInner({
               totalDistanceMeters={completedEntry.totalDistanceMeters}
               route={completedEntry.route}
               splits={completedEntry.splits}
+              heartRate={completedEntry.heartRate}
               configuration={completedEntry.configuration}
               tags={completedEntry.tags}
             />
@@ -833,6 +951,7 @@ function ActiveWorkoutInner({
           <Text style={styles.detailsLinkText}>View workout details</Text>
           <Ionicons name="chevron-forward" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
+        {shareSheet}
       </ScrollView>
     );
   }
@@ -977,6 +1096,12 @@ function ActiveWorkoutInner({
             paceUnit={settings.paceUnit}
             targetPace={getCurrentInterval(state)?.targetPace}
           />
+        )}
+
+        {runner.heartRate && (
+          <View style={styles.hrLive}>
+            <HeartRateBadge bpm={runner.heartRate.bpm} connection={runner.heartRate.connection} />
+          </View>
         )}
 
         {/* Workout timeline */}
@@ -1258,10 +1383,10 @@ function MidRunSettingsSheet({
             <Text style={sheetStyles.sectionTitle}>Interval Progress</Text>
             <Text style={sheetStyles.sectionSub}>
               {settings.progressCueBasis === 'auto'
-                ? 'Elapsed time in timed intervals, distance and time in distance intervals'
+                ? 'Elapsed time in timed intervals and Free Runs, distance and time in distance intervals. Pace is set separately below.'
                 : settings.progressCueBasis === 'distance'
-                  ? 'Announce distance covered during each interval'
-                  : 'Announce elapsed time during intervals'}
+                  ? 'Announce distance covered during each interval. Pace is set separately below.'
+                  : 'Announce elapsed time during intervals. Pace is set separately below.'}
             </Text>
             <CueBasisToggle
               value={settings.progressCueBasis}
@@ -1269,7 +1394,7 @@ function MidRunSettingsSheet({
               onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
             />
             {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+              <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
             )}
             {settings.progressCueBasis !== 'distance' && (
               <View style={sheetStyles.chipRow}>
@@ -1299,7 +1424,7 @@ function MidRunSettingsSheet({
               </View>
             )}
             {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+              <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
             )}
             {settings.progressCueBasis !== 'time' && (
               <CueDistanceChips
@@ -1373,10 +1498,10 @@ function MidRunSettingsSheet({
                 {/* Pace cue frequency */}
                 <Text style={sheetStyles.sectionSub}>
                   {settings.paceCueBasis === 'auto'
-                    ? 'Pace by time in timed intervals, by distance in distance intervals'
+                    ? 'Pace by time in timed intervals and Free Runs, by distance in distance intervals. Choose By distance to hear pace every distance on every run.'
                     : settings.paceCueBasis === 'distance'
-                      ? 'Announce pace each time you cover this distance'
-                      : 'Pace cue frequency'}
+                      ? 'Announce pace each time you cover this distance, on every run'
+                      : 'Announce pace on this timer, on every run'}
                 </Text>
                 <CueBasisToggle
                   value={settings.paceCueBasis}
@@ -1384,7 +1509,7 @@ function MidRunSettingsSheet({
                   onChange={(paceCueBasis) => onUpdate({ paceCueBasis })}
                 />
                 {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>Timed intervals, every</Text>
+                  <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
                 )}
                 {settings.paceCueBasis !== 'distance' && (
                   <View style={sheetStyles.chipRow}>
@@ -1414,7 +1539,7 @@ function MidRunSettingsSheet({
                   </View>
                 )}
                 {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>Distance intervals, every</Text>
+                  <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
                 )}
                 {settings.paceCueBasis !== 'time' && (
                   <CueDistanceChips
@@ -2105,6 +2230,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.lg,
     fontVariant: ['tabular-nums'],
+  },
+  hrLive: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
   },
   distanceTimerArea: {
     alignItems: 'center',

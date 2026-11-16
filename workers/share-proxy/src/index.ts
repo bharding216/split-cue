@@ -8,13 +8,16 @@
  *   /features/audio-pace-announcements        → feature page
  *   /features/interval-running                → feature page
  *   /features/ai-workout-builder              → feature page
+ *   /features/training-plans                  → feature page
  *   /guides/maintain-running-pace             → guide page
  *   /guides/hands-free-running                → guide page
  *   /robots.txt                               → crawler rules
  *   /sitemap.xml                              → sitemap
  *   /llms.txt                                 → LLM-readable summary
  *   /delete-account                            → account deletion info (Google Play requirement)
+ *   /help/heart-rate-monitors                 → heart rate monitor setup help (linked from the app)
  *   /w/<code>                                 → proxy to Supabase share Edge Function
+ *   POST /w/<code>/e?t=store_click&p=<os>     → landing page store tap beacon
  *   /.well-known/apple-app-site-association   → iOS Universal Links config
  *   /.well-known/assetlinks.json              → Android App Links config
  */
@@ -23,6 +26,7 @@ import { homePage } from './pages/home';
 import { audioPacePage } from './pages/audio-pace';
 import { intervalRunningPage } from './pages/interval-running';
 import { aiBuilderPage } from './pages/ai-builder';
+import { trainingPlansPage } from './pages/training-plans';
 import { maintainPacePage } from './pages/maintain-pace';
 import { handsFreePage } from './pages/hands-free';
 import { compareNrcPage } from './pages/compare-nrc';
@@ -32,10 +36,57 @@ import { paceCalculatorPage } from './pages/pace-calculator';
 import { beginnerRunWalkPage } from './pages/beginner-run-walk';
 import { audioVsWatchesPage } from './pages/audio-vs-watches';
 import { deleteAccountPage } from './pages/delete-account';
+import { fetchConfirmedHrDevices, helpHeartRatePage } from './pages/help-heart-rate';
 import { robotsTxt, sitemapXml, llmsTxt } from './static';
 
-const SUPABASE_SHARE_FN =
-  'https://oakhqqrxsavmoeqlzcny.supabase.co/functions/v1/share';
+const SUPABASE_URL = 'https://oakhqqrxsavmoeqlzcny.supabase.co';
+const SUPABASE_SHARE_FN = `${SUPABASE_URL}/functions/v1/share`;
+
+interface Env {
+  SUPABASE_PUBLISHABLE_KEY?: string;
+  /** Per-visitor limit on share pages and beacons, against scraping codes. */
+  SHARE_RATE_LIMITER?: RateLimit;
+}
+
+const STORE_CLICK_PLATFORMS = new Set(['ios', 'android']);
+
+/** Referring site's hostname only, so share events never store full URLs. */
+function referrerHost(request: Request): string {
+  const referer = request.headers.get('Referer');
+  if (!referer) return '';
+  try {
+    return new URL(referer).hostname.slice(0, 64);
+  } catch {
+    return '';
+  }
+}
+
+async function shareRateLimited(request: Request, env: Env): Promise<boolean> {
+  if (!env.SHARE_RATE_LIMITER) return false;
+  const visitor = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const { success } = await env.SHARE_RATE_LIMITER.limit({ key: `share:${visitor}` });
+  return !success;
+}
+
+/** Log a landing page store tap. Always answers 204 so beacons never retry. */
+async function logStoreClick(code: string, url: URL, env: Env): Promise<Response> {
+  const platform = url.searchParams.get('p') ?? '';
+  if (url.searchParams.get('t') === 'store_click' && STORE_CLICK_PLATFORMS.has(platform) && env.SUPABASE_PUBLISHABLE_KEY) {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/rpc/log_share_event`, {
+        method: 'POST',
+        headers: {
+          apikey: env.SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_code: code, p_event: 'store_click', p_platform: platform }),
+      });
+    } catch {
+      // Best effort
+    }
+  }
+  return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+}
 
 const BUNDLE_ID = 'com.toddly.runningintervals';
 // Production is signed by Surmount; dev/preview are still signed by Toddly.
@@ -70,8 +121,16 @@ const ASSET_LINKS = JSON.stringify([
     target: {
       namespace: 'android_app',
       package_name: 'com.surmount.pacecue',
-      // TODO: Replace with your app signing certificate SHA-256 fingerprint
-      sha256_cert_fingerprints: ['TODO:ADD:YOUR:SHA256:FINGERPRINT:HERE'],
+      // Play installs are signed with the Play app signing key; EAS builds
+      // installed outside Play carry the EAS keystore signature.
+      sha256_cert_fingerprints: [
+        // Play app signing key
+        '05:EA:A0:62:B1:83:E9:AC:3F:6F:22:E3:ED:A4:F6:DD:B3:6B:CD:8F:8E:AC:44:6D:8E:B9:C9:D9:98:C6:A1:74',
+        // EAS keystore, production profile (Play upload key)
+        '39:4A:A0:D5:15:94:57:8E:61:97:FE:7E:E9:82:5B:1D:83:4A:C5:48:AF:44:89:F9:87:7A:A5:20:E3:D7:DD:2F',
+        // EAS keystore, build credentials zKjx_H1HoG
+        '86:A4:37:87:51:2E:5C:8C:D0:77:F1:25:09:FD:84:5F:E3:1F:BD:12:BC:25:0F:B4:B5:18:C0:E2:ED:22:FC:AC',
+      ],
     },
   },
 ]);
@@ -95,6 +154,7 @@ const PAGE_ROUTES: Record<string, () => string> = {
   '/features/audio-pace-announcements': audioPacePage,
   '/features/interval-running': intervalRunningPage,
   '/features/ai-workout-builder': aiBuilderPage,
+  '/features/training-plans': trainingPlansPage,
   '/guides/maintain-running-pace': maintainPacePage,
   '/guides/hands-free-running': handsFreePage,
   '/guides/beginner-run-walk': beginnerRunWalkPage,
@@ -109,7 +169,7 @@ const PAGE_ROUTES: Record<string, () => string> = {
 // ── Worker ───────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     let { pathname } = url;
 
@@ -123,15 +183,35 @@ export default {
     if (pathname === '/sitemap.xml') return sitemapXml();
     if (pathname === '/llms.txt') return llmsTxt();
 
+    // ── Shared workout link — store tap beacon ───────────────────
+    const beaconMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})\/e$/);
+    if (beaconMatch && request.method === 'POST') {
+      if (await shareRateLimited(request, env)) {
+        return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
+      }
+      return logStoreClick(beaconMatch[1], url, env);
+    }
+
     // ── Shared workout link — proxy to Supabase Edge Function ────
     const workoutMatch = pathname.match(/^\/w\/([A-Za-z0-9]{4,16})$/);
     if (workoutMatch) {
       const code = workoutMatch[1];
+      if (await shareRateLimited(request, env)) {
+        return new Response('Too many requests. Try again in a minute.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60', 'Cache-Control': 'no-store' },
+        });
+      }
       const upstream = `${SUPABASE_SHARE_FN}?code=${code}`;
       let resp: Response | null = null;
       try {
         resp = await fetch(upstream, {
-          headers: { 'User-Agent': 'pacecue-share-proxy' },
+          headers: {
+            'User-Agent': 'pacecue-share-proxy',
+            // Lets the share function skip link-preview bots when counting opens.
+            'X-Forwarded-User-Agent': request.headers.get('User-Agent') ?? '',
+            'X-Forwarded-Referer': referrerHost(request),
+          },
         });
       } catch {
         resp = null;
@@ -153,7 +233,7 @@ export default {
         status: resp.status,
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': resp.ok ? 'public, max-age=3600' : 'no-store',
+          'Cache-Control': resp.ok ? 'public, max-age=300' : 'no-store',
         },
       });
     }
@@ -198,6 +278,12 @@ export default {
       });
     }
 
+    // ── Help pages with live data ────────────────────────────────
+    if (pathname === '/help/heart-rate-monitors') {
+      const confirmed = await fetchConfirmedHrDevices(SUPABASE_URL, env.SUPABASE_PUBLISHABLE_KEY);
+      return htmlResponse(helpHeartRatePage(confirmed));
+    }
+
     // ── Marketing pages ──────────────────────────────────────────
     const pageGenerator = PAGE_ROUTES[pathname];
     if (pageGenerator) {
@@ -207,7 +293,7 @@ export default {
     // ── 404 ──────────────────────────────────────────────────────
     return htmlResponse(notFoundPage(), 404);
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Env>;
 
 const APP_STORE_URL = 'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
@@ -221,6 +307,8 @@ function shareFallbackPage(code: string): string {
   <title>Shared Workout \u2014 SplitCue</title>
   <meta property="og:title" content="Shared Workout \u2014 SplitCue">
   <meta property="og:description" content="Open in SplitCue to try this workout.">
+  <meta property="og:image" content="https://splitcue.app/banner.png">
+  <meta name="twitter:card" content="summary_large_image">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#181818;color:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}

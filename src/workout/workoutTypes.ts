@@ -8,6 +8,7 @@
  */
 
 import { DEFAULT_PREMIUM_VOICE_ID } from '../audio/voiceCatalog';
+import type { WorkoutHeartRate } from '../heartRate/hrTypes';
 
 // ── Segment model ────────────────────────────────────────────────────
 
@@ -62,6 +63,29 @@ export type IntervalType = 'warmup' | 'hard' | 'easy' | 'cooldown';
 /** Where a workout's structure came from, when it wasn't built by hand. */
 export type WorkoutOrigin = 'ai_voice' | 'imported' | 'next_run_suggestion';
 
+/** A sender's finished result, carried in a share link. */
+export interface SharedResult {
+  durationMs: number;
+  distanceMeters?: number;
+  /** Interval consistency score, 0-100 (see intervalConsistency). */
+  consistency?: number;
+  /** Average pace of each work rep, seconds per mile. */
+  repPaces?: number[];
+}
+
+export type ChallengeType = 'time' | 'consistency';
+
+/** Who shared an imported workout, and the result they posted with it. */
+export interface SharedFrom {
+  code?: string;
+  senderName?: string;
+  result?: SharedResult;
+  /** Set on challenges: what the runs are compared on. */
+  challengeType?: ChallengeType;
+  /** The recipient changed the structure, so runs can't be compared with the sender's. */
+  modified?: boolean;
+}
+
 export interface WorkoutDefinition {
   id: string;
   name: string;
@@ -69,6 +93,7 @@ export interface WorkoutDefinition {
   targetDistanceMeters?: number;
   category?: WorkoutCategory;
   origin?: WorkoutOrigin;
+  sharedFrom?: SharedFrom;
   createdAt: number;
   updatedAt: number;
 }
@@ -155,6 +180,16 @@ export interface IntervalSplit {
   avgPaceMinPerKm: number | null;
   targetPace: number | undefined;
   effort: number | undefined;
+  /** Segment type of the interval; absent on splits recorded before heart rate support. */
+  segmentType?: SegmentType;
+  /** Workout time when the interval started, excluding pauses (ms). */
+  startElapsedMs?: number;
+  /** Workout time when the interval ended, excluding pauses (ms). */
+  endElapsedMs?: number;
+  avgHr?: number;
+  maxHr?: number;
+  /** Recovery and rest only: how far heart rate fell over the interval (bpm). */
+  hrRecoveryDrop?: number;
 }
 
 // ── Workout Tags ─────────────────────────────────────────────────────
@@ -231,6 +266,8 @@ export interface CompletedWorkout {
   quickStartType?: QuickStartType;
   /** Only GPS runs have weather: it's looked up at the route's last point. */
   weather?: RunWeather;
+  /** Recorded when a heart rate monitor was connected. */
+  heartRate?: WorkoutHeartRate;
 }
 
 // ── Settings ─────────────────────────────────────────────────────────
@@ -590,6 +627,28 @@ export function flattenWorkout(def: WorkoutDefinition): FlatInterval[] {
 /** Calculate total duration of a workout in seconds. */
 export function totalWorkoutSeconds(def: WorkoutDefinition): number {
   return flattenWorkout(def).reduce((sum, i) => sum + i.durationSeconds, 0);
+}
+
+/** Pace assumed for distance intervals without a target pace, in min/mile (about 6:13/km). */
+export const ESTIMATE_PACE_MIN_PER_MILE = 10;
+
+/**
+ * Planned run time in seconds. Distance intervals have no duration of their
+ * own, so they're estimated from their target pace (or a typical easy pace).
+ * Manual intervals have no plan and add nothing.
+ */
+export function estimatedPlannedSeconds(
+  intervals: Pick<FlatInterval, 'durationSeconds' | 'distanceMeters' | 'targetPace'>[],
+): number {
+  const total = intervals.reduce((sum, i) => {
+    if (i.durationSeconds > 0) return sum + i.durationSeconds;
+    if (i.distanceMeters && i.distanceMeters > 0) {
+      const pace = i.targetPace && i.targetPace > 0 ? i.targetPace : ESTIMATE_PACE_MIN_PER_MILE;
+      return sum + (i.distanceMeters / METERS_PER_MILE) * pace * 60;
+    }
+    return sum;
+  }, 0);
+  return Math.round(total);
 }
 
 // ── Block tree walkers ───────────────────────────────────────────────

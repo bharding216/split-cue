@@ -26,6 +26,7 @@ import { Colors, Spacing, FontSize, BorderRadius } from '../src/constants/theme'
 const FEATURES_FREE = [
   'Unlimited workouts & intervals',
   'Full pace tracking',
+  'Heart rate recording & graphs',
   '1 AI training plan',
   'Cloud sync',
 ];
@@ -33,6 +34,7 @@ const FEATURES_FREE = [
 const FEATURES_PRO = [
   'Unlimited AI training plans',
   'Plans adapt to your performance',
+  'Interval heart rate analysis',
   'Unlimited cloud history',
   'Priority support',
 ];

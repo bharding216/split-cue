@@ -3,7 +3,7 @@
  * closed or killed mid-run.
  *
  * The runner writes a snapshot while a workout is running or paused and
- * deletes it when the workout finishes or is stopped. On the next launch,
+ * deletes it once the ended workout is saved to history. On the next launch,
  * a leftover snapshot means the workout never ended, so the user is
  * offered the chance to pick it back up.
  *
@@ -18,6 +18,7 @@ import type {
   WorkoutDefinition,
 } from './workoutTypes';
 import type { GpsSample } from '../pace/paceTypes';
+import type { HrSample } from '../heartRate/hrTypes';
 import type { SessionMeta } from '../hooks/useWorkoutRunner';
 
 const SESSION_VERSION = 1;
@@ -43,6 +44,11 @@ export interface ActiveSessionSnapshot {
   usesGps: boolean;
   totalDistanceMeters: number;
   trackSegments: GpsSample[][];
+  /** Workout time (pauses excluded) when the current interval started. */
+  intervalStartElapsedMs?: number;
+  hrSamples?: HrSample[];
+  /** App state when the snapshot was written ('active', 'background', ...). */
+  appState?: string;
 }
 
 /** Runner state rebuilt from a snapshot, always paused. */

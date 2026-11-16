@@ -1,6 +1,6 @@
 {
   "name": "split-cue",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~57.0.17",
@@ -13,7 +13,10 @@
     "expo-application": "~57.0.3",
     "expo-audio": "~57.0.4",
     "expo-battery": "~57.0.3",
+    "expo-build-properties": "~57.0.23",
+    "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.17",
+    "expo-crypto": "~57.0.4",
     "expo-dev-client": "~57.0.18",
     "expo-device": "~57.0.2",
     "expo-document-picker": "~57.0.1",
@@ -24,6 +27,7 @@
     "expo-localization": "~57.0.2",
     "expo-location": "~57.0.20",
     "expo-notifications": "~57.0.24",
+    "expo-observe": "~57.0.28",
     "expo-router": "~57.0.20",
     "expo-sharing": "~57.0.18",
     "expo-speech": "~57.0.2",
@@ -36,6 +40,7 @@
     "expo-widgets": "~57.0.18",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-ble-plx": "^3.5.1",
     "react-native-draggable-flatlist": "^4.0.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-maps": "1.27.2",
@@ -44,12 +49,14 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
+    "react-native-view-shot": "5.1.0",
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
     "@types/react": "~19.2.2",
     "cross-env": "^10.1.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -68,8 +75,9 @@
     "build:prod:android": "eas build --profile production --platform android",
     "submit:ios": "eas submit --platform ios",
     "submit:android": "eas submit --platform android",
-    "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --message",
-    "update:prod": "eas update --branch production --environment production --message"
+    "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --upload-source-maps --message",
+    "update:prod": "eas update --branch production --environment production --upload-source-maps --message",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "private": true
 }

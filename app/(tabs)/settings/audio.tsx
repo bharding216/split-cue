@@ -31,6 +31,8 @@ import {
   CueBasisToggle,
   CueDistanceChips,
   PROGRESS_CUE_BASES,
+  AUTO_TIME_STEP_LABEL,
+  AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 import {
   configureAudio,
@@ -331,10 +333,10 @@ export default function AudioSettingsScreen() {
       <Text style={styles.sectionTitle}>Interval Progress</Text>
       <Text style={styles.sectionSub}>
         {settings.progressCueBasis === 'auto'
-          ? 'Timed intervals announce elapsed time. Distance intervals announce distance and elapsed time (requires Voice or Both audio mode).'
+          ? 'Timed intervals and Free Runs announce elapsed time. Distance intervals announce distance and elapsed time (requires Voice or Both audio mode). These are separate from pace announcements.'
           : settings.progressCueBasis === 'distance'
-            ? 'Announce each time you cover this distance in the interval. GPS starts automatically.'
-            : 'Announce elapsed time during each interval (requires Voice or Both audio mode)'}
+            ? 'Announce distance covered each time you reach this distance in the interval. GPS starts automatically. Pace announcements are set separately under Pace.'
+            : 'Announce elapsed time during each interval (requires Voice or Both audio mode). Pace announcements are set separately under Pace.'}
       </Text>
       <CueBasisToggle
         value={settings.progressCueBasis}
@@ -342,7 +344,7 @@ export default function AudioSettingsScreen() {
         onChange={(progressCueBasis) => update({ progressCueBasis })}
       />
       {settings.progressCueBasis === 'auto' && (
-        <Text style={styles.stepLabel}>Timed intervals, every</Text>
+        <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
       )}
       {settings.progressCueBasis !== 'distance' && (
         <View style={styles.row}>
@@ -373,7 +375,7 @@ export default function AudioSettingsScreen() {
         </View>
       )}
       {settings.progressCueBasis === 'auto' && (
-        <Text style={styles.stepLabel}>Distance intervals, every</Text>
+        <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
       )}
       {settings.progressCueBasis !== 'time' && (
         <CueDistanceChips

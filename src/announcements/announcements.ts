@@ -18,6 +18,13 @@ export interface Announcement {
  */
 export const ANNOUNCEMENTS: Announcement[] = [
   {
+    id: '2026-11-heart-rate-monitors',
+    date: '2026-11-10',
+    expiresAt: '2026-12-31',
+    title: 'New: Heart Rate Monitor Support',
+    body: 'Connect a Bluetooth chest strap or a watch that broadcasts heart rate to see live BPM and a heart rate graph for every run. Set it up in Settings → Heart Rate Monitor.',
+  },
+  {
     id: '2026-11-training-plans-fixed',
     // Full timestamp so users who installed on Nov 1 (and hit the bug) still qualify.
     date: '2026-11-02T02:30:00Z',

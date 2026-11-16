@@ -32,13 +32,13 @@ interface DayDetailProps {
   onRemoveWorkout?: (workoutId: string) => void;
   onMoveWorkout?: (workoutId: string) => void;
   onEditWorkout?: (workoutData: WorkoutDefinition, planWorkoutId: string) => void;
-  /** Open voice-driven AI edit for a specific plan workout */
-  onVoiceEdit?: (workoutId: string) => void;
   onViewRun: (historyEntryId: string) => void;
   onRunAgain: (run: CompletedWorkout) => void;
   onAddWorkout?: (date: string) => void;
   /** Plan workout to call out, e.g. one just added from the post-run suggestion. */
   highlightWorkoutId?: string | null;
+  /** Completed-run history ID to call out, e.g. the run just finished. */
+  highlightRunId?: string | null;
   /** Shown above the highlighted workout's actions. */
   highlightContent?: React.ReactNode;
 }
@@ -179,11 +179,11 @@ export function DayDetail({
   onRemoveWorkout,
   onMoveWorkout,
   onEditWorkout,
-  onVoiceEdit,
   onViewRun,
   onRunAgain,
   onAddWorkout,
   highlightWorkoutId,
+  highlightRunId,
   highlightContent,
 }: DayDetailProps) {
   const dateDisplay = formatDateDisplay(selectedDate);
@@ -251,19 +251,6 @@ export function DayDetail({
 
         return (
           <View key={pw.id} style={[styles.planCard, highlighted && styles.planCardHighlighted]}>
-            {/* AI edit button — top-right of card (only for detailed workouts in the 14-day window) */}
-            {onVoiceEdit && isPlanned && !isRest && hasWorkoutData && (
-              <TouchableOpacity
-                style={[styles.aiEditBtn, large && styles.aiEditBtnInline]}
-                onPress={() => onVoiceEdit(pw.id)}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="mic-outline" size={15} color={Colors.accent} />
-                <Text style={styles.aiEditBtnText}>Edit with AI</Text>
-              </TouchableOpacity>
-            )}
-
             <View style={styles.planHeader}>
               <View style={[styles.statusBadge, { backgroundColor: statusBadgeColor(pw.status) + '22' }]}>
                 <Text style={[styles.statusText, { color: statusBadgeColor(pw.status) }]}>
@@ -371,7 +358,7 @@ export function DayDetail({
 
       {/* Completed runs */}
       {entry.completedRuns.map((run) => (
-        <View key={run.id} style={styles.runCard}>
+        <View key={run.id} style={[styles.runCard, run.id === highlightRunId && styles.runCardHighlighted]}>
           <View style={styles.runHeader}>
             <View style={[styles.statusBadge, { backgroundColor: Colors.primary + '22' }]}>
               <Ionicons name="checkmark" size={12} color={Colors.primary} />
@@ -460,31 +447,6 @@ const styles = StyleSheet.create({
   planCardHighlighted: {
     borderColor: Colors.primary,
     borderWidth: 2,
-  },
-  aiEditBtn: {
-    position: 'absolute' as const,
-    top: Spacing.sm,
-    right: Spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.accent + '15',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    zIndex: 1,
-  },
-  aiEditBtnInline: {
-    position: 'relative' as const,
-    top: 0,
-    right: 0,
-    alignSelf: 'flex-end',
-    marginBottom: Spacing.sm,
-  },
-  aiEditBtnText: {
-    fontSize: FontSize.xs - 1,
-    fontWeight: '700',
-    color: Colors.accent,
   },
   planHeader: {
     gap: Spacing.xs,
@@ -665,6 +627,10 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  runCardHighlighted: {
+    borderColor: Colors.primary,
+    borderWidth: 2,
   },
   runHeader: {
     gap: Spacing.xs,

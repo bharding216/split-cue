@@ -17,7 +17,15 @@ import {
   saveWorkouts,
   loadHistory,
   withHistoryLock,
+  moveInlineHeartRate,
 } from '../workout/workoutStorage';
+import {
+  hasHeartRateSamples,
+  loadEncodedHeartRate,
+  saveEncodedHeartRate,
+} from '../heartRate/hrSampleStore';
+import type { EncodedHeartRate } from '../heartRate/hrEncoding';
+import { syncHrCloudConsent } from '../heartRate/hrConsent';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WorkoutDefinition, CompletedWorkout } from '../workout/workoutTypes';
 
@@ -74,10 +82,13 @@ export async function syncAll(userId: string): Promise<void> {
   setStatus('syncing');
 
   try {
-    await Promise.all([
+    const [, history] = await Promise.all([
       syncWorkouts(userId),
       syncHistory(userId),
     ]);
+    await syncHeartRateSamples(userId, history).catch((err) => {
+      console.warn('Heart rate sync failed:', err);
+    });
 
     await AsyncStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
     setStatus('success');
@@ -187,7 +198,7 @@ async function syncWorkouts(userId: string): Promise<void> {
 
 // ── History sync ─────────────────────────────────────────────
 
-async function syncHistory(userId: string): Promise<void> {
+async function syncHistory(userId: string): Promise<CompletedWorkout[]> {
   const localHistory = await loadHistory();
 
   const { data: remoteRows } = await supabase
@@ -196,6 +207,13 @@ async function syncHistory(userId: string): Promise<void> {
     .eq('user_id', userId);
 
   const remote = (remoteRows ?? []) as CloudHistoryRow[];
+  // Runs uploaded by early 1.10.0 builds carry their heart rate readings inline.
+  const remoteWithInlineHr = new Set(
+    remote.filter((r) => hasInlineHeartRate(r.data)).map((r) => r.history_id),
+  );
+  for (const r of remote) {
+    if (!r.deleted_at && r.data) r.data = moveInlineHeartRate(r.data as CompletedWorkout);
+  }
   const remoteMap = new Map(remote.map((r) => [r.history_id, r]));
 
   // Load locally deleted IDs
@@ -272,7 +290,13 @@ async function syncHistory(userId: string): Promise<void> {
   // during network I/O)
   for (const entry of finalHistory) {
     const remoteRow = remoteMap.get(entry.id);
-    if (remoteRow && !localCopyIsNewer(entry, remoteRow.data as CompletedWorkout)) continue;
+    if (
+      remoteRow &&
+      !remoteWithInlineHr.has(entry.id) &&
+      !localCopyIsNewer(entry, remoteRow.data as CompletedWorkout)
+    ) {
+      continue;
+    }
 
     await supabase.from('cloud_history').upsert(
       {
@@ -287,6 +311,65 @@ async function syncHistory(userId: string): Promise<void> {
 
   // Clear the deletions we pushed, keeping any tracked while syncing
   await clearTrackedDeletions(DELETED_HISTORY_KEY, locallyDeleted);
+  return finalHistory;
+}
+
+// ── Heart rate readings sync ─────────────────────────────────
+
+const HR_DOWNLOAD_BATCH = 20;
+
+/**
+ * Readings sync separately from history, after it, so each run's
+ * cloud_history row exists first. Uploads only with the runner's consent;
+ * downloads readings already saved to their account for runs missing them here.
+ */
+async function syncHeartRateSamples(userId: string, history: CompletedWorkout[]): Promise<void> {
+  const consent = await syncHrCloudConsent(userId);
+  const withHr = history.filter((h) => h.heartRate);
+  if (withHr.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('workout_hr_samples')
+    .select('history_id')
+    .eq('user_id', userId);
+  if (error) throw new Error(error.message);
+  const remoteIds = new Set((data ?? []).map((r: { history_id: string }) => r.history_id));
+
+  const toDownload = withHr
+    .filter((h) => remoteIds.has(h.id) && !hasHeartRateSamples(h.id))
+    .map((h) => h.id);
+  for (let i = 0; i < toDownload.length; i += HR_DOWNLOAD_BATCH) {
+    const { data: rows, error: downloadError } = await supabase
+      .from('workout_hr_samples')
+      .select('history_id, samples')
+      .eq('user_id', userId)
+      .in('history_id', toDownload.slice(i, i + HR_DOWNLOAD_BATCH));
+    if (downloadError) throw new Error(downloadError.message);
+    for (const row of (rows ?? []) as { history_id: string; samples: EncodedHeartRate }[]) {
+      saveEncodedHeartRate(row.history_id, row.samples);
+    }
+  }
+
+  if (consent !== 'granted') return;
+  for (const entry of withHr) {
+    if (remoteIds.has(entry.id)) continue;
+    const encoded = loadEncodedHeartRate(entry.id);
+    if (!encoded) continue;
+    const { error: uploadError } = await supabase.from('workout_hr_samples').insert({
+      user_id: userId,
+      history_id: entry.id,
+      encoding_version: encoded.v,
+      sample_count: encoded.bpm.length,
+      samples: encoded,
+    });
+    if (uploadError && uploadError.code !== '23505') {
+      console.warn('Failed to upload heart rate readings:', uploadError.message);
+    }
+  }
+}
+
+function hasInlineHeartRate(data: unknown): boolean {
+  return Array.isArray((data as { heartRate?: { samples?: unknown } } | null)?.heartRate?.samples);
 }
 
 function editedAt(entry: CompletedWorkout): number {

@@ -6,8 +6,23 @@
  *
  * Reads both payload formats stored in `shared_workouts.workout_data`:
  *   v1: { n, w, b, c }      — warmup/blocks/cooldown of { repeatCount, intervals }
- *   v2: { v: 2, n, b, a? }  — block model (segments and repeat groups);
- *                             `a` is set by dev/preview builds only
+ *   v2: { v: 2, n, b, a?, pd?, k?, s?, r?, ct?, ach? } — block model (segments and repeat groups);
+ *                             `a` is set by dev/preview builds only;
+ *                             `pd` is the sender's planned date (YYYY-MM-DD);
+ *                             `k` is the share kind; `s` the sender's first name;
+ *                             `r` their result { d: ms, m?: meters, c?: consistency 0-100, sp?: rep paces s/mi };
+ *                             `ct` the challenge type ('time' | 'consistency');
+ *                             `ach` an achievement { id, label, value? }
+ *
+ * Shares are read with `get_share`, which hides revoked and expired links.
+ * When the sender's app uploaded a share card (`image_path`), it's the link
+ * preview image; otherwise the site banner is. Opens by people (not link
+ * preview bots) are logged with `log_share_event`.
+ *
+ * The store buttons carry the code through an install so the app can import
+ * the workout on first launch: the Play link sets the install referrer, and
+ * the App Store button copies the share URL to the clipboard. Store taps are
+ * logged through the share-proxy's /w/<code>/e beacon.
  *
  * Must be deployed with JWT verification off; link previews and browsers
  * call it without auth.
@@ -22,6 +37,12 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const APP_STORE_URL = "https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816";
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.surmount.pacecue";
 const SHARE_BASE_URL = "https://splitcue.app/w";
+const DEFAULT_OG_IMAGE = "https://splitcue.app/banner.png";
+const SHARE_CARD_BASE_URL = `${SUPABASE_URL}/storage/v1/object/public/share-cards`;
+const IMAGE_PATH_PATTERN = /^[A-Za-z0-9]{4,16}\.png$/;
+const SENDER_NAME_MAX_LENGTH = 30;
+const BOT_PATTERN =
+  /bot|crawl|spider|preview|facebookexternalhit|facebot|whatsapp|telegram|slack|discord|skype|linkedin|embedly|vkshare|pinterest|quora|outbrain|google-inspectiontool|bitlybot|iframely/i;
 
 const PRODUCTION_SCHEME = "pacecue";
 const VARIANT_SCHEMES: Record<string, { scheme: string; label: string }> = {
@@ -115,9 +136,66 @@ function summarize(workout: Json): string | null {
   return parts.join(" \u00b7 ");
 }
 
-function renderPage(code: string, workout: Json | null): string {
+function formatPlannedDate(pd: Json): string | null {
+  if (typeof pd !== "string") return null;
+  const match = pd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "short", day: "numeric" });
+}
+
+function senderName(workout: Json): string | null {
+  if (typeof workout?.s !== "string") return null;
+  const name = workout.s.trim().slice(0, SENDER_NAME_MAX_LENGTH);
+  return name || null;
+}
+
+const ACHIEVEMENT_TEXT_MAX_LENGTH = 40;
+
+function achievementOf(workout: Json): { label: string; value: string | null } | null {
+  if (workout?.k !== "achievement" || typeof workout?.ach?.label !== "string") return null;
+  const label = workout.ach.label.trim().slice(0, ACHIEVEMENT_TEXT_MAX_LENGTH);
+  if (!label) return null;
+  const value = typeof workout.ach.value === "string"
+    ? workout.ach.value.trim().slice(0, ACHIEVEMENT_TEXT_MAX_LENGTH) || null
+    : null;
+  return { label, value };
+}
+
+/** The sender's interval consistency score (0-100), or null. */
+function consistencyOf(workout: Json): number | null {
+  const c = workout?.r?.c;
+  return typeof c === "number" && isFinite(c) && c >= 0 && c <= 100 ? Math.round(c) : null;
+}
+
+/** "32:10 \u00b7 4.02 mi \u00b7 8:00/mi" from the sender's result, or null. */
+function formatResult(workout: Json): string | null {
+  const d = workout?.r?.d;
+  if (typeof d !== "number" || !isFinite(d) || d <= 0) return null;
+  const parts = [formatTime(d / 1000)];
+  const m = workout?.r?.m;
+  if (typeof m === "number" && isFinite(m) && m > 0) {
+    parts.push(formatDistance(m));
+    if (m >= 100) {
+      const pace = d / 60000 / (m / METERS_PER_MILE);
+      if (isFinite(pace) && pace > 0 && pace < 30) parts.push(`${formatTime(pace * 60)}/mi`);
+    }
+  }
+  return parts.join(" \u00b7 ");
+}
+
+function renderPage(code: string, workout: Json | null, imagePath: string | null): string {
   const rawName = typeof workout?.n === "string" && workout.n.trim() ? workout.n.trim() : null;
   const name = rawName ? escapeHtml(rawName) : "Shared Workout";
+  const plannedDate = formatPlannedDate(workout?.pd);
+  const rawSender = senderName(workout);
+  const sender = rawSender ? escapeHtml(rawSender) : null;
+  const result = formatResult(workout);
+  const isChallenge = workout?.k === "challenge";
+  const achievement = achievementOf(workout);
+  const consistency = consistencyOf(workout);
+  const isConsistencyChallenge = isChallenge && workout?.ct === "consistency" && consistency != null;
 
   let summary: string | null = null;
   try {
@@ -125,7 +203,49 @@ function renderPage(code: string, workout: Json | null): string {
   } catch {
     summary = null;
   }
-  const desc = escapeHtml(summary ?? "Open in SplitCue to try this workout.");
+  const fallbackDesc = plannedDate
+    ? "Open in SplitCue to add this workout to your calendar."
+    : "Open in SplitCue to try this workout.";
+  const resultDesc = isConsistencyChallenge
+    ? `${rawSender ?? "They"} scored ${consistency}/100 for interval consistency. Can you match my consistency?`
+    : result
+      ? `${rawSender ?? "They"} ran it in ${result}.${isChallenge ? " Can you beat it?" : ""}`
+      : null;
+  const achievementText = achievement
+    ? `${achievement.label}${achievement.value ? `: ${achievement.value}` : ""}`
+    : null;
+  const desc = escapeHtml(
+    [
+      achievementText ? `${rawSender ?? "A runner"} hit a new milestone on SplitCue` : null,
+      resultDesc,
+      plannedDate ? `Planned for ${plannedDate}` : null,
+      summary ?? (resultDesc ? null : fallbackDesc),
+    ]
+      .filter(Boolean)
+      .join(" \u00b7 "),
+  );
+  const title = achievementText
+    ? escapeHtml(`${rawSender ? `${rawSender}: ` : ""}${achievementText}`)
+    : sender
+      ? isChallenge
+        ? `${sender} challenged you: ${name}`
+        : plannedDate
+          ? `Run ${name} with ${sender}`
+          : `${name} from ${sender}`
+      : name;
+  const eyebrow = achievement
+    ? "Achievement"
+    : sender
+      ? isChallenge ? `Challenge from ${sender}` : `From ${sender}`
+      : null;
+  const ogImage = imagePath && IMAGE_PATH_PATTERN.test(imagePath)
+    ? `${SHARE_CARD_BASE_URL}/${imagePath}`
+    : DEFAULT_OG_IMAGE;
+  const cardImage = ogImage === DEFAULT_OG_IMAGE
+    ? ""
+    : `<img class="card-image" src="${ogImage}" alt="${name} share card" width="1080" height="1350">`;
+  const shareUrl = `${SHARE_BASE_URL}/${code}`;
+  const playUrl = `${PLAY_STORE_URL}&referrer=${encodeURIComponent(`splitcue_share=${code}`)}`;
 
   const productionLink = `${PRODUCTION_SCHEME}://w/${code}`;
   const variant = typeof workout?.a === "string" ? VARIANT_SCHEMES[workout.a] : undefined;
@@ -140,18 +260,28 @@ function renderPage(code: string, workout: Json | null): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${name} \u2014 SplitCue</title>
+  <title>${title} \u2014 SplitCue</title>
   <meta name="description" content="${desc}">
-  <meta property="og:title" content="${name} \u2014 SplitCue">
+  <meta property="og:title" content="${title} \u2014 SplitCue">
   <meta property="og:description" content="${desc}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="SplitCue">
   <meta property="og:url" content="${SHARE_BASE_URL}/${code}">
+  <meta property="og:image" content="${ogImage}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${title} \u2014 SplitCue">
+  <meta name="twitter:description" content="${desc}">
+  <meta name="twitter:image" content="${ogImage}">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#181818;color:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
     .card{background:#242424;border-radius:16px;padding:32px;max-width:380px;width:100%;text-align:center}
     h1{font-size:22px;margin-bottom:8px}
+    .eyebrow{color:#4ADE80;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+    .card-image{display:block;width:100%;height:auto;border-radius:12px;margin-bottom:20px}
+    .achievement{color:#FBBF24;font-size:28px;font-weight:800;margin-bottom:12px}
+    .byline{color:#888;font-size:13px;margin-bottom:12px}
+    .result{color:#f5f5f5;font-size:15px;font-weight:600;margin-bottom:8px}
     .summary{color:#aaa;font-size:14px;margin-bottom:24px}
     .btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none;margin-bottom:12px}
     .btn-primary{background:#4ADE80;color:#181818}
@@ -162,12 +292,18 @@ function renderPage(code: string, workout: Json | null): string {
 </head>
 <body>
   <div class="card">
+    ${cardImage}
+    ${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}
+    ${achievementText ? `<p class="achievement">${escapeHtml(achievementText)}</p>` : ""}
     <h1>${name}</h1>
-    <p class="summary">${desc}</p>
+    ${sender ? `<p class="byline">Created by ${sender}</p>` : ""}
+    ${resultDesc ? `<p class="result">${escapeHtml(resultDesc)}</p>` : ""}
+    <p class="summary">${escapeHtml([plannedDate ? `Planned for ${plannedDate}` : null, summary ?? (resultDesc ? null : fallbackDesc)].filter(Boolean).join(" \u00b7 "))}</p>
     <a class="btn btn-primary" href="${primaryLink}">${primaryLabel}</a>
     ${secondaryOpen}
     <a id="ios" class="btn btn-secondary" href="${APP_STORE_URL}" style="display:none">Download on the App Store</a>
-    <a id="android" class="btn btn-secondary" href="${PLAY_STORE_URL}" style="display:none">Get it on Google Play</a>
+    <a id="android" class="btn btn-secondary" href="${playUrl}" style="display:none">Get it on Google Play</a>
+    <p id="ios-hint" class="hint" style="display:none">New to SplitCue? After installing, open the app and allow paste to pick up this workout.</p>
     <p class="hint">Already have SplitCue? If the workout doesn't open, update to the latest version.</p>
     <p class="footer">SplitCue \u2014 Interval running, guided by audio cues</p>
   </div>
@@ -176,13 +312,109 @@ function renderPage(code: string, workout: Json | null): string {
       var ua = navigator.userAgent || '';
       var isIOS = /iPhone|iPad|iPod/i.test(ua);
       var isAndroid = /Android/i.test(ua);
-      if (isIOS) document.getElementById('ios').style.display = 'block';
+      var ios = document.getElementById('ios');
+      if (isIOS) {
+        ios.style.display = 'block';
+        document.getElementById('ios-hint').style.display = 'block';
+      }
       else if (isAndroid) document.getElementById('android').style.display = 'block';
-      else { document.getElementById('ios').style.display = 'block'; document.getElementById('android').style.display = 'block'; }
+      else { ios.style.display = 'block'; document.getElementById('android').style.display = 'block'; }
+
+      // The app reads this on first launch to import the workout.
+      var shareUrl = ${JSON.stringify(shareUrl)};
+      function copyFallback() {
+        var input = document.createElement('textarea');
+        input.value = shareUrl;
+        input.setAttribute('readonly', '');
+        input.style.position = 'absolute';
+        input.style.left = '-9999px';
+        document.body.appendChild(input);
+        input.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(input);
+      }
+      function logStoreClick(platform) {
+        try {
+          if (navigator.sendBeacon) navigator.sendBeacon('/w/' + ${JSON.stringify(code)} + '/e?t=store_click&p=' + platform);
+        } catch (e) {}
+      }
+      document.getElementById('android').addEventListener('click', function() { logStoreClick('android'); });
+      ios.addEventListener('click', function(e) {
+        logStoreClick('ios');
+        if (!isIOS) return;
+        e.preventDefault();
+        var go = function() { window.location.href = ios.href; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(shareUrl).then(go, function() { copyFallback(); go(); });
+        } else {
+          copyFallback();
+          go();
+        }
+      });
     })();
   </script>
 </body>
 </html>`;
+}
+
+function renderRemovedPage(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Link removed \u2014 SplitCue</title>
+  <meta property="og:title" content="Link removed \u2014 SplitCue">
+  <meta property="og:description" content="This shared workout is no longer available.">
+  <meta property="og:image" content="${DEFAULT_OG_IMAGE}">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#181818;color:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+    .card{background:#242424;border-radius:16px;padding:32px;max-width:380px;width:100%;text-align:center}
+    h1{font-size:22px;margin-bottom:8px}
+    .summary{color:#aaa;font-size:14px;margin-bottom:24px}
+    .btn{display:block;width:100%;padding:14px;border-radius:10px;font-size:16px;font-weight:600;text-decoration:none;background:#4ADE80;color:#181818}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>This link was removed</h1>
+    <p class="summary">The runner who shared it turned it off, or it expired. Ask them to send a new one.</p>
+    <a class="btn" href="https://splitcue.app">About SplitCue</a>
+  </div>
+</body>
+</html>`;
+}
+
+function platformOf(userAgent: string): string {
+  if (/iPhone|iPad|iPod/i.test(userAgent)) return "ios";
+  if (/Android/i.test(userAgent)) return "android";
+  return "web";
+}
+
+type ShareStatus = "active" | "revoked" | "expired" | "missing";
+
+async function loadShare(code: string): Promise<{ status: ShareStatus; workout: Json | null; imagePath: string | null }> {
+  const { data, error } = await supabase.rpc("get_share", { p_code: code }).maybeSingle();
+  if (!error) {
+    if (!data) return { status: "missing", workout: null, imagePath: null };
+    const row = data as { status: ShareStatus; workout_data: Json; image_path: string | null };
+    return {
+      status: row.status,
+      workout: row.status === "active" ? row.workout_data : null,
+      imagePath: typeof row.image_path === "string" ? row.image_path : null,
+    };
+  }
+  // get_share isn't migrated yet.
+  const { data: fallback } = await supabase
+    .from("shared_workouts")
+    .select("workout_data")
+    .eq("code", code)
+    .maybeSingle();
+  return fallback
+    ? { status: "active", workout: fallback.workout_data, imagePath: null }
+    : { status: "missing", workout: null, imagePath: null };
 }
 
 Deno.serve(async (req: Request) => {
@@ -193,30 +425,51 @@ Deno.serve(async (req: Request) => {
     return new Response("Missing or invalid code", { status: 400 });
   }
 
-  let workout: Json | null = null;
+  let share: Awaited<ReturnType<typeof loadShare>> = { status: "missing", workout: null, imagePath: null };
   try {
-    const { data } = await supabase
-      .from("shared_workouts")
-      .select("workout_data")
-      .eq("code", code)
-      .maybeSingle();
-    if (data) workout = data.workout_data;
+    share = await loadShare(code);
   } catch {
     // Serve the page with generic info
   }
 
+  if (share.status === "revoked" || share.status === "expired") {
+    return new Response(renderRemovedPage(), {
+      status: 410,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }
+
+  const { workout, imagePath } = share;
+
+  // The share-proxy worker forwards the visitor's user agent.
+  const userAgent = req.headers.get("x-forwarded-user-agent") ?? req.headers.get("user-agent") ?? "";
+  if (workout && userAgent && !BOT_PATTERN.test(userAgent)) {
+    try {
+      const { error } = await supabase.rpc("log_share_event", {
+        p_code: code,
+        p_event: "open",
+        p_platform: platformOf(userAgent),
+        p_referrer: req.headers.get("x-forwarded-referer")?.slice(0, 64) || null,
+      });
+      if (error) await supabase.rpc("record_share_event", { share_code: code, event_kind: "open" });
+    } catch {
+      // Counting is best effort
+    }
+  }
+
   let html: string;
   try {
-    html = renderPage(code, workout);
+    html = renderPage(code, workout, imagePath);
   } catch {
-    html = renderPage(code, null);
+    html = renderPage(code, null, null);
   }
 
   return new Response(html, {
     status: workout ? 200 : 404,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": workout ? "public, max-age=3600" : "no-store",
+      "Cache-Control": workout ? "public, max-age=300" : "no-store",
     },
   });
 });
+

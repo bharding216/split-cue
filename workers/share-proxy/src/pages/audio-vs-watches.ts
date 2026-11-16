@@ -91,7 +91,8 @@ export function audioVsWatchesPage(): string {
 
         <h2>SplitCue as an Audio Coaching App</h2>
         <p>SplitCue is designed specifically for the scenarios where audio coaching works best: structured interval workouts with voice pace announcements, transition cues, and countdown warnings. It runs in the background with your screen locked — all information delivered through your headphones.</p>
-        <p>SplitCue is not trying to replace a GPS watch for all-day tracking or heart rate training. It's a specialized tool for voice-coached interval sessions.</p>
+        <p>You don't have to choose. SplitCue can read live heart rate from a Bluetooth chest strap or from a watch that broadcasts heart rate — Garmin, Polar, COROS, Amazfit, and others — so you can wear your watch as a heart rate sensor and still get hands-free audio coaching. See <a href="/help/heart-rate-monitors">supported heart rate monitors</a>.</p>
+        <p>SplitCue is not trying to replace a GPS watch for all-day tracking or swimming and multi-sport training. It's built for voice-coached runs, from single interval sessions to <a href="/features/training-plans">full training plans</a>.</p>
       </div>
     </section>
 

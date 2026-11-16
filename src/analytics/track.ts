@@ -5,13 +5,16 @@
  *   track('workout_started', { workout_id: '...', interval_count: 6 });
  *
  * Events are fire-and-forget — failures are silently swallowed so
- * analytics never crash the app or block the UI.
+ * analytics never crash the app or block the UI. Events that can't be sent
+ * (offline, timeout, server error) are queued on the device and resent later
+ * with their original time.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { supabase } from './supabaseClient';
 import { eventDeviceFields } from './deviceInfo';
+import { createEventQueue, type SendResult } from './eventQueue';
 
 /** Cached authenticated user ID, updated when auth state changes. */
 let cachedUserId: string | null = null;
@@ -27,6 +30,9 @@ supabase.auth.onAuthStateChange((_event, session) => {
 });
 
 const ANONYMOUS_ID_KEY = '@pacecue/anonymous_id';
+const EVENT_QUEUE_KEY = '@pacecue/event_queue';
+/** Without a limit, a request on a dead connection can hang until the OS gives up. */
+const SEND_TIMEOUT_MS = 15_000;
 
 /** In-memory cache so we only hit AsyncStorage once per session. */
 let cachedId: string | null = null;
@@ -105,6 +111,47 @@ export function appInfo(): { appVersion: string; environment: string } {
   };
 }
 
+function eventId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? uuid();
+}
+
+/** Offline, timed out, signed-out token, rate limited, or a server error. */
+function isRetryableStatus(status: number): boolean {
+  return status === 0 || status === 401 || status === 408 || status === 429 || status >= 500;
+}
+
+async function insertEvents(rows: Record<string, unknown>[]): Promise<SendResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  try {
+    const { error, status } = await supabase
+      .from('events')
+      .insert(rows)
+      .abortSignal(controller.signal);
+    if (!error) return 'sent';
+    if (error.code === '23505') return 'duplicate';
+    return isRetryableStatus(status) ? 'retry' : 'rejected';
+  } catch {
+    return 'retry';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const queue = createEventQueue({
+  storage: AsyncStorage,
+  key: EVENT_QUEUE_KEY,
+  send: (events) =>
+    insertEvents(
+      events.map((e) => ({ ...e.row, created_at: new Date(e.occurredAt).toISOString() })),
+    ),
+});
+
+/** Resend events queued while offline. Safe to call often. */
+export function flushQueuedEvents(): void {
+  queue.flush().catch(() => {});
+}
+
 /**
  * Fire an analytics event. Non-blocking, never throws.
  */
@@ -112,29 +159,30 @@ export function track(
   eventName: string,
   metadata?: Record<string, unknown>,
 ): void {
+  const occurredAt = Date.now();
   const { appVersion, environment } = appInfo();
   const country = deviceCountry();
   const device = eventDeviceFields();
 
   getAnonymousId()
     .then(async (anonymousUserId) => {
-      const baseRow = {
+      const row = {
+        id: eventId(),
         anonymous_user_id: anonymousUserId,
         user_id: cachedUserId,
         event_name: eventName,
         app_version: appVersion,
         environment,
         metadata: metadata ?? {},
+        ...(country ? { country } : {}),
+        ...device,
       };
-      const withCountry = { ...baseRow, ...(country ? { country } : {}) };
 
-      const { error } = await supabase.from('events').insert({ ...withCountry, ...device });
-      // Keep recording events if the newer columns aren't migrated yet.
-      if (error) {
-        const { error: retryError } = await supabase.from('events').insert(withCountry);
-        if (retryError && country) {
-          await supabase.from('events').insert(baseRow);
-        }
+      const result = await insertEvents([row]);
+      if (result === 'retry') {
+        await queue.enqueue({ row, occurredAt });
+      } else {
+        flushQueuedEvents();
       }
     })
     .catch(() => {

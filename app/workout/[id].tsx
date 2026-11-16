@@ -3,24 +3,38 @@
  * Shared component with the "new" screen via WorkoutEditorForm.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useShareSheet } from '../../src/components/ShareSheet';
 import { WorkoutDefinition, generateId, withResolvedCategory } from '../../src/workout/workoutTypes';
 import { loadWorkouts, saveWorkout } from '../../src/workout/workoutStorage';
+import { withEditedAttribution } from '../../src/sharing/shareWorkout';
 import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../src/workout/tempWorkoutCache';
 import { WorkoutEditorForm } from '../../src/components/WorkoutEditorForm';
+import { VoiceEditSheet } from '../../src/components/VoiceEditSheet';
+import { applyPlanModifications, type PlanModification } from '../../src/ai/planService';
 import { useTrainingPlan } from '../../src/contexts/TrainingPlanContext';
+import { useAuth } from '../../src/contexts/AuthContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
 import { track } from '../../src/analytics/track';
 
 export default function EditWorkoutScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { updateWorkoutData } = useTrainingPlan();
+  const { user } = useAuth();
+  const { plans, planWorkouts, refresh, updateWorkoutData } = useTrainingPlan();
   const [workout, setWorkout] = useState<WorkoutDefinition | null>(null);
   const [fromPlan, setFromPlan] = useState(false);
   const [planWorkoutId, setPlanWorkoutId] = useState<string | undefined>();
+  const [aiEditOpen, setAiEditOpen] = useState(false);
+  const planWorkout = planWorkoutId ? planWorkouts.find((w) => w.id === planWorkoutId) : undefined;
+  const ownerPlan = planWorkout ? plans.find((p) => p.id === planWorkout.plan_id) : undefined;
+  const canAiEdit = !!user && !!planWorkout && !!ownerPlan && planWorkout.status === 'planned';
+  /** The latest autosaved version, so sharing picks up edits. */
+  const latest = useRef<WorkoutDefinition | null>(null);
+  const { openShare, shareSheet } = useShareSheet();
 
   useEffect(() => {
     const cached = getTempWorkout(id!);
@@ -50,13 +64,29 @@ export default function EditWorkoutScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
-              onPress={() => router.back()}
-              activeOpacity={0.8}
-              style={styles.doneButton}
-            >
-              <Text style={styles.doneButtonText}>Done</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              {!fromPlan && (
+                <TouchableOpacity
+                  onPress={() => {
+                    const current = latest.current ?? workout;
+                    openShare({ kind: 'structure', workout: current, workoutName: current.name, surface: 'editor' });
+                  }}
+                  hitSlop={8}
+                  style={styles.shareButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Share ${workout.name}`}
+                >
+                  <Ionicons name="share-outline" size={22} color={Colors.textPrimary} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={() => router.back()}
+                activeOpacity={0.8}
+                style={styles.doneButton}
+              >
+                <Text style={styles.doneButtonText}>Done</Text>
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
@@ -64,6 +94,7 @@ export default function EditWorkoutScreen() {
         initial={workout}
         autoSave={!fromPlan}
         isPlanWorkout={fromPlan}
+        onAiEdit={canAiEdit ? () => setAiEditOpen(true) : undefined}
         onSave={async (updated) => {
           if (planWorkoutId) {
             try {
@@ -75,7 +106,9 @@ export default function EditWorkoutScreen() {
             router.back();
             return;
           }
-          await saveWorkout({ ...updated, updatedAt: Date.now() });
+          const attributed = withEditedAttribution(workout, updated);
+          latest.current = attributed;
+          await saveWorkout({ ...attributed, updatedAt: Date.now() });
           track('workout_saved', {
             workout_id: updated.id,
             workout_name: updated.name,
@@ -90,7 +123,7 @@ export default function EditWorkoutScreen() {
             ? updated.name
             : updated.name.replace(/\s*\(copy\)$/i, '') + ' (Copy)';
           await saveWorkout({
-            ...withResolvedCategory(updated),
+            ...withResolvedCategory(withEditedAttribution(workout, updated)),
             id: newId,
             name,
             createdAt: now,
@@ -109,6 +142,23 @@ export default function EditWorkoutScreen() {
         }}
         onCancel={() => router.back()}
       />
+      {/* Mounted only while open so the native recorder isn't created with the editor */}
+      {aiEditOpen && planWorkout && ownerPlan && (
+        <VoiceEditSheet
+          visible
+          workout={planWorkout}
+          plan={ownerPlan}
+          planWorkouts={planWorkouts.filter((w) => w.plan_id === ownerPlan.id)}
+          onApply={async (modifications: PlanModification[]) => {
+            await applyPlanModifications(ownerPlan.id, modifications);
+            setAiEditOpen(false);
+            await refresh();
+            router.back();
+          }}
+          onClose={() => setAiEditOpen(false)}
+        />
+      )}
+      {shareSheet}
     </>
   );
 }
@@ -119,6 +169,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.background,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  shareButton: {
+    padding: Spacing.xs,
   },
   doneButton: {
     paddingVertical: Spacing.xs + 2,

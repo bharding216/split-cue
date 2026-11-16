@@ -4,7 +4,7 @@
  * tags and notes), achievements, and sharing (Strava, Challenge a Friend).
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {
   generateId,
   withResolvedCategory,
   WORKOUT_NOTES_MAX_LENGTH,
+  type WorkoutDefinition,
 } from '../../src/workout/workoutTypes';
 import {
   loadHistory,
@@ -50,13 +51,18 @@ import {
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
 import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
 import { RunSplits } from '../../src/components/RunSplits';
+import { HeartRateSection } from '../../src/components/HeartRateSection';
+import { useSubscription } from '../../src/contexts/SubscriptionContext';
+import { trackHr } from '../../src/analytics/hrEvents';
 import { RunWeatherCard } from '../../src/components/RunWeatherCard';
 import { formatDistance } from '../../src/units/format';
 import { useRunAnnotations } from '../../src/hooks/useRunAnnotations';
 import { StravaPushButton } from '../../src/strava/StravaPushButton';
-import { shareWorkoutResults } from '../../src/sharing/shareWorkout';
+import { useShareSheet, type ShareRequest } from '../../src/components/ShareSheet';
+import { formatResultMark, resultOf } from '../../src/sharing/shareText';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../src/constants/theme';
 import { useLargeText } from '../../src/hooks/useLargeText';
+import { useHeartRateSamples } from '../../src/hooks/useHeartRateSamples';
 
 function formatDateFull(epoch: number): string {
   return new Date(epoch).toLocaleDateString(undefined, {
@@ -130,6 +136,7 @@ export default function RunDetailsScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const large = useLargeText();
+  const { tier, loading: subscriptionLoading } = useSubscription();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
   const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
@@ -141,6 +148,19 @@ export default function RunDetailsScreen() {
   const [runRecords, setRunRecords] = useState<PersonalRecord[]>([]);
   const [runAwards, setRunAwards] = useState<AwardBadge[]>([]);
   const [annotations, setAnnotations] = useState<Annotations>({ tags: [], notes: '' });
+  const hrSamples = useHeartRateSamples(run?.heartRate ? run.id : null);
+  const isPro = tier === 'pro';
+  const [challengeSent, setChallengeSent] = useState(false);
+  const { openShare, shareSheet } = useShareSheet((request) => {
+    if (request.kind === 'challenge') setChallengeSent(true);
+  });
+
+  const hrViewedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!run?.heartRate || subscriptionLoading || hrViewedRef.current === run.id) return;
+    hrViewedRef.current = run.id;
+    trackHr('hr_analysis_viewed', { is_pro: isPro, has_graph: !!hrSamples });
+  }, [run, hrSamples, isPro, subscriptionLoading]);
 
   useEffect(() => {
     // The lock waits for any write still in flight, such as the feeling
@@ -195,11 +215,24 @@ export default function RunDetailsScreen() {
     }
   };
 
-  const handleShare = async () => {
+  const resolveDefinition = async (): Promise<WorkoutDefinition | null> => {
+    if (!run) return null;
+    return run.configuration ?? (await loadWorkouts()).find((w) => w.id === run.workoutId) ?? null;
+  };
+
+  const handleShare = async (kind: ShareRequest['kind']) => {
     if (!run) return;
-    const workouts = await loadWorkouts();
-    const def = workouts.find((w) => w.id === run.workoutId) ?? null;
-    shareWorkoutResults(def, run);
+    const workout = await resolveDefinition();
+    openShare({
+      kind,
+      workout,
+      workoutName: run.workoutName,
+      run: { ...run, tags: annotations.tags, notes: annotations.notes },
+      replyTo: kind === 'challenge' ? workout?.sharedFrom : undefined,
+      surface: 'run_details',
+      records: runRecords,
+      awards: runAwards,
+    });
   };
 
   if (loading) {
@@ -297,10 +330,27 @@ export default function RunDetailsScreen() {
               summary={elevation}
               paceUnit={paceUnit}
               width={chartWidth}
+              heartRate={hrSamples}
             />
             {terrainAggs.length > 0 && (
               <TerrainSummary aggregates={terrainAggs} paceUnit={paceUnit} />
             )}
+          </View>
+        )}
+
+        {run.heartRate && (
+          <View style={styles.section}>
+            <HeartRateSection
+              heartRate={run.heartRate}
+              samples={hrSamples}
+              splits={run.splits}
+              width={chartWidth}
+              isPro={isPro}
+              onUpgrade={() => {
+                trackHr('hr_pro_upgrade_clicked', { source: 'run_details' });
+                router.push('/paywall');
+              }}
+            />
           </View>
         )}
 
@@ -334,6 +384,7 @@ export default function RunDetailsScreen() {
           totalDistanceMeters={run.totalDistanceMeters}
           route={run.route}
           splits={run.splits}
+          heartRate={run.heartRate}
           configuration={run.configuration}
           tags={annotations.tags}
           notes={annotations.notes}
@@ -343,10 +394,10 @@ export default function RunDetailsScreen() {
         {run.configuration && (
           <View style={styles.section}>
             <ChallengeFriendCard
-              workout={run.configuration}
-              totalDurationMs={run.totalDurationMs}
-              totalDistanceMeters={run.totalDistanceMeters}
-              paceUnit={paceUnit}
+              mark={formatResultMark(resultOf(run), paceUnit)}
+              sent={challengeSent}
+              replyToName={run.configuration.sharedFrom ? run.configuration.sharedFrom.senderName ?? '' : undefined}
+              onPress={() => handleShare('challenge')}
             />
           </View>
         )}
@@ -370,7 +421,7 @@ export default function RunDetailsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtnSecondary, large && styles.actionBtnLarge]}
-            onPress={handleShare}
+            onPress={() => handleShare('results')}
             activeOpacity={0.7}
           >
             <Ionicons name="share-outline" size={16} color={Colors.textPrimary} />
@@ -387,6 +438,7 @@ export default function RunDetailsScreen() {
           <Text style={styles.templateBtnText}>Save to My Workouts</Text>
         </TouchableOpacity>
       </ScrollView>
+      {shareSheet}
     </>
   );
 }

@@ -9,16 +9,15 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Linking,
   Platform,
-  Share,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as StoreReview from 'expo-store-review';
 import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
+import { openSupportEmail } from '../../../src/support/supportEmail';
+import { shareSplitCue } from '../../../src/sharing/shareApp';
 
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
@@ -26,19 +25,9 @@ const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
 
 export default function AboutSettingsScreen() {
-  const handleShare = async () => {
+  const handleShare = () => {
     hapticTap();
-    const storeUrl = Platform.OS === 'android' ? PLAY_STORE_URL : APP_STORE_URL;
-    try {
-      const pitch = 'Check out SplitCue — an interval timer for runners with audio pacing cues.';
-      await Share.share(
-        Platform.OS === 'ios'
-          ? { message: pitch, url: storeUrl }
-          : { message: `${pitch}\n\n${storeUrl}` },
-      );
-    } catch (_) {
-      // User dismissed the share sheet
-    }
+    shareSplitCue('settings_about');
   };
 
   return (
@@ -58,12 +47,7 @@ export default function AboutSettingsScreen() {
         onPress={() => {
           hapticTap();
           const version = Constants.expoConfig?.version ?? '?';
-          const subject = encodeURIComponent(
-            `SplitCue Feedback (v${version})`,
-          );
-          Linking.openURL(
-            `mailto:brandon@getsurmount.com?subject=${subject}`,
-          );
+          openSupportEmail({ subject: `SplitCue Feedback (v${version})` });
         }}
         activeOpacity={0.7}
       >
@@ -73,35 +57,15 @@ export default function AboutSettingsScreen() {
 
       <TouchableOpacity
         style={[styles.actionBtn, { marginTop: Spacing.sm }]}
-        onPress={async () => {
+        onPress={() => {
           hapticTap();
-          const available = await StoreReview.isAvailableAsync();
-          if (available) {
-            await StoreReview.requestReview();
-            // The native API silently no-ops if the user already reviewed or
-            // the OS rate-limits the prompt. Offer a direct store link so the
-            // tap never feels broken.
-            const storeUrl =
-              Platform.OS === 'android'
-                ? `${PLAY_STORE_URL}&showAllReviews=true`
-                : `${APP_STORE_URL}?action=write-review`;
-            Alert.alert(
-              'Thanks!',
-              "If the review prompt didn't appear, you can leave a review directly on the store.",
-              [
-                { text: 'Done', style: 'cancel' },
-                {
-                  text: 'Open Store Page',
-                  onPress: () => Linking.openURL(storeUrl),
-                },
-              ],
-            );
-          } else {
-            Alert.alert(
-              'Not Available',
-              'In-app reviews are only available on production builds from the App Store or Play Store.',
-            );
-          }
+          // A button goes straight to the store: the in-app prompt is rate-limited
+          // and may not appear, which would make the tap look broken.
+          Linking.openURL(
+            Platform.OS === 'android'
+              ? `${PLAY_STORE_URL}&showAllReviews=true`
+              : `${APP_STORE_URL}?action=write-review`,
+          ).catch(() => {});
         }}
         activeOpacity={0.7}
       >

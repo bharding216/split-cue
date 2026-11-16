@@ -40,6 +40,7 @@ import type {
   IntervalSplit,
   WorkoutDefinition,
 } from '../workout/workoutTypes';
+import type { WorkoutHeartRate } from '../heartRate/hrTypes';
 
 interface StravaPushButtonProps {
   /** The completed workout entry ID (must be set before render). */
@@ -51,6 +52,7 @@ interface StravaPushButtonProps {
   totalDistanceMeters?: number;
   route?: RoutePoint[];
   splits?: IntervalSplit[];
+  heartRate?: WorkoutHeartRate;
   configuration?: WorkoutDefinition;
   tags?: string[];
   notes?: string;
@@ -71,6 +73,7 @@ export function StravaPushButton({
   totalDistanceMeters,
   route,
   splits,
+  heartRate,
   configuration,
   tags,
   notes,
@@ -169,6 +172,7 @@ export function StravaPushButton({
       totalDistanceMeters,
       route,
       splits,
+      heartRate,
       configuration,
       tags: tags && tags.length > 0 ? tags : undefined,
       notes: notes?.trim() || undefined,

@@ -165,12 +165,12 @@ function buildDayEntries(
 ): Record<string, DayEntry> {
   const entries: Record<string, DayEntry> = {};
 
-  // Plan workouts — sort so the primary plan's workouts come last (appear first in the array
-  // when we unshift), giving them visual priority while keeping all workouts accessible.
+  // Plan workouts — the primary plan's workouts come first on each day, giving them
+  // visual priority while keeping all workouts accessible.
   const sorted = [...planWorkouts].sort((a, b) => {
     const aIsPrimary = a.plan_id === primaryPlanId ? 1 : 0;
     const bIsPrimary = b.plan_id === primaryPlanId ? 1 : 0;
-    if (aIsPrimary !== bIsPrimary) return aIsPrimary - bIsPrimary;
+    if (aIsPrimary !== bIsPrimary) return bIsPrimary - aIsPrimary;
     return a.date.localeCompare(b.date);
   });
 

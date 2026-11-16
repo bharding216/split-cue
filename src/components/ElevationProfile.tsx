@@ -3,15 +3,26 @@
  *
  * Displays smoothed altitude vs cumulative distance, with the area
  * fill color-coded by terrain segment (uphill / flat / downhill).
+ * When heart rate readings are given, the runner can toggle a heart rate
+ * line over the profile, on its own scale, to see how hills affected effort.
+ * Dragging a finger along the chart reads out the values at that point.
  */
 
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, Defs, ClipPath, Rect, G } from 'react-native-svg';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import Svg, { Path, Defs, ClipPath, Rect, G, Line, Circle } from 'react-native-svg';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { RoutePoint } from '../workout/workoutTypes';
 import type { ElevationSummary } from '../pace/elevationAnalysis';
+import type { HrSample } from '../heartRate/hrTypes';
+import { heartRateAtTime } from '../heartRate/hrStats';
+import { loadHrOverlayEnabled, saveHrOverlayEnabled } from '../heartRate/hrOverlayPreference';
+import { trackHr } from '../analytics/hrEvents';
+import { formatDistance } from '../units/format';
 import { Colors, FontSize, Spacing, BorderRadius, MaxFontScale } from '../constants/theme';
 import type { PaceUnit } from '../pace/paceTypes';
+import { useChartScrub, nearestIndex } from './useChartScrub';
 
 interface Props {
   route: RoutePoint[];
@@ -19,7 +30,15 @@ interface Props {
   paceUnit: PaceUnit;
   width: number;
   height?: number;
+  /** Readings for the run; the heart rate toggle shows only when they line up with the route. */
+  heartRate?: HrSample[] | null;
 }
+
+/** A route point only gets a heart rate from a reading this close in time. */
+const HR_MATCH_TOLERANCE_MS = 5000;
+/** Route points on each side averaged into each drawn heart rate point. */
+const HR_SMOOTH_RADIUS = 2;
+const BPM_STEP = 10;
 
 const TERRAIN_COLORS = {
   uphill: '#F87171', // red tint
@@ -32,13 +51,41 @@ const PADDING = { top: 12, bottom: 24, left: 0, right: 0 };
 /** Centered slot for each axis label; wide enough for "12.5" at the capped font size. */
 const DIST_LABEL_WIDTH = 32;
 
+/**
+ * Smoothed heart rate at each route point, or null where no reading is
+ * close enough. Smoothing stays within each unbroken stretch of readings.
+ */
+function heartRateAlongRoute(route: RoutePoint[], samples: HrSample[]): (number | null)[] {
+  const raw = route.map((pt) => heartRateAtTime(samples, pt.ts, HR_MATCH_TOLERANCE_MS));
+  return raw.map((bpm, i) => {
+    if (bpm == null) return null;
+    let sum = 0;
+    let count = 0;
+    for (let j = i - 1; j >= Math.max(0, i - HR_SMOOTH_RADIUS) && raw[j] != null; j--) {
+      sum += raw[j]!;
+      count++;
+    }
+    for (let j = i; j <= Math.min(raw.length - 1, i + HR_SMOOTH_RADIUS) && raw[j] != null; j++) {
+      sum += raw[j]!;
+      count++;
+    }
+    return sum / count;
+  });
+}
+
 export function ElevationProfile({
   route,
   summary,
   paceUnit,
   width,
   height = 140,
+  heartRate,
 }: Props) {
+  const [hrOn, setHrOn] = useState(false);
+  useEffect(() => {
+    loadHrOverlayEnabled().then(setHrOn);
+  }, []);
+
   const chart = useMemo(() => {
     if (route.length < 2) return null;
 
@@ -102,13 +149,82 @@ export function ElevationProfile({
       });
     }
 
-    return { linePath, areaPath, segmentRects, distLabels, unit };
+    return {
+      linePath,
+      areaPath,
+      segmentRects,
+      distLabels,
+      unit,
+      toDist: (px: number) => ((px - PADDING.left) / drawW) * totalDist,
+      x: (i: number) => xScale(route[i].dist),
+      y: (i: number) => yScale(alts[i]),
+      drawH,
+    };
   }, [route, summary, paceUnit, width, height]);
+
+  // Heart rate on its own scale, sharing the distance axis
+  const hr = useMemo(() => {
+    if (!chart || !heartRate || heartRate.length < 2) return null;
+    const bpms = heartRateAlongRoute(route, heartRate);
+    let minBpm = Infinity;
+    let maxBpm = 0;
+    let matched = 0;
+    for (const b of bpms) {
+      if (b == null) continue;
+      matched++;
+      if (b < minBpm) minBpm = b;
+      if (b > maxBpm) maxBpm = b;
+    }
+    if (matched < 2) return null;
+
+    const yMin = Math.floor((minBpm - 5) / BPM_STEP) * BPM_STEP;
+    const yMax = Math.ceil((maxBpm + 5) / BPM_STEP) * BPM_STEP;
+    const y = (bpm: number) => PADDING.top + chart.drawH - ((bpm - yMin) / (yMax - yMin)) * chart.drawH;
+
+    let path = '';
+    let drawing = false;
+    bpms.forEach((b, i) => {
+      if (b == null) {
+        drawing = false;
+        return;
+      }
+      path += `${drawing ? 'L' : 'M'} ${chart.x(i).toFixed(1)} ${y(b).toFixed(1)} `;
+      drawing = true;
+    });
+
+    return { path, bpms, y, minBpm: Math.round(minBpm), maxBpm: Math.round(maxBpm) };
+  }, [chart, route, heartRate]);
+
+  const shownHr = hrOn ? hr : null;
+
+  const toggleHr = () => {
+    const next = !hrOn;
+    setHrOn(next);
+    saveHrOverlayEnabled(next);
+    trackHr('hr_elevation_overlay_toggled', { enabled: next });
+  };
+
+  const { gesture, scrubX } = useChartScrub(width);
+
+  const scrub = useMemo(() => {
+    if (!chart || scrubX == null) return null;
+    const i = nearestIndex(route, chart.toDist(scrubX), (pt) => pt.dist);
+    const bpm = shownHr ? shownHr.bpms[i] : null;
+    return {
+      x: chart.x(i),
+      y: chart.y(i),
+      alt: summary.smoothedAltitudes[i],
+      dist: route[i].dist,
+      bpm: bpm != null ? Math.round(bpm) : null,
+      hrY: shownHr && bpm != null ? shownHr.y(bpm) : null,
+    };
+  }, [chart, scrubX, route, summary, shownHr]);
 
   if (!chart) return null;
 
   const metersToFeet = (m: number) => Math.round(m * 3.28084);
   const isMiles = paceUnit === 'minPerMile';
+  const formatAlt = (m: number) => (isMiles ? `${metersToFeet(m)} ft` : `${Math.round(m)} m`);
   const gainDisplay = isMiles
     ? `${metersToFeet(summary.totalElevationGainMeters)} ft`
     : `${summary.totalElevationGainMeters} m`;
@@ -119,62 +235,138 @@ export function ElevationProfile({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Elevation Profile</Text>
-        <View style={styles.gainLoss}>
-          <Text style={styles.gainText}>
-            {'↑ '}
-            {gainDisplay}
-          </Text>
-          <Text style={styles.lossText}>
-            {'↓ '}
-            {lossDisplay}
-          </Text>
-        </View>
+        {scrub ? (
+          <>
+            <Text style={styles.title} maxFontSizeMultiplier={MaxFontScale.display}>
+              {formatDistance(scrub.dist, paceUnit)}
+            </Text>
+            <View style={styles.gainLoss}>
+              <Text style={styles.scrubAlt} maxFontSizeMultiplier={MaxFontScale.display}>
+                {formatAlt(scrub.alt)}
+              </Text>
+              {shownHr && (
+                <Text style={styles.scrubBpm} maxFontSizeMultiplier={MaxFontScale.display}>
+                  {scrub.bpm != null ? `♥ ${scrub.bpm} bpm` : '♥ No reading'}
+                </Text>
+              )}
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Elevation Profile</Text>
+              {hr && (
+                <TouchableOpacity
+                  style={[styles.hrChip, hrOn && styles.hrChipOn]}
+                  onPress={toggleHr}
+                  activeOpacity={0.7}
+                  hitSlop={8}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: hrOn }}
+                  accessibilityLabel="Show heart rate"
+                >
+                  <Ionicons name={hrOn ? 'heart' : 'heart-outline'} size={12} color={Colors.danger} />
+                  <Text style={styles.hrChipText} maxFontSizeMultiplier={MaxFontScale.display}>
+                    Heart rate
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.gainLoss}>
+              <Text style={styles.gainText}>
+                {'↑ '}
+                {gainDisplay}
+              </Text>
+              <Text style={styles.lossText}>
+                {'↓ '}
+                {lossDisplay}
+              </Text>
+              {shownHr && (
+                <Text style={styles.hrRangeText}>
+                  {'♥ '}
+                  {shownHr.minBpm}–{shownHr.maxBpm}
+                </Text>
+              )}
+            </View>
+          </>
+        )}
       </View>
 
-      <Svg width={width} height={height}>
-        <Defs>
-          <ClipPath id="areaClip">
-            <Path d={chart.areaPath} />
-          </ClipPath>
-        </Defs>
+      <GestureDetector gesture={gesture}>
+        <View>
+          <Svg width={width} height={height}>
+            <Defs>
+              <ClipPath id="areaClip">
+                <Path d={chart.areaPath} />
+              </ClipPath>
+            </Defs>
 
-        {/* Color-coded fill by terrain segment */}
-        <G clipPath="url(#areaClip)">
-          {chart.segmentRects.map((r) => (
-            <Rect
-              key={r.key}
-              x={r.x}
-              y={0}
-              width={r.width}
-              height={height}
-              fill={r.color}
-              opacity={0.25}
+            {/* Color-coded fill by terrain segment */}
+            <G clipPath="url(#areaClip)">
+              {chart.segmentRects.map((r) => (
+                <Rect
+                  key={r.key}
+                  x={r.x}
+                  y={0}
+                  width={r.width}
+                  height={height}
+                  fill={r.color}
+                  opacity={0.25}
+                />
+              ))}
+            </G>
+
+            {/* Elevation line */}
+            <Path
+              d={chart.linePath}
+              fill="none"
+              stroke={Colors.textSecondary}
+              strokeWidth={1.5}
             />
-          ))}
-        </G>
 
-        {/* Elevation line */}
-        <Path
-          d={chart.linePath}
-          fill="none"
-          stroke={Colors.textSecondary}
-          strokeWidth={1.5}
-        />
+            {shownHr && (
+              <Path
+                d={shownHr.path}
+                fill="none"
+                stroke={Colors.danger}
+                strokeWidth={1.75}
+                strokeLinejoin="round"
+              />
+            )}
 
-        {/* Distance axis labels */}
-        {chart.distLabels.map((lbl) => (
-          <React.Fragment key={lbl.label}>
-            <Rect
-              x={lbl.x}
-              y={height - PADDING.bottom}
-              width={0.5}
-              height={4}
-              fill={Colors.textMuted}
-            />
-          </React.Fragment>
-        ))}
-      </Svg>
+            {/* Distance axis labels */}
+            {chart.distLabels.map((lbl) => (
+              <React.Fragment key={lbl.label}>
+                <Rect
+                  x={lbl.x}
+                  y={height - PADDING.bottom}
+                  width={0.5}
+                  height={4}
+                  fill={Colors.textMuted}
+                />
+              </React.Fragment>
+            ))}
+
+            {scrub && (
+              <>
+                <Line
+                  x1={scrub.x}
+                  x2={scrub.x}
+                  y1={PADDING.top}
+                  y2={height - PADDING.bottom}
+                  stroke={Colors.textPrimary}
+                  strokeWidth={1}
+                  opacity={0.6}
+                />
+                <Circle cx={scrub.x} cy={scrub.y} r={4} fill={Colors.textPrimary} stroke={Colors.background} strokeWidth={2} />
+                {scrub.hrY != null && (
+                  <Circle cx={scrub.x} cy={scrub.hrY} r={4} fill={Colors.danger} stroke={Colors.background} strokeWidth={2} />
+                )}
+              </>
+            )}
+          </Svg>
+        </View>
+      </GestureDetector>
 
       {/* Distance text labels (rendered as RN Text for crisp rendering) */}
       <View style={[styles.distLabels, { width }]}>
@@ -228,14 +420,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     columnGap: Spacing.sm,
+    minHeight: 24,
     marginBottom: Spacing.xs,
     paddingHorizontal: Spacing.xs,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    gap: Spacing.sm,
   },
   title: {
     flexShrink: 1,
     color: Colors.textPrimary,
     fontSize: FontSize.sm,
     fontWeight: '600',
+  },
+  hrChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+  },
+  hrChipOn: {
+    borderColor: Colors.danger + '60',
+    backgroundColor: Colors.danger + '1A',
+  },
+  hrChipText: {
+    color: Colors.textSecondary,
+    fontSize: FontSize.xs,
+    fontWeight: '500',
   },
   gainLoss: {
     flexDirection: 'row',
@@ -251,6 +469,24 @@ const styles = StyleSheet.create({
     color: TERRAIN_COLORS.downhill,
     fontSize: FontSize.xs,
     fontWeight: '500',
+  },
+  hrRangeText: {
+    color: Colors.danger,
+    fontSize: FontSize.xs,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+  },
+  scrubAlt: {
+    color: Colors.textPrimary,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  scrubBpm: {
+    color: Colors.danger,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   distLabels: {
     position: 'relative',

@@ -1,67 +1,35 @@
 /**
- * ChallengeFriendCard — post-workout prompt to send the workout to a friend.
- *
- * Shown on the workout-complete screen. Opens the native share sheet with
- * the sender's result and an import link so a friend can run the same workout.
+ * ChallengeFriendCard — prompt to send a finished workout to a friend as a
+ * result to beat. Opens the share sheet in challenge mode via `onPress`.
  */
 
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
 import { useLargeText } from '../hooks/useLargeText';
-import type { WorkoutDefinition } from '../workout/workoutTypes';
-import type { PaceUnit } from '../pace/paceTypes';
-import {
-  formatChallengeMark,
-  shareWorkoutChallenge,
-} from '../sharing/shareWorkout';
 
 interface Props {
-  workout: WorkoutDefinition;
-  totalDurationMs: number;
-  totalDistanceMeters?: number;
-  paceUnit: PaceUnit;
+  /** The runner's result, e.g. "32:10 · 4.02 mi · 8:00/mi". */
+  mark: string | null;
+  /** Whether a challenge was already sent from this screen. */
+  sent: boolean;
+  /** Set when this workout came from a friend; the challenge goes back to them. */
+  replyToName?: string;
+  onPress: () => void;
 }
 
-export function ChallengeFriendCard({
-  workout,
-  totalDurationMs,
-  totalDistanceMeters,
-  paceUnit,
-}: Props) {
-  const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
+export function ChallengeFriendCard({ mark, sent, replyToName, onPress }: Props) {
   const large = useLargeText();
+  const isReply = replyToName != null;
 
-  const mark = formatChallengeMark({
-    totalDurationMs,
-    totalDistanceMeters,
-    paceUnit,
-  });
-
-  const handlePress = async () => {
-    if (busy) return;
-    hapticTap();
-    setBusy(true);
-    try {
-      const shared = await shareWorkoutChallenge(workout, {
-        totalDurationMs,
-        totalDistanceMeters,
-        paceUnit,
-      });
-      if (shared) setSent(true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const title = isReply ? `Send it back to ${replyToName || 'your friend'}` : 'Challenge a friend';
+  const message = sent
+    ? 'Challenge sent. Pass it to someone else and see who comes out ahead.'
+    : isReply
+      ? 'Let them know how you did on their workout.'
+      : 'Send this workout and your result. See who runs it better.';
 
   return (
     <View style={styles.card}>
@@ -70,38 +38,26 @@ export function ChallengeFriendCard({
           <Ionicons name="people" size={22} color={Colors.primary} />
         </View>
         <View style={[styles.text, large && styles.textLarge]}>
-          <Text style={styles.title}>Challenge a friend</Text>
-          <Text style={styles.message}>
-            {sent
-              ? 'Challenge sent. Pass it to someone else and see who comes out ahead.'
-              : 'Send this workout and your result. See who runs it better.'}
-          </Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.message}>{message}</Text>
           {mark ? <Text style={styles.mark}>Your mark · {mark}</Text> : null}
         </View>
       </View>
 
       <TouchableOpacity
         style={styles.button}
-        onPress={handlePress}
+        onPress={() => {
+          hapticTap();
+          onPress();
+        }}
         activeOpacity={0.8}
-        disabled={busy}
         accessibilityRole="button"
         accessibilityLabel={sent ? 'Send challenge to someone else' : 'Send challenge'}
       >
-        {busy ? (
-          <ActivityIndicator color={Colors.black} />
-        ) : (
-          <>
-            <Ionicons
-              name={sent ? 'paper-plane' : 'paper-plane-outline'}
-              size={16}
-              color={Colors.black}
-            />
-            <Text style={styles.buttonText}>
-              {sent ? 'Send to someone else' : 'Send challenge'}
-            </Text>
-          </>
-        )}
+        <Ionicons name={sent ? 'paper-plane' : 'paper-plane-outline'} size={16} color={Colors.black} />
+        <Text style={styles.buttonText}>
+          {sent ? 'Send to someone else' : isReply ? 'Send my result' : 'Send challenge'}
+        </Text>
       </TouchableOpacity>
     </View>
   );

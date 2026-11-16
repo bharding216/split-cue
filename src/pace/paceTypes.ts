@@ -36,10 +36,32 @@ export interface Odometer {
   anchor: GpsSample | null;
   /** Whether this device has reported a positive speed during the track. */
   speedReported: boolean;
+  /** Position-based floor under the counted distance. */
+  check: PositionCheck;
+}
+
+/**
+ * Fixes in the current span of the position check. The straight line between
+ * consecutive spans' mean positions can't be longer than the path actually run,
+ * so it bounds speed-based distance from below.
+ */
+export interface PositionCheck {
+  startedAt: number | null;
+  latSum: number;
+  lngSum: number;
+  count: number;
+  /** Distance counted in this span. */
+  meters: number;
+  /** Mean position of the previous span. */
+  prevCentroid: { latitude: number; longitude: number } | null;
+}
+
+export function createPositionCheck(): PositionCheck {
+  return { startedAt: null, latSum: 0, lngSum: 0, count: 0, meters: 0, prevCentroid: null };
 }
 
 export function createOdometer(): Odometer {
-  return { prev: null, anchor: null, speedReported: false };
+  return { prev: null, anchor: null, speedReported: false, check: createPositionCheck() };
 }
 
 /** How often to announce pace (seconds, 0 = off). */

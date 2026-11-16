@@ -6,7 +6,7 @@
  * `voice-clips` Storage bucket, so every later request for the same
  * phrase is a cache hit shared across all users.
  *
- * Request:  { voiceId: "coach_1", clips: [{ text, previousText?, nextText? }] }
+ * Request:  { voiceId: "coach_1", clips: [{ text, previousText?, nextText? }], clipFormat?: "stitched" }
  * Response: { clips: [{ key, url }] }   (url is null when generation failed)
  *
  * Deploy:  supabase functions deploy voice-clips
@@ -34,6 +34,14 @@ const MAX_TEXT_LENGTH = 300;
 /** ElevenLabs caps concurrent requests per plan (3 on the current plan); leave room for overlapping calls. */
 const CONCURRENCY = 2;
 const MAX_ATTEMPTS = 4;
+/**
+ * iOS builds before this speak each cue as one whole sentence, so nearly
+ * every clip they request is unique to a workout. They get cached clips
+ * only; anything missing falls back to device TTS on the phone. Older
+ * builds running an OTA update with stitched cues send clipFormat
+ * "stitched" and are treated like current builds.
+ */
+const MIN_GENERATING_IOS_BUILD = 19;
 
 /** App voice ids mapped to ElevenLabs voice ids. */
 const VOICES: Record<string, string> = {
@@ -70,6 +78,16 @@ function clipKey(clip: ClipRequest): string {
   const prev = normalize(clip.previousText);
   const next = normalize(clip.nextText);
   return prev || next ? `${text}|${prev}|${next}` : text;
+}
+
+function isLegacyIosBuild(req: Request): boolean {
+  const match = /^SplitCue\/(\d+)\b/.exec(req.headers.get("user-agent") ?? "");
+  return match != null && Number(match[1]) < MIN_GENERATING_IOS_BUILD;
+}
+
+/** Whole-sentence cues from legacy clients (including Android, whose user agent has no build). */
+function isMultiSentence(text: string): boolean {
+  return /[.!?] \S/.test(normalize(text));
 }
 
 async function sha256(input: string): Promise<string> {
@@ -134,7 +152,7 @@ Deno.serve(async (req) => {
       return json({ error: "ElevenLabs API key not configured" }, 500);
     }
 
-    const { voiceId, clips } = await req.json();
+    const { voiceId, clips, clipFormat } = await req.json();
     const elevenVoiceId = VOICES[voiceId];
     if (!elevenVoiceId) {
       return json({ error: "Unknown voiceId" }, 400);
@@ -151,6 +169,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const storage = supabase.storage.from(BUCKET);
+    const legacyClient = clipFormat !== "stitched" && isLegacyIosBuild(req);
 
     const results = await mapLimit(clips as ClipRequest[], CONCURRENCY, async (clip) => {
       const key = clipKey(clip);
@@ -163,6 +182,7 @@ Deno.serve(async (req) => {
       try {
         const { data: existing } = await storage.list(voiceId, { limit: 1, search: `${hash}.mp3` });
         if (existing && existing.length > 0) return { key, url };
+        if (legacyClient || isMultiSentence(clip.text)) return { key, url: null };
 
         const audio = await generate(elevenVoiceId, clip);
         const { error } = await storage.upload(path, audio, {

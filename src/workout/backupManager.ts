@@ -28,6 +28,8 @@ import {
   DEFAULT_SETTINGS,
 } from './workoutTypes';
 import { track } from '../analytics/track';
+import type { EncodedHeartRate } from '../heartRate/hrEncoding';
+import { loadEncodedHeartRate, saveEncodedHeartRate } from '../heartRate/hrSampleStore';
 
 // ── Backup shape ─────────────────────────────────────────────────────
 
@@ -40,6 +42,8 @@ export interface PaceCueBackup {
   workouts: WorkoutDefinition[];
   history: CompletedWorkout[];
   settings: AppSettings;
+  /** Heart rate readings by history entry ID. */
+  heartRate?: Record<string, EncodedHeartRate>;
 }
 
 // ── Export ────────────────────────────────────────────────────────────
@@ -51,6 +55,12 @@ export async function exportData(): Promise<void> {
     loadSettings(),
   ]);
 
+  const heartRate: Record<string, EncodedHeartRate> = {};
+  for (const entry of history) {
+    const encoded = entry.heartRate ? loadEncodedHeartRate(entry.id) : null;
+    if (encoded) heartRate[entry.id] = encoded;
+  }
+
   const backup: PaceCueBackup = {
     _pacecue: true,
     version: BACKUP_VERSION,
@@ -58,6 +68,7 @@ export async function exportData(): Promise<void> {
     workouts,
     history,
     settings,
+    heartRate,
   };
 
   const json = JSON.stringify(backup, null, 2);
@@ -121,6 +132,9 @@ export async function importData(): Promise<ImportResult | null> {
     }
     return entry;
   });
+  for (const [historyId, encoded] of Object.entries(backup.heartRate ?? {})) {
+    saveEncodedHeartRate(historyId, encoded);
+  }
 
   await Promise.all([
     saveWorkouts(migratedWorkouts),

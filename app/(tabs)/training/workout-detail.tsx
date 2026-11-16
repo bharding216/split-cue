@@ -26,6 +26,7 @@ import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { generateWorkoutDetails, loadCoachContext } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
+import { useShareSheet } from '../../../src/components/ShareSheet';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { useLargeText } from '../../../src/hooks/useLargeText';
 
@@ -110,6 +111,20 @@ export default function WorkoutDetailScreen() {
     setTempWorkout(workout, { planWorkoutId: planWorkout.id });
     router.push(`/workout/${workout.id}`);
   }, [workoutData, planWorkout, router]);
+
+  const { openShare, shareSheet } = useShareSheet();
+
+  const handleShare = useCallback(() => {
+    if (!workoutData || !planWorkout) return;
+    const name = workoutData.name || planWorkout.day_label || 'Training';
+    openShare({
+      kind: 'planned',
+      workout: { ...workoutData, name },
+      workoutName: name,
+      plannedDate: planWorkout.date,
+      surface: 'plan_workout_detail',
+    });
+  }, [workoutData, planWorkout, openShare]);
 
   const handleGenerateDetail = useCallback(async () => {
     if (!planWorkout || !ownerPlan) return;
@@ -304,6 +319,17 @@ export default function WorkoutDetailScreen() {
           )}
 
           <View style={[styles.secondaryRow, large && styles.secondaryRowStacked]}>
+            {workoutData && (
+              <TouchableOpacity
+                style={[styles.secondaryBtn, large && styles.secondaryBtnStacked]}
+                onPress={handleShare}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="share-outline" size={14} color={Colors.textSecondary} />
+                <Text style={styles.secondaryBtnText}>Share</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={[styles.secondaryBtn, large && styles.secondaryBtnStacked]}
               onPress={() => setShowMoveModal(true)}
@@ -324,6 +350,7 @@ export default function WorkoutDetailScreen() {
           </View>
         </View>
       )}
+      {shareSheet}
     </ScrollView>
   );
 }

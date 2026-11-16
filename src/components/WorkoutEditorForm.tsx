@@ -65,13 +65,15 @@ interface Props {
   onCancel: () => void;
   autoSave?: boolean;
   isPlanWorkout?: boolean;
+  /** Opens AI (voice/text) editing; shown in the plan workout banner. */
+  onAiEdit?: () => void;
   sessionMode?: boolean;
   onSessionChange?: (workout: WorkoutDefinition) => void;
 }
 
 const EDIT_HINT_KEY = '@pacecue/edit_hint_shown';
 
-export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, autoSave, isPlanWorkout, sessionMode, onSessionChange }: Props) {
+export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, autoSave, isPlanWorkout, onAiEdit, sessionMode, onSessionChange }: Props) {
   const [name, setName] = useState(initial.name);
   const [blocks, setBlocks] = useState<WorkoutBlock[]>(initial.blocks);
   const [targetDistance, setTargetDistance] = useState(initial.targetDistanceMeters ?? 0);
@@ -354,13 +356,28 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
 
       {isPlanWorkout && !sessionMode && (
         <View style={styles.planWorkoutHeader}>
-          <View style={styles.planWorkoutBadge}>
-            <Ionicons name="calendar-outline" size={14} color={Colors.accent} />
-            <Text style={styles.planWorkoutBadgeText}>Plan Workout</Text>
+          <View style={styles.planWorkoutHeaderText}>
+            <View style={styles.planWorkoutBadge}>
+              <Ionicons name="calendar-outline" size={14} color={Colors.accent} />
+              <Text style={styles.planWorkoutBadgeText}>Plan Workout</Text>
+            </View>
+            <Text style={styles.planWorkoutHint}>
+              Edit freely — changes won't affect your plan until you save.
+            </Text>
           </View>
-          <Text style={styles.planWorkoutHint}>
-            Edit freely — changes won't affect your plan until you save.
-          </Text>
+          {onAiEdit && (
+            <TouchableOpacity
+              style={styles.aiEditBtn}
+              onPress={onAiEdit}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Edit with AI"
+            >
+              <Ionicons name="sparkles" size={14} color={Colors.accent} />
+              <Text style={styles.aiEditBtnText}>AI</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -1669,7 +1686,10 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.sm },
   revertHeaderBtn: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, backgroundColor: Colors.surface, paddingVertical: Spacing.xs + 2, paddingHorizontal: Spacing.sm + 2, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.surfaceLight },
   revertHeaderText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textSecondary },
-  planWorkoutHeader: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: Colors.accent + '20', backgroundColor: Colors.accent + '08' },
+  planWorkoutHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: Colors.accent + '20', backgroundColor: Colors.accent + '08' },
+  planWorkoutHeaderText: { flex: 1 },
+  aiEditBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.accent + '15', paddingHorizontal: Spacing.sm + 2, paddingVertical: Spacing.xs + 2, borderRadius: BorderRadius.full },
+  aiEditBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.accent },
   planWorkoutBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: 4 },
   planWorkoutBadgeText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.accent, textTransform: 'uppercase', letterSpacing: 0.5 },
   planWorkoutHint: { fontSize: FontSize.xs, color: Colors.textMuted },
