@@ -36,6 +36,23 @@ test('isTransientEdgeError: plain message match for known flake', () => {
   );
 });
 
+test('isTransientEdgeError: name-based detection when instanceof fails (Hermes/Metro)', () => {
+  // Simulate an error with the right .name but not an actual FunctionsFetchError instance
+  const fakeErr = new Error('Failed to send a request to the Edge Function');
+  Object.defineProperty(fakeErr, 'name', { value: 'FunctionsFetchError' });
+  assert.equal(isTransientEdgeError(fakeErr), true);
+
+  const fakeRelay = new Error('Relay Error invoking the Edge Function');
+  Object.defineProperty(fakeRelay, 'name', { value: 'FunctionsRelayError' });
+  assert.equal(isTransientEdgeError(fakeRelay), true);
+
+  const fakeHttp = Object.assign(new Error('Edge Function returned a non-2xx status code'), {
+    context: { status: 503 },
+  });
+  Object.defineProperty(fakeHttp, 'name', { value: 'FunctionsHttpError' });
+  assert.equal(isTransientEdgeError(fakeHttp), true);
+});
+
 test('isTransientEdgeError: unrelated errors are not retryable', () => {
   assert.equal(isTransientEdgeError(new Error('quota exceeded')), false);
   assert.equal(isTransientEdgeError(null), false);
