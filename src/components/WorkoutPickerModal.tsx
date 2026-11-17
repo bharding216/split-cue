@@ -29,13 +29,13 @@ import {
   generateId,
 } from '../workout/workoutTypes';
 import { createPresets } from '../workout/presets';
-import { loadHistory } from '../workout/workoutStorage';
+import { loadHistory, loadWorkouts } from '../workout/workoutStorage';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import { useLargeText } from '../hooks/useLargeText';
 
 const MAX_RECENT = 8;
 
-type PickerTab = 'templates' | 'recent';
+type PickerTab = 'my_workouts' | 'templates' | 'recent';
 
 interface RecentWorkout {
   workout: WorkoutDefinition;
@@ -114,9 +114,10 @@ export function WorkoutPickerModal({
   onClose,
 }: WorkoutPickerModalProps) {
   const templates = useMemo(() => createPresets(), []);
+  const [savedWorkouts, setSavedWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recent, setRecent] = useState<RecentWorkout[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<PickerTab>('templates');
+  const [tab, setTab] = useState<PickerTab>('my_workouts');
   const [activeCategory, setActiveCategory] = useState<WorkoutCategory | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const large = useLargeText();
@@ -136,12 +137,17 @@ export function WorkoutPickerModal({
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
-    setTab('templates');
     setActiveCategory(null);
     setShowDatePicker(false);
-    loadRecentWorkouts()
-      .then(setRecent)
-      .catch(() => setRecent([]))
+    Promise.all([
+      loadWorkouts().catch(() => [] as WorkoutDefinition[]),
+      loadRecentWorkouts().catch(() => [] as RecentWorkout[]),
+    ])
+      .then(([workouts, recentRuns]) => {
+        setSavedWorkouts(workouts);
+        setRecent(recentRuns);
+        setTab(workouts.length > 0 ? 'my_workouts' : 'templates');
+      })
       .finally(() => setLoading(false));
   }, [visible]);
 
@@ -150,8 +156,17 @@ export function WorkoutPickerModal({
     [templates, activeCategory],
   );
 
+  const filteredSaved = useMemo(
+    () => (activeCategory ? savedWorkouts.filter((w) => categorizeWorkout(w) === activeCategory) : savedWorkouts),
+    [savedWorkouts, activeCategory],
+  );
+
   const listData: { workout: WorkoutDefinition; completedAt?: number }[] =
-    tab === 'recent' ? recent : filteredTemplates.map((workout) => ({ workout }));
+    tab === 'my_workouts'
+      ? filteredSaved.map((workout) => ({ workout }))
+      : tab === 'recent'
+        ? recent
+        : filteredTemplates.map((workout) => ({ workout }));
 
   const handleCategoryToggle = (cat: WorkoutCategory) => {
     setActiveCategory((prev) => (prev === cat ? null : cat));
@@ -223,13 +238,14 @@ export function WorkoutPickerModal({
             </View>
           ) : (
             <>
-              {/* Templates / Recent toggle — only when there is history to show */}
-              {recent.length > 0 && (
+              {/* Tab toggle — My Workouts / Templates / Recent */}
+              {(savedWorkouts.length > 0 || recent.length > 0) && (
                 <View style={styles.tabRow}>
                   {([
-                    { key: 'templates', label: 'Templates' },
-                    { key: 'recent', label: 'Recent' },
-                  ] as const).map((t) => {
+                    ...(savedWorkouts.length > 0 ? [{ key: 'my_workouts' as const, label: 'My Workouts' }] : []),
+                    { key: 'templates' as const, label: 'Templates' },
+                    ...(recent.length > 0 ? [{ key: 'recent' as const, label: 'Recent' }] : []),
+                  ]).map((t) => {
                     const isActive = tab === t.key;
                     return (
                       <TouchableOpacity
@@ -248,7 +264,7 @@ export function WorkoutPickerModal({
               )}
 
               {/* Category filter chips */}
-              {tab === 'templates' && (
+              {(tab === 'templates' || tab === 'my_workouts') && (
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -289,7 +305,7 @@ export function WorkoutPickerModal({
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
                 ListHeaderComponent={
-                  tab === 'templates' && !activeCategory ? (
+                  (tab === 'templates' || tab === 'my_workouts') && !activeCategory ? (
                     <>
                       {/* Voice workout builder */}
                       {onVoiceBuilder && (
@@ -333,7 +349,13 @@ export function WorkoutPickerModal({
                 ListEmptyComponent={
                   <View style={styles.emptyContainer}>
                     <Ionicons name="search-outline" size={32} color={Colors.textMuted} />
-                    <Text style={styles.emptyText}>No templates in this category</Text>
+                    <Text style={styles.emptyText}>
+                      {tab === 'my_workouts'
+                        ? activeCategory
+                          ? 'No saved workouts in this category'
+                          : 'No saved workouts yet'
+                        : 'No templates in this category'}
+                    </Text>
                   </View>
                 }
                 renderItem={({ item: { workout, completedAt } }) => {
