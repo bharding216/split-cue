@@ -1166,6 +1166,7 @@ returns table(
   sharers int,
   with_image int,
   opens int,
+  app_opens int,
   store_clicks int,
   imports int,
   deferred_installs int,
@@ -1191,6 +1192,7 @@ returns table(
     count(distinct s.sharer)::int as sharers,
     count(distinct s.code) filter (where s.image_path is not null)::int as with_image,
     count(ev.*) filter (where ev.event_type = 'open')::int as opens,
+    count(ev.*) filter (where ev.event_type = 'app_open')::int as app_opens,
     count(ev.*) filter (where ev.event_type = 'store_click')::int as store_clicks,
     count(ev.*) filter (where ev.event_type = 'import')::int as imports,
     count(distinct ev.anonymous_id) filter (where ev.event_type = 'import' and ev.referrer = 'deferred')::int

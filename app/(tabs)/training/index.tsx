@@ -139,7 +139,6 @@ export default function TrainingScreen() {
   const [moveTarget, setMoveTarget] = useState<{ id: string; date: string; label: string } | null>(null);
   const [heroCollapsed, setHeroCollapsed] = useState(false);
   const [coachCollapsed, setCoachCollapsed] = useState(false);
-  const returnToPickerDate = useRef<string | null>(null);
 
   // Arriving from the post-run suggestion or a run reminder: jump to the day
   // and call out the workout.
@@ -199,10 +198,6 @@ export default function TrainingScreen() {
   useFocusEffect(
     useCallback(() => {
       refresh();
-      if (returnToPickerDate.current) {
-        setPickerDate(returnToPickerDate.current);
-        returnToPickerDate.current = null;
-      }
       const request = consumeCalendarRequest();
       if (request) {
         focusDay(request.date, request.highlightId, request.from ?? 'home', request.highlightRunId);
@@ -427,10 +422,10 @@ export default function TrainingScreen() {
   }, [user, voiceDate, ensurePlan, refresh]);
 
   const handleCreateNewForPlan = useCallback(() => {
-    returnToPickerDate.current = pickerDate;
     track('training_create_new_tapped', { date: pickerDate });
+    const date = pickerDate;
     setPickerDate(null);
-    router.push(`/workout/new?addToDate=${returnToPickerDate.current}` as any);
+    router.push(`/workout/new?addToDate=${date}` as any);
   }, [pickerDate, router]);
 
   const handleWorkoutPicked = useCallback(async (workout: WorkoutDefinition) => {

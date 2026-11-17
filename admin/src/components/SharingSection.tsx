@@ -8,7 +8,7 @@ const TYPE_LABELS: Record<string, string> = {
   results: 'Result',
   challenge: 'Challenge',
   achievement: 'Achievement',
-  unknown: 'Unknown',
+  unknown: 'Untagged (old builds)',
 };
 
 function percent(part: number, whole: number): number {
@@ -34,7 +34,7 @@ export default function SharingSection({ data, days }: { data: ShareFunnelRow[];
           label="Open → Install"
           value={percent(all?.deferred_installs ?? 0, all?.opens ?? 0)}
           format="percent"
-          detail={`${all?.deferred_installs ?? 0} installs from ${all?.opens ?? 0} link opens`}
+          detail={`${all?.deferred_installs ?? 0} installs from ${all?.opens ?? 0} landing page opens`}
         />
         <StatCard
           label="Activated Runners"
@@ -51,10 +51,11 @@ export default function SharingSection({ data, days }: { data: ShareFunnelRow[];
         <CountBars
           title="Share Funnel"
           subtitle={`Links created in the last ${days} days`}
-          description="Opens are people on the landing page (link preview bots excluded). Installs are first launches that picked up a share link."
+          description="App opens are links opened directly via Universal Links / App Links (recipient already has the app). Landing page opens are people who hit the web page. Both are real opens — most recipients already have the app."
           mode="funnel"
           rows={[
-            { label: 'Link opens', count: all?.opens ?? 0 },
+            { label: 'Opened in app', count: all?.app_opens ?? 0 },
+            { label: 'Landing page opens', count: all?.opens ?? 0 },
             { label: 'Store taps', count: all?.store_clicks ?? 0 },
             { label: 'Installs from a link', count: all?.deferred_installs ?? 0 },
             { label: 'Imports', count: all?.imports ?? 0 },

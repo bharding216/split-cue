@@ -475,6 +475,7 @@ export interface ShareFunnelRow {
   sharers: number;
   with_image: number;
   opens: number;
+  app_opens: number;
   store_clicks: number;
   imports: number;
   deferred_installs: number;
