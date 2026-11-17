@@ -73,37 +73,62 @@ export default function TrainingCalendarSection({ stats, daily, days }: Props) {
         {daily.length === 0 ? (
           <p className="text-sm text-gray-600">No data yet.</p>
         ) : (
-          <div className="flex items-end gap-px" style={{ height: 120 }}>
-            {daily.map((d) => {
-              const vH = (d.viewers / maxY) * 100;
-              const aH = (d.added / maxY) * 100;
-              const sH = (d.started / maxY) * 100;
-              return (
-                <div
-                  key={d.date}
-                  className="group relative flex flex-1 items-end justify-center gap-px"
-                  style={{ height: '100%' }}
-                >
+          <div>
+            {/* Bars */}
+            <div className="flex items-end gap-px" style={{ height: 120 }}>
+              {daily.map((d) => {
+                const vH = (d.viewers / maxY) * 100;
+                const aH = (d.added / maxY) * 100;
+                const sH = (d.started / maxY) * 100;
+                return (
                   <div
-                    className="w-1 rounded-t bg-blue-400/70"
-                    style={{ height: `${Math.max(vH, 1)}%` }}
-                  />
-                  <div
-                    className="w-1 rounded-t bg-emerald-400/70"
-                    style={{ height: `${Math.max(aH, 0.5)}%` }}
-                  />
-                  <div
-                    className="w-1 rounded-t bg-amber-400/70"
-                    style={{ height: `${Math.max(sH, 0.5)}%` }}
-                  />
-                  {/* Tooltip */}
-                  <div className="pointer-events-none absolute -top-14 left-1/2 z-10 hidden -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 shadow group-hover:block whitespace-nowrap">
-                    <div className="font-medium">{d.date}</div>
-                    <div>{d.viewers} view · {d.added} add · {d.started} start</div>
+                    key={d.date}
+                    className="group relative flex flex-1 items-end justify-center gap-px"
+                    style={{ height: '100%' }}
+                  >
+                    <div
+                      className="w-1 rounded-t bg-blue-400/70"
+                      style={{ height: `${Math.max(vH, 1)}%` }}
+                    />
+                    <div
+                      className="w-1 rounded-t bg-emerald-400/70"
+                      style={{ height: `${Math.max(aH, 0.5)}%` }}
+                    />
+                    <div
+                      className="w-1 rounded-t bg-amber-400/70"
+                      style={{ height: `${Math.max(sH, 0.5)}%` }}
+                    />
+                    {/* Tooltip */}
+                    <div className="pointer-events-none absolute -top-14 left-1/2 z-10 hidden -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 shadow group-hover:block whitespace-nowrap">
+                      <div className="font-medium">{d.date}</div>
+                      <div>{d.viewers} view · {d.added} add · {d.started} start</div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {/* X-axis date labels */}
+            <div className="mt-1.5 flex gap-px">
+              {daily.map((d, i) => {
+                const step = daily.length <= 14 ? 2 : 7;
+                const show =
+                  i === 0 ||
+                  i === daily.length - 1 ||
+                  i % step === 0;
+                const parts = d.date.split('-');
+                const label = `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+                return (
+                  <div key={d.date} className="flex-1 text-center">
+                    {show ? (
+                      <span className="text-[10px] leading-none text-gray-500">
+                        {label}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>
