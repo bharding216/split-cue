@@ -66,9 +66,8 @@ import type { ChallengeType, SharedResult } from '../workout/workoutTypes';
 import { ShareCard, type ShareCardVariant } from './ShareCard';
 
 const VARIANT_LABELS: Record<ShareCardVariant, string> = {
-  performance: 'Stats',
+  paceprint: 'Paceprint',
   route: 'Route',
-  intervals: 'Intervals',
   achievement: 'Milestone',
 };
 
@@ -145,11 +144,10 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     if (!request) return [];
     const list: ShareCardVariant[] = [];
     if (request.achievement) list.push('achievement');
-    list.push('performance');
-    if (showResult && consistency) list.push('intervals');
+    list.push('paceprint');
     if (showResult && hasRoute) list.push('route');
     return list;
-  }, [request, showResult, consistency, hasRoute]);
+  }, [request, showResult, hasRoute]);
 
   // Replies keep the original challenge's type; new challenges default to consistency when it can be scored.
   const challengeTypes: ChallengeType[] =
@@ -165,9 +163,7 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
   const [pickedVariant, setPickedVariant] = useState<ShareCardVariant | null>(null);
   const defaultVariant: ShareCardVariant = request?.achievement
     ? 'achievement'
-    : challengeType === 'consistency' && consistency
-      ? 'intervals'
-      : 'performance';
+    : 'paceprint';
   const variant: ShareCardVariant =
     pickedVariant && variants.includes(pickedVariant) ? pickedVariant : defaultVariant;
 
@@ -397,7 +393,6 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
                 onChange={(t) => {
                   hapticTap();
                   setPickedChallengeType(t);
-                  if (t === 'consistency') setPickedVariant('intervals');
                 }}
               />
             )}

@@ -11,6 +11,7 @@ import {
   ChallengeType,
   SharedFrom,
   SharedResult,
+  categorizeWorkout,
   flattenWorkout,
   formatTime,
   defaultSegmentLabel,
@@ -18,6 +19,7 @@ import {
 import type { PaceUnit } from '../pace/paceTypes';
 import { formatDistance, formatPace, metersPerUnit, paceSuffix } from '../units/format';
 import { computeIntervalConsistency } from '../stats/intervalConsistency';
+import { generatePaceprint, paceprintToEmoji } from './paceprint';
 
 export type ShareKind = 'structure' | 'planned' | 'results' | 'challenge' | 'achievement';
 
@@ -273,9 +275,19 @@ export function defaultCaption(subject: ShareSubject, options: ShareTextOptions,
   }
 }
 
-/** The message after the caption: workout structure, plus splits when included. */
+/** The message after the caption: emoji paceprint, workout structure, plus splits when included. */
 export function composeShareBody(subject: ShareSubject, options: ShareTextOptions, unit: PaceUnit): string {
   const sections: string[] = [];
+
+  // Emoji paceprint: a compact row of colored squares encoding the run.
+  if (options.includeResult && subject.run && subject.run.totalDurationMs > 0) {
+    const category = subject.workout ? categorizeWorkout(subject.workout) : 'other';
+    const data = generatePaceprint(subject.run, category);
+    if (data.cells.length > 1) {
+      sections.push(paceprintToEmoji(data));
+    }
+  }
+
   if (subject.workout && subject.workout.blocks.length > 0) {
     sections.push([formatWorkoutSummary(subject.workout), ...describeWorkoutBlocks(subject.workout, unit)].join('\n'));
   }
