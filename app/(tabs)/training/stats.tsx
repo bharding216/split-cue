@@ -3,9 +3,15 @@ import { View, Text, ScrollView, StyleSheet, useWindowDimensions } from 'react-n
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { computeStats } from '../../../src/stats/personalRecords';
-import type { StatsSnapshot } from '../../../src/stats/personalRecords';
+import type { StatsSnapshot, PersonalRecord, AwardBadge } from '../../../src/stats/personalRecords';
 import { RecordsGrid, AwardsList, LifetimeStats } from '../../../src/components/PersonalBests';
 import { ProgressChart } from '../../../src/components/ProgressChart';
+import { useShareSheet } from '../../../src/components/ShareSheet';
+import {
+  achievementFromRecord,
+  achievementFromAward,
+  achievementFromLifetime,
+} from '../../../src/stats/achievementMoment';
 import { Colors, Spacing, FontSize, MaxFontScale } from '../../../src/constants/theme';
 import { useUnits } from '../../../src/hooks/useUnits';
 import { METERS_PER_MILE } from '../../../src/workout/workoutTypes';
@@ -21,11 +27,56 @@ export default function StatsScreen() {
   const { history } = useTrainingPlan();
   const paceUnit = useUnits();
   const { width: screenWidth } = useWindowDimensions();
+  const { openShare, shareSheet } = useShareSheet();
 
   const stats = useMemo<StatsSnapshot | null>(() => {
     if (history.length === 0) return null;
     return computeStats(history, paceUnit);
   }, [history, paceUnit]);
+
+  const totals = useMemo(
+    () => ({
+      workouts: stats?.totalWorkouts ?? 0,
+      distanceMeters: stats?.totalDistanceMeters ?? 0,
+    }),
+    [stats],
+  );
+
+  const handleShareRecord = useCallback(
+    (record: PersonalRecord) => {
+      openShare({
+        kind: 'achievement',
+        workout: null,
+        workoutName: record.workoutName,
+        achievement: achievementFromRecord(record, totals, paceUnit),
+        surface: 'stats_record',
+      });
+    },
+    [openShare, totals, paceUnit],
+  );
+
+  const handleShareAward = useCallback(
+    (award: AwardBadge) => {
+      openShare({
+        kind: 'achievement',
+        workout: null,
+        workoutName: award.label,
+        achievement: achievementFromAward(award, totals, paceUnit),
+        surface: 'stats_award',
+      });
+    },
+    [openShare, totals, paceUnit],
+  );
+
+  const handleShareLifetime = useCallback(() => {
+    openShare({
+      kind: 'achievement',
+      workout: null,
+      workoutName: 'My Running Stats',
+      achievement: achievementFromLifetime(totals, paceUnit),
+      surface: 'stats_lifetime',
+    });
+  }, [openShare, totals, paceUnit]);
 
   const chartWidth = Math.min(320, screenWidth - Spacing.md * 2);
 
@@ -55,44 +106,48 @@ export default function StatsScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <LifetimeStats
-        totalWorkouts={stats.totalWorkouts}
-        totalDistanceMeters={stats.totalDistanceMeters}
-        totalDurationMs={stats.totalDurationMs}
-      />
-      <RecordsGrid records={stats.records} />
-      <AwardsList awards={stats.awards} />
-      <View style={styles.chartsSection}>
-        <Text style={styles.chartsSectionTitle}>Progress Over Time</Text>
-        <ProgressChart
-          data={stats.paceTrend}
-          title={`Pace (${paceUnitLabel(paceUnit)})`}
-          formatValue={formatPaceForChart}
-          lowerIsBetter
-          width={chartWidth}
-          color={Colors.primary}
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <LifetimeStats
+          totalWorkouts={stats.totalWorkouts}
+          totalDistanceMeters={stats.totalDistanceMeters}
+          totalDurationMs={stats.totalDurationMs}
+          onShare={handleShareLifetime}
         />
-        <ProgressChart
-          data={stats.distanceTrend}
-          title={`Distance (${distanceUnitName(paceUnit).toLowerCase()})`}
-          formatValue={formatDistForChart}
-          width={chartWidth}
-          color={Colors.accent}
-        />
-        <ProgressChart
-          data={stats.durationTrend}
-          title="Duration (minutes)"
-          formatValue={formatDurForChart}
-          width={chartWidth}
-          color={Colors.warning}
-        />
-      </View>
-    </ScrollView>
+        <RecordsGrid records={stats.records} onShareRecord={handleShareRecord} />
+        <AwardsList awards={stats.awards} onShareAward={handleShareAward} />
+        <View style={styles.chartsSection}>
+          <Text style={styles.chartsSectionTitle}>Progress Over Time</Text>
+          <ProgressChart
+            data={stats.paceTrend}
+            title={`Pace (${paceUnitLabel(paceUnit)})`}
+            formatValue={formatPaceForChart}
+            lowerIsBetter
+            width={chartWidth}
+            color={Colors.primary}
+          />
+          <ProgressChart
+            data={stats.distanceTrend}
+            title={`Distance (${distanceUnitName(paceUnit).toLowerCase()})`}
+            formatValue={formatDistForChart}
+            width={chartWidth}
+            color={Colors.accent}
+          />
+          <ProgressChart
+            data={stats.durationTrend}
+            title="Duration (minutes)"
+            formatValue={formatDurForChart}
+            width={chartWidth}
+            color={Colors.warning}
+          />
+        </View>
+      </ScrollView>
+      {shareSheet}
+    </>
   );
 }
 

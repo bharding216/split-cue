@@ -9,7 +9,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -22,6 +22,7 @@ import type { PersonalRecord, AwardBadge } from '../stats/personalRecords';
 import { useUnits } from '../hooks/useUnits';
 import { useLargeText } from '../hooks/useLargeText';
 import { distanceUnitName, toDisplayDistance } from '../units/format';
+import { hapticTap } from '../audio/haptics';
 
 // ── Tier colors ──────────────────────────────────────────────────────
 
@@ -35,9 +36,10 @@ const TIER_COLORS = {
 
 interface RecordsGridProps {
   records: PersonalRecord[];
+  onShareRecord?: (record: PersonalRecord) => void;
 }
 
-export function RecordsGrid({ records }: RecordsGridProps) {
+export function RecordsGrid({ records, onShareRecord }: RecordsGridProps) {
   const large = useLargeText();
 
   if (records.length === 0) return null;
@@ -50,13 +52,29 @@ export function RecordsGrid({ records }: RecordsGridProps) {
       </View>
       <View style={gridStyles.grid}>
         {records.map((record) => (
-          <View key={record.category} style={[gridStyles.card, large && gridStyles.cardLarge]}>
-            <Ionicons
-              name={record.icon as any}
-              size={20}
-              color={Colors.primary}
-              style={gridStyles.cardIcon}
-            />
+          <TouchableOpacity
+            key={record.category}
+            style={[gridStyles.card, large && gridStyles.cardLarge]}
+            activeOpacity={onShareRecord ? 0.7 : 1}
+            onPress={() => {
+              if (!onShareRecord) return;
+              hapticTap();
+              onShareRecord(record);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${record.label}`}
+          >
+            <View style={gridStyles.cardTop}>
+              <Ionicons
+                name={record.icon as any}
+                size={20}
+                color={Colors.primary}
+                style={gridStyles.cardIcon}
+              />
+              {onShareRecord ? (
+                <Ionicons name="share-outline" size={16} color={Colors.textMuted} />
+              ) : null}
+            </View>
             <Text style={gridStyles.cardLabel} numberOfLines={large ? undefined : 1}>
               {record.label}
             </Text>
@@ -71,7 +89,7 @@ export function RecordsGrid({ records }: RecordsGridProps) {
             <Text style={gridStyles.cardDate} numberOfLines={large ? undefined : 1}>
               {record.workoutName}
             </Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -109,6 +127,11 @@ const gridStyles = StyleSheet.create({
   },
   cardLarge: {
     width: '100%',
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cardIcon: {
     marginBottom: Spacing.xs,
@@ -149,33 +172,47 @@ const gridStyles = StyleSheet.create({
 
 interface AwardsListProps {
   awards: AwardBadge[];
+  onShareAward?: (award: AwardBadge) => void;
 }
 
-export function AwardsList({ awards }: AwardsListProps) {
+export function AwardsList({ awards, onShareAward }: AwardsListProps) {
   const large = useLargeText();
 
   if (awards.length === 0) return null;
 
   const badges = awards.map((award) => (
-    <View
+    <TouchableOpacity
       key={award.id}
       style={[
         awardStyles.badge,
         large && awardStyles.badgeLarge,
         { borderColor: TIER_COLORS[award.tier] + '66' },
       ]}
+      activeOpacity={onShareAward ? 0.7 : 1}
+      onPress={() => {
+        if (!onShareAward) return;
+        hapticTap();
+        onShareAward(award);
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`Share ${award.label}`}
     >
-      <View
-        style={[
-          awardStyles.iconCircle,
-          { backgroundColor: TIER_COLORS[award.tier] + '22' },
-        ]}
-      >
-        <Ionicons
-          name={award.icon as any}
-          size={18}
-          color={TIER_COLORS[award.tier]}
-        />
+      <View style={awardStyles.badgeTop}>
+        <View
+          style={[
+            awardStyles.iconCircle,
+            { backgroundColor: TIER_COLORS[award.tier] + '22' },
+          ]}
+        >
+          <Ionicons
+            name={award.icon as any}
+            size={18}
+            color={TIER_COLORS[award.tier]}
+          />
+        </View>
+        {onShareAward ? (
+          <Ionicons name="share-outline" size={14} color={Colors.textMuted} />
+        ) : null}
       </View>
       <Text style={awardStyles.badgeLabel} numberOfLines={large ? undefined : 1}>
         {award.label}
@@ -189,7 +226,7 @@ export function AwardsList({ awards }: AwardsListProps) {
           day: 'numeric',
         })}
       </Text>
-    </View>
+    </TouchableOpacity>
   ));
 
   return (
@@ -245,6 +282,11 @@ const awardStyles = StyleSheet.create({
   },
   list: {
     gap: Spacing.sm,
+  },
+  badgeTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   badge: {
     width: 140,
@@ -513,12 +555,14 @@ interface LifetimeStatsProps {
   totalWorkouts: number;
   totalDistanceMeters: number;
   totalDurationMs: number;
+  onShare?: () => void;
 }
 
 export function LifetimeStats({
   totalWorkouts,
   totalDistanceMeters,
   totalDurationMs,
+  onShare,
 }: LifetimeStatsProps) {
   const unit = useUnits();
   const large = useLargeText();
@@ -526,25 +570,42 @@ export function LifetimeStats({
   const hours = totalDurationMs / 3600000;
 
   return (
-    <View style={[lifeStyles.container, large && lifeStyles.containerLarge]}>
-      <StatPill
-        icon="footsteps-outline"
-        label="Workouts"
-        value={totalWorkouts.toString()}
-        large={large}
-      />
-      <StatPill
-        icon="map-outline"
-        label={distanceUnitName(unit)}
-        value={distance >= 100 ? Math.round(distance).toString() : distance.toFixed(1)}
-        large={large}
-      />
-      <StatPill
-        icon="time-outline"
-        label="Hours"
-        value={hours >= 10 ? Math.round(hours).toString() : hours.toFixed(1)}
-        large={large}
-      />
+    <View>
+      {onShare ? (
+        <TouchableOpacity
+          style={lifeStyles.shareRow}
+          onPress={() => {
+            hapticTap();
+            onShare();
+          }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Share my stats"
+        >
+          <Ionicons name="share-outline" size={16} color={Colors.primary} />
+          <Text style={lifeStyles.shareText}>Share My Stats</Text>
+        </TouchableOpacity>
+      ) : null}
+      <View style={[lifeStyles.container, large && lifeStyles.containerLarge]}>
+        <StatPill
+          icon="footsteps-outline"
+          label="Workouts"
+          value={totalWorkouts.toString()}
+          large={large}
+        />
+        <StatPill
+          icon="map-outline"
+          label={distanceUnitName(unit)}
+          value={distance >= 100 ? Math.round(distance).toString() : distance.toFixed(1)}
+          large={large}
+        />
+        <StatPill
+          icon="time-outline"
+          label="Hours"
+          value={hours >= 10 ? Math.round(hours).toString() : hours.toFixed(1)}
+          large={large}
+        />
+      </View>
     </View>
   );
 }
@@ -572,6 +633,23 @@ function StatPill({
 }
 
 const lifeStyles = StyleSheet.create({
+  shareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: Spacing.xs,
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.primary + '14',
+  },
+  shareText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.primary,
+    letterSpacing: 0.3,
+  },
   container: {
     flexDirection: 'row',
     gap: Spacing.sm,

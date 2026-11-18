@@ -29,7 +29,7 @@ function isCelebrated(award: AwardBadge): boolean {
 }
 
 /** The big number and label for an award, e.g. "20" / "Workouts Completed". */
-function awardHeadline(award: AwardBadge): { value: string; label: string } {
+export function awardHeadline(award: AwardBadge): { value: string; label: string } {
   const count = award.id.match(/^count_(\d+)$/);
   if (count) return { value: count[1], label: 'Workouts Completed' };
   if (award.id === 'dist_marathon') return { value: '26.2', label: 'Miles Logged' };
@@ -101,6 +101,58 @@ export function pickAchievementMoment({
     label,
     value,
     message: MILESTONE_MESSAGE,
+    totals: totalsFor(totals, unit),
+  };
+}
+
+// ── Standalone builders (Stats page) ─────────────────────────────────
+
+/** Build an AchievementMoment from a personal record, for sharing from the stats page. */
+export function achievementFromRecord(
+  record: PersonalRecord,
+  totals: LifetimeTotals,
+  unit: PaceUnit,
+): AchievementMoment {
+  return {
+    id: record.category,
+    kicker: 'Personal Record',
+    label: record.label,
+    value: record.displayValue + (record.unit ?? ''),
+    message: PR_MESSAGE,
+    totals: totalsFor(totals, unit),
+  };
+}
+
+/** Build an AchievementMoment from an award badge, for sharing from the stats page. */
+export function achievementFromAward(
+  award: AwardBadge,
+  totals: LifetimeTotals,
+  unit: PaceUnit,
+): AchievementMoment {
+  const { value, label } = awardHeadline(award);
+  return {
+    id: award.id,
+    kicker: 'Milestone',
+    label,
+    value,
+    message: MILESTONE_MESSAGE,
+    totals: totalsFor(totals, unit),
+  };
+}
+
+/** Build an AchievementMoment for lifetime stats, picking the most impressive headline. */
+export function achievementFromLifetime(
+  totals: LifetimeTotals,
+  unit: PaceUnit,
+): AchievementMoment {
+  const distance = formatDistance(totals.distanceMeters, unit);
+  const useDistance = totals.distanceMeters > 0;
+  return {
+    id: 'lifetime_stats',
+    kicker: 'My Running Journey',
+    label: useDistance ? 'Logged' : 'Workouts Completed',
+    value: useDistance ? distance : totals.workouts.toLocaleString(),
+    message: "Every mile counts. Here's where I am so far.",
     totals: totalsFor(totals, unit),
   };
 }
