@@ -47,6 +47,7 @@ import { track } from '../../../src/analytics/track';
 import { consumeCalendarRequest, type CalendarHighlightSource } from '../../../src/navigation/calendarFocus';
 import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
+import { VoicePlanAdjustSheet } from '../../../src/components/VoicePlanAdjustSheet';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
@@ -112,7 +113,7 @@ export default function TrainingScreen() {
   const startPlanCreation = useStartPlanCreation();
   const large = useLargeText();
   const { user } = useAuth();
-  const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refreshing, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
+  const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refreshing, refresh, ensurePlan, removeWorkout, moveWorkout, detailFill, dismissDetailFill } = useTrainingPlan();
 
   // Include all "real" training plans: non-custom race plans, plus custom-distance
   // plans created through the setup wizard (which have an outline). Exclude the
@@ -136,6 +137,7 @@ export default function TrainingScreen() {
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [pickerDate, setPickerDate] = useState<string | null>(null);
   const [voiceDate, setVoiceDate] = useState<string | null>(null);
+  const [showReviewSheet, setShowReviewSheet] = useState(false);
   const [aiContext, setAiContext] = useState<AIContext | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ id: string; date: string; label: string } | null>(null);
   const [heroCollapsed, setHeroCollapsed] = useState(false);
@@ -471,7 +473,7 @@ export default function TrainingScreen() {
               >
                 <View style={styles.coachCollapsedLeft}>
                   <Ionicons name="sparkles" size={18} color={Colors.accent} />
-                  <Text style={styles.coachCollapsedText}>Meet Your AI Running Coach</Text>
+                  <Text style={styles.coachCollapsedText}>Train to Be Your Fastest Self</Text>
                 </View>
                 <Ionicons name="chevron-down" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
@@ -483,16 +485,16 @@ export default function TrainingScreen() {
                   </View>
                   <Text style={styles.coachBadge}>AI-Powered</Text>
                 </View>
-                <Text style={styles.coachTitle}>Meet Your AI Running Coach</Text>
+                <Text style={styles.coachTitle}>Train to Be Your Fastest Self</Text>
                 <Text style={styles.coachDesc}>
-                  Chat with our AI coach to set your goals, dial in your preferences, and get a personalized training plan built just for you.
+                  Whether you're chasing a PR or just want to run stronger, your AI coach builds a plan that adapts as you train.
                 </Text>
                 <View style={styles.coachFeatures}>
                   {[
-                    { icon: 'chatbubbles-outline' as const, text: 'Chat naturally about your goals' },
-                    { icon: 'body-outline' as const, text: 'Personalized to your fitness level' },
-                    { icon: 'calendar-outline' as const, text: 'Full training plans for any race' },
-                    { icon: 'refresh-outline' as const, text: 'Adjust your plan anytime via chat' },
+                    { icon: 'trophy-outline' as const, text: 'Race goals or general fitness — your call' },
+                    { icon: 'body-outline' as const, text: 'Workouts matched to your fitness level' },
+                    { icon: 'calendar-outline' as const, text: 'Every run planned around your schedule' },
+                    { icon: 'refresh-outline' as const, text: 'Plan adjusts after each workout' },
                   ].map((f) => (
                     <View key={f.text} style={styles.coachFeatureRow}>
                       <Ionicons name={f.icon} size={16} color={Colors.primary} />
@@ -507,7 +509,7 @@ export default function TrainingScreen() {
                     activeOpacity={0.8}
                   >
                     <Ionicons name="sparkles" size={18} color={Colors.black} />
-                    <Text style={styles.coachCtaText}>Get My Plan</Text>
+                    <Text style={styles.coachCtaText}>Start Training</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.coachLaterBtn, large && styles.fullRowBtn]}
@@ -530,7 +532,7 @@ export default function TrainingScreen() {
               >
                 <View style={styles.heroCollapsedLeft}>
                   <Ionicons name="fitness-outline" size={18} color={Colors.primary} />
-                  <Text style={styles.heroCollapsedText}>Create a Training Plan</Text>
+                  <Text style={styles.heroCollapsedText}>Build a Training Plan</Text>
                 </View>
                 <Ionicons name="chevron-down" size={16} color={Colors.textMuted} />
               </TouchableOpacity>
@@ -541,7 +543,7 @@ export default function TrainingScreen() {
                 </View>
                 <Text style={styles.noPlanTitle}>Train toward something great.</Text>
                 <Text style={styles.noPlanDesc}>
-                  Whether you're running your first 5K or chasing a new PR, SplitCue can build a training plan around your goals and schedule.
+                  Racing, getting faster, or just running more consistently — SplitCue builds a training plan around whatever you're working toward.
                 </Text>
                 <TouchableOpacity
                   style={styles.createPlanBtn}
@@ -549,7 +551,7 @@ export default function TrainingScreen() {
                   activeOpacity={0.8}
                 >
                   <Ionicons name="sparkles" size={18} color={Colors.black} />
-                  <Text style={styles.createPlanBtnText}>Create Training Plan</Text>
+                  <Text style={styles.createPlanBtnText}>Build My Training Plan</Text>
                 </TouchableOpacity>
 
                 {archivedPlans.length > 0 && (
@@ -637,6 +639,17 @@ export default function TrainingScreen() {
                 </TouchableOpacity>
 
                 <RunReviewCard placement="training" />
+
+                {/* Review my plan button */}
+                <TouchableOpacity
+                  style={styles.reviewPlanBtn}
+                  onPress={() => { setShowReviewSheet(true); track('review_plan_tapped'); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.accent} />
+                  <Text style={styles.reviewPlanText}>Review my plan</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+                </TouchableOpacity>
               </>
             )
           )}
@@ -658,7 +671,7 @@ export default function TrainingScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons name="add-circle-outline" size={18} color={Colors.accent} />
-                <Text style={styles.addPlanBannerText} numberOfLines={large ? undefined : 1}>Add Plan</Text>
+                <Text style={styles.addPlanBannerText} numberOfLines={large ? undefined : 1}>New Goal</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -680,6 +693,22 @@ export default function TrainingScreen() {
               <Ionicons name="stats-chart" size={18} color={Colors.primary} />
             </TouchableOpacity>
           </View>
+
+          {/* Detail-fill banner — shown after rolling planner fills in upcoming workouts */}
+          {detailFill && detailFill.count > 0 && (
+            <View style={styles.detailFillBanner}>
+              <Ionicons name="sparkles" size={14} color={Colors.accent} />
+              <Text style={styles.detailFillText}>
+                Your AI coach detailed{' '}
+                <Text style={styles.detailFillBold}>
+                  {detailFill.count} upcoming workout{detailFill.count !== 1 ? 's' : ''}
+                </Text>
+              </Text>
+              <TouchableOpacity onPress={dismissDetailFill} hitSlop={12} accessibilityLabel="Dismiss">
+                <Ionicons name="close" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Calendar */}
           <TrainingCalendar
@@ -766,6 +795,17 @@ export default function TrainingScreen() {
           aiContext={aiContext}
           onAccept={handleVoiceWorkoutAccepted}
           onClose={handleVoiceClose}
+        />
+      )}
+
+      {/* Review my plan sheet */}
+      {showReviewSheet && primaryPlan && (
+        <VoicePlanAdjustSheet
+          visible
+          plan={primaryPlan}
+          planWorkouts={planWorkouts}
+          onClose={() => setShowReviewSheet(false)}
+          onApplied={() => { setShowReviewSheet(false); refresh(); }}
         />
       )}
 
@@ -1010,6 +1050,47 @@ const styles = StyleSheet.create({
   planMetaText: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
+  },
+
+  // ─── Review my plan button ───
+  reviewPlanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
+  },
+  reviewPlanText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+
+  // ─── Detail-fill banner ───
+  detailFillBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.accent + '14',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  detailFillText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+  },
+  detailFillBold: {
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
 
   // ─── Add plan banner ───

@@ -799,7 +799,7 @@ export default function PlanSetupScreen() {
     >
       {/* Step progress bar */}
       <View style={styles.wizardHeader}>
-        <Text style={styles.wizardTitle}>Create Your Plan</Text>
+        <Text style={styles.wizardTitle}>Build Your Training Plan</Text>
         <Text style={styles.wizardStep}>Step {step} of {totalSteps}</Text>
       </View>
       <View style={styles.wizardProgressTrack}>

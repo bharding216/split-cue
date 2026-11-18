@@ -15,6 +15,8 @@ import { useLargeText } from '../hooks/useLargeText';
 interface TodayWorkoutCardProps {
   planWorkout: PlanWorkout;
   onView: () => void;
+  /** True when this workout was just detailed by the rolling planner this session. */
+  freshlyDetailed?: boolean;
 }
 
 function estimateDuration(pw: PlanWorkout): string | null {
@@ -37,7 +39,7 @@ function getIntensityTag(label: string | null): { text: string; color: string } 
   return null;
 }
 
-export function TodayWorkoutCard({ planWorkout, onView }: TodayWorkoutCardProps) {
+export function TodayWorkoutCard({ planWorkout, onView, freshlyDetailed }: TodayWorkoutCardProps) {
   const large = useLargeText();
   const isRest = planWorkout.day_label?.toLowerCase().includes('rest');
   const isCompleted = planWorkout.status === 'completed';
@@ -106,6 +108,15 @@ export function TodayWorkoutCard({ planWorkout, onView }: TodayWorkoutCardProps)
           <Ionicons name="sparkles-outline" size={14} color={Colors.accent} />
           <Text style={styles.pendingText}>
             Your AI coach is preparing today's workout details…
+          </Text>
+        </View>
+      )}
+
+      {workoutData && freshlyDetailed && (
+        <View style={styles.pendingRow}>
+          <Ionicons name="checkmark-circle" size={14} color={Colors.primary} />
+          <Text style={styles.freshlyDetailedText}>
+            Just updated by your AI coach
           </Text>
         </View>
       )}
@@ -205,5 +216,11 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     fontStyle: 'italic',
+  },
+  freshlyDetailedText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });

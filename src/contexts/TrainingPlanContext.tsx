@@ -35,6 +35,7 @@ import {
   ensureUpcomingWorkoutsDetailed,
   loadCoachContext,
   reviewCompletedRun,
+  reviewStandaloneRun,
   applyPlanModifications,
   type WorkoutAnalysis,
   type PlanModification,
@@ -51,15 +52,25 @@ export interface DayEntry {
   completedRuns: CompletedWorkout[];
 }
 
-/** AI coach review of the most recently finished plan run. */
+/** AI coach review of the most recently finished plan run (or standalone run). */
 export interface RunReview {
-  planId: string;
-  planWorkoutId: string;
+  planId: string | null;
+  planWorkoutId: string | null;
   status: 'loading' | 'ready' | 'error';
   analysis: WorkoutAnalysis | null;
   adjustments: PlanModification[];
   /** The runner's response to the proposed changes; null when none were proposed. */
   decision: 'pending' | 'applied' | 'declined' | null;
+  /** True when no plan was involved — show feedback only, no plan-change UI. */
+  standalone?: boolean;
+}
+
+/** Tracks workouts that were just filled in by the rolling planner this session. */
+export interface DetailFillResult {
+  /** Number of workouts that were filled in. */
+  count: number;
+  /** IDs of the workouts that were newly detailed. */
+  workoutIds: Set<string>;
 }
 
 interface TrainingPlanContextType {
@@ -78,6 +89,10 @@ interface TrainingPlanContextType {
   loading: boolean;
   /** True while showing cached data and waiting for fresh network data */
   refreshing: boolean;
+  /** Workouts freshly detailed by the rolling planner this session. Null when nothing happened yet. */
+  detailFill: DetailFillResult | null;
+  /** Dismiss the detail-fill banner. */
+  dismissDetailFill: () => void;
   /** Reload plan + history data */
   refresh: () => Promise<void>;
   /** Ensure a custom plan exists (for manual workout additions), then refresh. */
@@ -87,10 +102,16 @@ interface TrainingPlanContextType {
   /** Move a planned workout to a different date */
   moveWorkout: (workoutId: string, newDate: string) => Promise<void>;
   /**
-   * Mark a planned workout as completed. When the finished run is provided and the
-   * workout belongs to an AI training plan, the coach reviews it in the background.
+   * Mark a planned workout as completed. The run review is NOT started automatically;
+   * call `startRunReview` after the runner selects a feel tag.
    */
-  completeWorkout: (workoutId: string, completedWorkoutId: string, completedRun?: CompletedWorkout) => Promise<void>;
+  completeWorkout: (workoutId: string, completedWorkoutId: string) => Promise<void>;
+  /**
+   * Start the AI coach review for a completed run.
+   * Called from the finished screen after the feel tag is selected.
+   * When `plannedWorkout` is null, runs a standalone (no-plan) review.
+   */
+  startRunReview: (plannedWorkout: PlanWorkout | null, completedRun: CompletedWorkout, feelTag?: string) => void;
   runReview: RunReview | null;
   /** Apply the selected proposed changes from the run review. */
   applyRunReviewChanges: (modifications: PlanModification[]) => Promise<void>;
@@ -207,6 +228,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [runReview, setRunReview] = useState<RunReview | null>(null);
+  const [detailFill, setDetailFill] = useState<DetailFillResult | null>(null);
   const activeReviewId = useRef<string | null>(null);
   const hasLoadedOnce = useRef(false);
   const isGeneratingDetails = useRef(false);
@@ -301,6 +323,12 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
       const racePlans = activePlans.filter((p) => p.race_type !== 'custom' || !!(p.outline && p.outline.length > 0));
       if (racePlans.length > 0 && !isGeneratingDetails.current) {
         isGeneratingDetails.current = true;
+
+        // Snapshot which workouts lack detail before generating, so we can tell the user what changed.
+        const undetailedBefore = new Set(
+          activeWorkouts.filter((w) => !w.workout_data && w.status === 'planned' && w.day_label !== 'Rest Day').map((w) => w.id),
+        );
+
         let coachContext: ReturnType<typeof loadCoachContext> | null = null;
         const getCoachContext = () => (coachContext ??= loadCoachContext(user.id, historyData));
         Promise.all(
@@ -328,6 +356,15 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
                 ...prev.filter((w) => !updatedIds.has(w.id)),
                 ...allUpdated,
               ].sort((a, b) => a.date.localeCompare(b.date)));
+
+              // Track which workouts were newly detailed (had no workout_data before, now they do)
+              const newlyDetailed = allUpdated.filter((w) => undetailedBefore.has(w.id) && w.workout_data);
+              if (newlyDetailed.length > 0) {
+                setDetailFill({
+                  count: newlyDetailed.length,
+                  workoutIds: new Set(newlyDetailed.map((w) => w.id)),
+                });
+              }
             }
           })
           .finally(() => {
@@ -383,8 +420,45 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   }, [planWorkouts, plans]);
 
   const startRunReview = useCallback(
-    (plannedWorkout: PlanWorkout, completedRun: CompletedWorkout) => {
+    (plannedWorkout: PlanWorkout | null, completedRun: CompletedWorkout, feelTag?: string) => {
       if (!user) return;
+
+      // Standalone path — no plan involved, just feedback
+      if (!plannedWorkout) {
+        const reviewId = completedRun.id;
+        activeReviewId.current = reviewId;
+        setRunReview({
+          planId: null,
+          planWorkoutId: null,
+          status: 'loading',
+          analysis: null,
+          adjustments: [],
+          decision: null,
+          standalone: true,
+        });
+
+        const runsIncludingThis = [completedRun, ...history.filter((h) => h.id !== completedRun.id)];
+        loadCoachContext(user.id, runsIncludingThis)
+          .then((context) => reviewStandaloneRun({ completedRun, context, feelTag }))
+          .then(({ analysis }) => {
+            if (activeReviewId.current !== reviewId) return;
+            setRunReview((prev) =>
+              prev && prev.standalone && activeReviewId.current === reviewId
+                ? { ...prev, status: 'ready', analysis, decision: null }
+                : prev,
+            );
+          })
+          .catch((err) => {
+            console.warn('Standalone run review failed:', err);
+            if (activeReviewId.current !== reviewId) return;
+            setRunReview((prev) =>
+              prev && activeReviewId.current === reviewId ? { ...prev, status: 'error' } : prev,
+            );
+          });
+        return;
+      }
+
+      // Plan path — full review with proposed changes
       const ownerPlan = plans.find((p) => p.id === plannedWorkout.plan_id);
       // Only AI training plans have an outline to coach against; skip the manual-workout plan.
       if (!ownerPlan?.outline?.length) return;
@@ -407,7 +481,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
       loadCoachContext(user.id, runsIncludingThis)
         .then((context) =>
-          reviewCompletedRun({ plannedWorkout, completedRun, planWorkouts: planOnlyWorkouts, context }),
+          reviewCompletedRun({ plannedWorkout, completedRun, planWorkouts: planOnlyWorkouts, context, feelTag }),
         )
         .then(({ analysis, adjustments }) => {
           if (activeReviewId.current !== reviewId) return;
@@ -429,8 +503,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   );
 
   const completeWorkout = useCallback(
-    async (workoutId: string, completedWorkoutId: string, completedRun?: CompletedWorkout) => {
-      const plannedWorkout = planWorkouts.find((w) => w.id === workoutId);
+    async (workoutId: string, completedWorkoutId: string) => {
       await completePlanWorkoutApi(workoutId, completedWorkoutId);
       cancelRunReminder(workoutId, 'completed').catch(() => {});
       setPlanWorkouts((prev) =>
@@ -440,9 +513,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
             : w
         )
       );
-      if (plannedWorkout && completedRun) startRunReview(plannedWorkout, completedRun);
     },
-    [planWorkouts, startRunReview],
+    [],
   );
 
   const applyRunReviewChanges = useCallback(async (modifications: PlanModification[]) => {
@@ -455,6 +527,10 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
   const dismissRunReview = useCallback(() => {
     setRunReview((prev) => (prev ? { ...prev, decision: 'declined' } : prev));
+  }, []);
+
+  const dismissDetailFill = useCallback(() => {
+    setDetailFill(null);
   }, []);
 
   const updateWorkoutData = useCallback(async (workoutId: string, workout: WorkoutDefinition) => {
@@ -549,11 +625,14 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         dayEntries,
         loading,
         refreshing,
+        detailFill,
+        dismissDetailFill,
         refresh,
         ensurePlan: ensurePlanFn,
         removeWorkout,
         moveWorkout,
         completeWorkout,
+        startRunReview,
         runReview,
         applyRunReviewChanges,
         dismissRunReview,

@@ -33,6 +33,8 @@ interface RequestBody {
       target_pace?: number | null;
     }[];
     average_pace_min_per_mile?: number | null;
+    /** Runner's self-reported feel: Strong, Good, OK, or Tough. */
+    feel_tag?: string;
   };
   planned_workout?: {
     day_label: string;
@@ -67,7 +69,7 @@ interface Analysis {
     reason: string;
     workout_changes: {
       date: string;
-      action: "update" | "skip";
+      action: "update" | "skip" | "add";
       day_label: string | null;
       description: string | null;
     }[];
@@ -99,7 +101,7 @@ const ANALYSIS_SCHEMA = {
             required: ["date", "action", "day_label", "description"],
             properties: {
               date: { type: "string", description: "YYYY-MM-DD from UPCOMING WORKOUTS" },
-              action: { type: "string", enum: ["update", "skip"] },
+              action: { type: "string", enum: ["update", "skip", "add"] },
               day_label: { type: ["string", "null"] },
               description: { type: ["string", "null"] },
             },
@@ -117,11 +119,12 @@ function validateAnalysis(a: Analysis, allowedDates: Set<string>): string[] {
     problems.push("workout_changes must be empty when requires_changes is false.");
   }
   for (const c of changes) {
-    if (!allowedDates.has(c.date)) {
+    // "add" actions can target any future date; "update" and "skip" must target existing upcoming workouts
+    if (c.action !== "add" && !allowedDates.has(c.date)) {
       problems.push(`workout_changes date ${c.date} is not in UPCOMING WORKOUTS; only use those dates.`);
     }
-    if (c.action === "update" && !(c.day_label?.trim() && c.description?.trim())) {
-      problems.push(`workout_changes for ${c.date}: updates need both day_label and a specific description.`);
+    if ((c.action === "update" || c.action === "add") && !(c.day_label?.trim() && c.description?.trim())) {
+      problems.push(`workout_changes for ${c.date}: ${c.action}s need both day_label and a specific description.`);
     }
   }
   return problems;
@@ -157,7 +160,7 @@ You MUST respond with valid JSON matching this exact schema:
     "workout_changes": [
       {
         "date": "YYYY-MM-DD",
-        "action": "update" | "skip",
+        "action": "update" | "skip" | "add",
         "day_label": "string",
         "description": "string"
       }
@@ -173,8 +176,11 @@ Guidelines:
 - Only recommend plan changes when there's a meaningful signal, not after every workout
 - A successful workout on target should usually result in requires_changes: false
 - For fatigue signals, look for pace fade across intervals, much slower than targets, or very short duration
+- If the runner reports how the run felt (FEEL TAG), weigh it alongside pace data. A "Tough" feel on a session that looks OK by the numbers is still a signal. A "Strong" feel on a slightly slow session means the runner is likely fine.
+- When the recent training context mentions multiple similar workouts tagged "Tough", that pattern is a stronger signal than a single tough run. Propose a specific reduction to the next similar workout.
 - Repeated missed workouts are a signal to ease volume for consistency, not to cram missed work in
-- workout_changes may ONLY use dates listed under UPCOMING WORKOUTS. Never change today's run or invent new dates
+- For "update" and "skip" actions, workout_changes may ONLY use dates listed under UPCOMING WORKOUTS. Never change today's run.
+- For "add" actions, you may suggest a new workout on a date that has no existing workout (a rest day or gap in the schedule). Only suggest adding a run when there's a clear reason (e.g. the runner is ahead of schedule and has open days).
 - Each change replaces that day's label and description; the detailed workout is regenerated from them, so make the description specific (duration or distance, effort, and pace guidance)
 - Keep changes minimal: usually 1-3 upcoming days, the ones most affected by this run`;
 
@@ -186,6 +192,7 @@ COMPLETED WORKOUT:
 ${body.completed_workout.total_distance_meters ? `- Distance: ${(body.completed_workout.total_distance_meters / 1609.344).toFixed(2)} miles` : ''}
 ${body.completed_workout.average_pace_min_per_mile ? `- Average pace: ${Math.floor(body.completed_workout.average_pace_min_per_mile)}:${Math.round((body.completed_workout.average_pace_min_per_mile % 1) * 60).toString().padStart(2, '0')}/mi` : ''}
 ${body.completed_workout.splits?.length ? `- Splits:\n${body.completed_workout.splits.map((s, i) => `  ${i + 1}. ${s.label ?? s.type ?? 'Split'}: ${formatPace(s.pace_min_per_mile)} over ${Math.round(s.distance_meters)}m${s.target_pace ? ` (target ${formatPace(s.target_pace)})` : ''}`).join('\n')}` : ''}
+${body.completed_workout.feel_tag ? `- FEEL TAG: Runner reported this run felt "${body.completed_workout.feel_tag}"` : ''}
 
 ${body.planned_workout ? `PLANNED WORKOUT:
 - Label: ${body.planned_workout.day_label}
@@ -233,7 +240,10 @@ ${body.upcoming_workouts?.length
 
     const analysis = result.data;
     const changes = analysis.plan_update.workout_changes.filter(
-      (c) => allowedDates.has(c.date) && (c.action === "skip" || (c.day_label?.trim() && c.description?.trim())),
+      (c) => {
+        if (c.action === "add") return !!(c.day_label?.trim() && c.description?.trim());
+        return allowedDates.has(c.date) && (c.action === "skip" || (c.day_label?.trim() && c.description?.trim()));
+      },
     );
     analysis.plan_update.workout_changes = analysis.plan_update.requires_changes ? changes : [];
     analysis.plan_update.requires_changes = analysis.plan_update.workout_changes.length > 0;

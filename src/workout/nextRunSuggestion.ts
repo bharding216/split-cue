@@ -2,6 +2,9 @@
  * Picks a sensible next run after a finished one, using simple rules.
  * It's a nudge toward consistency, not a training prescription: nothing
  * here claims to know how recovered the runner is.
+ *
+ * When the runner has an active plan, it shows the next planned workout
+ * instead of a generic suggestion.
  */
 
 import {
@@ -12,8 +15,9 @@ import {
   flattenWorkout,
   generateId,
 } from './workoutTypes';
+import type { PlanWorkout } from '../types/database';
 
-/** Days between the run just finished and the suggested one. */
+/** Days between the run just finished and the suggested one (no-plan fallback). */
 const DAYS_OUT = 2;
 
 export interface NextRunSuggestion {
@@ -25,12 +29,20 @@ export interface NextRunSuggestion {
   reason: string;
   /** One feature the runner hasn't tried yet, if any. */
   tip: string | null;
+  /** When true, this suggestion comes from an existing plan workout (not a new run). */
+  fromPlan?: boolean;
+  /** The plan_workout id when the suggestion comes from the plan. */
+  planWorkoutId?: string;
 }
 
 function localDateKey(offsetDays: number): string {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((new Date(b + 'T12:00:00').getTime() - new Date(a + 'T12:00:00').getTime()) / 86400000);
 }
 
 /** Easy run about 80% as long as the run just done, 20–45 minutes, in 5-minute steps. */
@@ -69,6 +81,64 @@ function featureTip(completed: WorkoutDefinition, settings: AppSettings): string
   return null;
 }
 
+/**
+ * When the runner has a plan, find the next planned (non-rest) workout and show it.
+ * Returns null if there's nothing upcoming within 7 days.
+ */
+export function suggestNextPlannedRun(
+  planWorkouts: PlanWorkout[],
+  currentPlanWorkoutId: string | undefined,
+  settings: AppSettings,
+  completed: WorkoutDefinition,
+): NextRunSuggestion | null {
+  const todayStr = localDateKey(0);
+  const next = planWorkouts
+    .filter((pw) =>
+      pw.status === 'planned' &&
+      pw.id !== currentPlanWorkoutId &&
+      pw.date >= todayStr &&
+      !pw.day_label?.toLowerCase().includes('rest') &&
+      !pw.day_label?.toLowerCase().includes('off'),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+  if (!next) return null;
+
+  const daysOut = daysBetween(todayStr, next.date);
+  if (daysOut > 7) return null;
+
+  const workoutData = next.workout_data as WorkoutDefinition | null;
+  const workout: WorkoutDefinition = workoutData
+    ? { ...workoutData, id: workoutData.id || generateId() }
+    : {
+        id: generateId(),
+        name: next.day_label || 'Training',
+        category: 'easy',
+        origin: 'plan',
+        blocks: [
+          createSegment('run', {
+            label: next.day_label || 'Training',
+            intensity: 'easy',
+            effort: 4,
+            target: { type: 'time', durationSeconds: 30 * 60 },
+          }),
+        ],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+  return {
+    workout,
+    dateKey: next.date,
+    daysOut,
+    reason: next.description || `Your plan has ${next.day_label || 'a workout'} scheduled.`,
+    tip: featureTip(completed, settings),
+    fromPlan: true,
+    planWorkoutId: next.id,
+  };
+}
+
+/** Fallback for runners without a plan. */
 export function suggestNextRun(
   completed: WorkoutDefinition,
   actualDurationMs: number,

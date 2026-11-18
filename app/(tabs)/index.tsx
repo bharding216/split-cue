@@ -605,7 +605,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const large = useLargeText();
   const { user } = useAuth();
-  const { dayEntries, planWorkouts } = useTrainingPlan();
+  const { dayEntries, planWorkouts, detailFill } = useTrainingPlan();
   const [workouts, setWorkouts] = useState<WorkoutDefinition[]>([]);
   const [recentRuns, setRecentRuns] = useState<CompletedWorkout[]>([]);
   const [lastRun, setLastRun] = useState<CompletedWorkout | null>(null);
@@ -811,6 +811,7 @@ export default function HomeScreen() {
           <RevealOnMount animate={revealTodayCard}>
             <TodayWorkoutCard
               planWorkout={todayPlanWorkout}
+              freshlyDetailed={!!detailFill?.workoutIds.has(todayPlanWorkout.id)}
               onView={() => {
                 router.push(
                   {

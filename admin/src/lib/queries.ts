@@ -659,6 +659,26 @@ export async function getStravaUsers(days = 30): Promise<StravaUser[]> {
 
 // ── Update Prompt Analytics ──────────────────────────────────
 
+export type WorkoutCadenceStats = {
+  medianDays: number;
+  userCount: number;
+};
+
+/**
+ * Median days between workouts across all users with ≥ 2 sessions.
+ * Sessions merge qualifying runs < 6 hours apart.
+ */
+export async function getWorkoutCadence(): Promise<WorkoutCadenceStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('median_days_between_workouts');
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    medianDays: Number(row?.median_days ?? 0),
+    userCount: row?.user_count ?? 0,
+  };
+}
+
 export type UpdatePromptsByVersion = {
   runtime_version: string;
   required_count: number;

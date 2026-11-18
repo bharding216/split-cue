@@ -1,6 +1,9 @@
 /**
- * RunReviewCard — AI coach feedback on the most recently finished plan run,
- * with any proposed changes to upcoming workouts.
+ * RunReviewCard — AI coach feedback on a finished run.
+ *
+ * Works in two modes:
+ *   - **Plan mode**: shows feedback + proposed plan changes (when the run was a plan workout).
+ *   - **Standalone mode**: shows feedback only (when the runner has no plan).
  *
  * `finished` placement (post-run screen) shows the review as it loads.
  * `training` placement only appears while proposed changes await a decision,
@@ -24,7 +27,7 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
   const { runReview, planWorkouts, applyRunReviewChanges, dismissRunReview } = useTrainingPlan();
 
   const items: ModificationItem[] = useMemo(() => {
-    if (!runReview) return [];
+    if (!runReview || runReview.standalone) return [];
     return runReview.adjustments.map((mod) => {
       const existing = planWorkouts.find((pw) => pw.plan_id === runReview.planId && pw.date === mod.date);
       return {
@@ -37,13 +40,16 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
   }, [runReview, planWorkouts]);
 
   if (!runReview) return null;
-  if (planWorkoutId && runReview.planWorkoutId !== planWorkoutId) return null;
+  // In plan mode, filter by planWorkoutId; in standalone mode, always show on the finished screen
+  if (planWorkoutId && !runReview.standalone && runReview.planWorkoutId !== planWorkoutId) return null;
+  if (placement === 'training' && runReview.standalone) return null;
   if (placement === 'training' && runReview.decision !== 'pending') return null;
   if (runReview.status === 'error') return null;
 
   const { analysis } = runReview;
+  const isStandalone = !!runReview.standalone;
   const showChanges =
-    items.length > 0 && (runReview.decision === 'pending' || runReview.decision === 'applied');
+    !isStandalone && items.length > 0 && (runReview.decision === 'pending' || runReview.decision === 'applied');
 
   return (
     <View style={styles.container}>
@@ -79,10 +85,10 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
               ))}
             </View>
           )}
-          {items.length === 0 && (
+          {!isStandalone && items.length === 0 && (
             <Text style={styles.footnote}>No changes needed — your upcoming workouts stay as planned.</Text>
           )}
-          {runReview.decision === 'declined' && (
+          {!isStandalone && runReview.decision === 'declined' && (
             <Text style={styles.footnote}>Kept your original plan.</Text>
           )}
         </>

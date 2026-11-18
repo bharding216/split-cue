@@ -104,7 +104,7 @@ export interface PlanAdjustmentResult {
 
 export interface PlanModification {
   date: string;
-  action: 'update' | 'skip';
+  action: 'update' | 'skip' | 'add';
   day_label?: string;
   description?: string;
   workout?: {
@@ -144,6 +144,8 @@ export interface WorkoutAnalysisInput {
       target_pace?: number | null;
     }[];
     average_pace_min_per_mile?: number | null;
+    /** Runner's self-reported feel: Strong, Good, OK, or Tough. */
+    feel_tag?: string;
   };
   planned_workout?: {
     day_label: string;
@@ -582,6 +584,8 @@ export interface RunReviewResult {
   analysis: WorkoutAnalysis;
   /** Proposed changes, limited to upcoming planned days in the 14-day window. */
   adjustments: PlanModification[];
+  /** True when this is a standalone review (no plan), so the UI hides plan-change sections. */
+  standalone?: boolean;
 }
 
 /**
@@ -594,8 +598,10 @@ export async function reviewCompletedRun(input: {
   completedRun: CompletedWorkout;
   planWorkouts: PlanWorkout[];
   context: CoachContext;
+  /** Runner's self-reported feel tag (Strong/Good/OK/Tough), if selected before the review. */
+  feelTag?: string;
 }): Promise<RunReviewResult> {
-  const { plannedWorkout, completedRun, planWorkouts, context } = input;
+  const { plannedWorkout, completedRun, planWorkouts, context, feelTag } = input;
   const todayStr = localDateKey(new Date());
   const windowEnd = new Date();
   windowEnd.setDate(windowEnd.getDate() + DETAIL_WINDOW_DAYS);
@@ -612,7 +618,7 @@ export async function reviewCompletedRun(input: {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const analysis = await analyzeCompletedWorkout({
-    completed_workout: buildCompletedWorkoutPayload(completedRun),
+    completed_workout: buildCompletedWorkoutPayload(completedRun, feelTag),
     planned_workout: {
       day_label: plannedWorkout.day_label ?? 'Training',
       description: plannedWorkout.description ?? undefined,
@@ -641,6 +647,37 @@ export async function reviewCompletedRun(input: {
     : [];
 
   return { analysis, adjustments };
+}
+
+/**
+ * Lightweight analysis for runners without a plan. Sends just the run data
+ * and recent history — no planned workout, no upcoming changes.
+ */
+export async function reviewStandaloneRun(input: {
+  completedRun: CompletedWorkout;
+  context: CoachContext;
+  feelTag?: string;
+}): Promise<RunReviewResult> {
+  const { completedRun, context, feelTag } = input;
+
+  const analysis = await analyzeCompletedWorkout({
+    completed_workout: buildCompletedWorkoutPayload(completedRun, feelTag),
+    planned_workout: null,
+    profile: context.profile
+      ? {
+          experience_level: context.profile.experience_level,
+          easy_pace: context.profile.easy_pace,
+          fast_pace: context.profile.fast_pace,
+        }
+      : null,
+    recent_history_summary: context.historySummary ?? null,
+    today: localDateKey(new Date()),
+  });
+
+  // Standalone reviews never propose plan changes
+  analysis.plan_update = { requires_changes: false, reason: '', workout_changes: [] };
+
+  return { analysis, adjustments: [], standalone: true };
 }
 
 // ── Workout Analysis ────────────────────────────────────────
@@ -962,7 +999,7 @@ export async function applyPlanModifications(
         return;
       }
 
-      if (mod.action === 'update') {
+      if (mod.action === 'update' || mod.action === 'add') {
         const workoutData = mod.workout
           ? migrateToBlockModel({
               id: generateId(),

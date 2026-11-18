@@ -298,13 +298,13 @@ export default function PlanOverviewScreen() {
         <View style={styles.centeredInner}>
           <Ionicons name="calendar-outline" size={48} color={Colors.textMuted} />
           <Text style={styles.emptyTitle}>No Active Plan</Text>
-          <Text style={styles.emptyText}>Create a training plan to get started.</Text>
+          <Text style={styles.emptyText}>Set a goal — race day, faster pace, or just more miles — and your AI coach builds the plan.</Text>
           <TouchableOpacity
             style={styles.createBtn}
             onPress={startPlanCreation}
             activeOpacity={0.8}
           >
-            <Text style={styles.createBtnText} maxFontSizeMultiplier={MaxFontScale.display}>Create Plan</Text>
+            <Text style={styles.createBtnText} maxFontSizeMultiplier={MaxFontScale.display}>Build My Plan</Text>
           </TouchableOpacity>
         </View>
 

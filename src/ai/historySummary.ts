@@ -45,6 +45,13 @@ export interface HistorySummary {
   avgHardIntervalEffort: number | null;
   /** Fastest avg pace (min/mi) on any hard interval in last 30 days */
   bestPaceLast30Days: number | null;
+
+  /**
+   * Feel-tag patterns: for each workout type, how many of the last N runs
+   * were tagged "Tough" or "Strong" (last 30 days). Only populated when
+   * at least one run has a feel tag.
+   */
+  feelPatterns: { type: string; total: number; tough: number; strong: number }[];
 }
 
 // ── Workout type classification ──────────────────────────────
@@ -141,6 +148,21 @@ export function buildHistorySummary(history: CompletedWorkout[]): HistorySummary
     bestPace = Math.round(bestPace * 100) / 100;
   }
 
+  // Feel-tag patterns by workout type (last 30 days)
+  const feelByType: Record<string, { total: number; tough: number; strong: number }> = {};
+  for (const w of last30) {
+    const type = classifyWorkout(w.workoutName);
+    const feelTag = w.tags?.find((t) => t === 'Strong' || t === 'Good' || t === 'OK' || t === 'Tough');
+    if (!feelTag) continue;
+    if (!feelByType[type]) feelByType[type] = { total: 0, tough: 0, strong: 0 };
+    feelByType[type].total++;
+    if (feelTag === 'Tough') feelByType[type].tough++;
+    if (feelTag === 'Strong') feelByType[type].strong++;
+  }
+  const feelPatterns = Object.entries(feelByType)
+    .filter(([, v]) => v.tough > 0 || v.strong > 0)
+    .map(([type, v]) => ({ type, ...v }));
+
   // Avg workouts per week (last 4 weeks)
   const avgWorkoutsPerWeek =
     last28.length > 0
@@ -166,6 +188,7 @@ export function buildHistorySummary(history: CompletedWorkout[]): HistorySummary
     avgDurationMinLast30: avgDuration(last30),
     avgHardIntervalEffort,
     bestPaceLast30Days: bestPace,
+    feelPatterns,
   };
 }
 
@@ -244,6 +267,17 @@ export function serializeHistorySummary(summary: HistorySummary): string | null 
     intensity.push(`Best hard pace: ${formatPace(summary.bestPaceLast30Days)}/mi`);
   }
   if (intensity.length > 0) lines.push(intensity.join(' | '));
+
+  // Feel-tag patterns — tells the coach when multiple runs of a type felt hard or easy
+  if (summary.feelPatterns.length > 0) {
+    const parts = summary.feelPatterns.map((fp) => {
+      const pieces: string[] = [];
+      if (fp.tough > 0) pieces.push(`${fp.tough} tagged Tough`);
+      if (fp.strong > 0) pieces.push(`${fp.strong} tagged Strong`);
+      return `${fp.type}: ${pieces.join(', ')} of ${fp.total} tagged`;
+    });
+    lines.push(`Feel patterns (30d): ${parts.join('; ')}`);
+  }
 
   return lines.join('\n');
 }

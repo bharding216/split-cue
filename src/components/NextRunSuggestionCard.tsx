@@ -28,10 +28,13 @@ export function NextRunSuggestionCard({ suggestion, signedIn, status, onAdd }: N
   const { workout } = suggestion;
   const secs = totalWorkoutSeconds(workout);
   const busy = status === 'adding';
+  const fromPlan = suggestion.fromPlan;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.labelBadge}>NEXT RUN · {weekdayLabel(suggestion.dateKey).toUpperCase()}</Text>
+      <Text style={styles.labelBadge}>
+        {fromPlan ? 'UP NEXT ON YOUR PLAN' : 'NEXT RUN'} · {weekdayLabel(suggestion.dateKey).toUpperCase()}
+      </Text>
       <Text style={styles.title}>{workout.name || 'Run'}</Text>
       {secs > 0 && <Text style={styles.meta}>{Math.round(secs / 60)} min</Text>}
 
@@ -52,6 +55,16 @@ export function NextRunSuggestionCard({ suggestion, signedIn, status, onAdd }: N
           No problem. You&apos;ll find this run under Recently Used on the home screen whenever
           you&apos;re ready.
         </Text>
+      ) : fromPlan ? (
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={onAdd}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
+          <Ionicons name="calendar" size={18} color={Colors.black} />
+          <Text style={styles.addBtnText}>View on calendar</Text>
+        </TouchableOpacity>
       ) : (
         <TouchableOpacity
           style={[styles.addBtn, busy && styles.addBtnBusy]}

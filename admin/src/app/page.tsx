@@ -22,6 +22,7 @@ import {
   getHeartRateFeatureStats,
   getHeartRateRetention,
   getShareFunnel,
+  getWorkoutCadence,
 } from '@/lib/queries';
 import HeartRateFeatureSection from '@/components/HeartRateFeatureSection';
 import SharingSection from '@/components/SharingSection';
@@ -71,6 +72,7 @@ export default async function DashboardPage() {
     shareFunnel,
     calendarStats,
     calendarDaily,
+    workoutCadence,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -94,6 +96,7 @@ export default async function DashboardPage() {
     getShareFunnel(30),
     getTrainingCalendarStats(30),
     getTrainingCalendarDaily(30),
+    getWorkoutCadence(),
   ]);
 
   return (
@@ -183,7 +186,7 @@ export default async function DashboardPage() {
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
         Workouts
       </h2>
-      <section className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <section className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard
           label="Started Today"
           value={workoutStats.startedToday}
@@ -207,6 +210,11 @@ export default async function DashboardPage() {
           value={workoutStats.completionRate}
           format="percent"
           detail="Completed ÷ started, last 7 days"
+        />
+        <StatCard
+          label="Median Days Between"
+          value={workoutCadence.medianDays}
+          detail={`Across ${workoutCadence.userCount} runner${workoutCadence.userCount !== 1 ? 's' : ''} with ≥ 2 sessions`}
         />
       </section>
 

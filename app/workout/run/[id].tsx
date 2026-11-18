@@ -40,7 +40,7 @@ import { resolveWorkoutSource, runQualifies, getRunHistoryContext } from '../../
 import { FirstRunCheck } from '../../../src/components/FirstRunCheck';
 import { buildCueContext } from '../../../src/audio/cuePhrases';
 import { DISCARD_WINDOW_MS } from '../../../src/analytics/falseStarts';
-import { suggestNextRun } from '../../../src/workout/nextRunSuggestion';
+import { suggestNextRun, suggestNextPlannedRun } from '../../../src/workout/nextRunSuggestion';
 import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/components/NextRunSuggestionCard';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
@@ -253,6 +253,7 @@ function ActiveWorkoutInner({
   const runner = useWorkoutRunner(workout, settings, sessionMeta, resumeFrom);
   const {
     completeWorkout: completePlanWorkout,
+    startRunReview,
     ensurePlan,
     planWorkouts,
     refresh: refreshPlans,
@@ -352,7 +353,8 @@ function ActiveWorkoutInner({
     }).catch(() => {});
   }, [state.phase, runner.completedEntryId, settings.paceUnit]);
 
-  // Mark the plan workout as completed when a plan run finishes
+  // Mark the plan workout as completed when a plan run finishes.
+  // The AI coach review is triggered separately after the runner selects a feel tag.
   useEffect(() => {
     if (
       state.phase !== 'finished' ||
@@ -361,8 +363,7 @@ function ActiveWorkoutInner({
       planCompletionDone.current
     ) return;
     planCompletionDone.current = true;
-    const completedRun = buildCompletedEntry() ?? undefined;
-    completePlanWorkout(sessionMeta.planWorkoutId, runner.completedEntryId, completedRun).catch((e) =>
+    completePlanWorkout(sessionMeta.planWorkoutId, runner.completedEntryId).catch((e) =>
       console.warn('Failed to complete plan workout:', e),
     );
   }, [state.phase, runner.completedEntryId, sessionMeta?.planWorkoutId, completePlanWorkout]);
@@ -375,16 +376,37 @@ function ActiveWorkoutInner({
   }, [state.phase]);
 
   const selectedFeel = annotations.tags.find((t) => FEEL_TAGS.includes(t)) ?? null;
+  const reviewTriggered = useRef(false);
 
   const handleFeelPress = useCallback(
     (tag: string) => {
       hapticTap();
       const others = annotations.tags.filter((t) => !FEEL_TAGS.includes(t));
       const cleared = selectedFeel === tag;
-      annotations.setTags(cleared ? others : [...others, tag]);
-      if (!cleared) track('post_workout_feel_selected', { tag });
+      const nextTags = cleared ? others : [...others, tag];
+      annotations.setTags(nextTags);
+      if (!cleared) {
+        track('post_workout_feel_selected', { tag });
+        // Trigger the AI coach review with the feel tag once per finished run
+        if (!reviewTriggered.current && user) {
+          reviewTriggered.current = true;
+          const completedRun = buildCompletedEntry();
+          if (completedRun) {
+            if (sessionMeta?.planWorkoutId) {
+              // Plan run — full review with plan changes
+              const plannedWorkout = planWorkouts.find((w) => w.id === sessionMeta.planWorkoutId);
+              if (plannedWorkout) {
+                startRunReview(plannedWorkout, completedRun, tag);
+              }
+            } else {
+              // Standalone run — feedback only, no plan changes
+              startRunReview(null, completedRun, tag);
+            }
+          }
+        }
+      }
     },
-    [annotations, selectedFeel],
+    [annotations, selectedFeel, sessionMeta?.planWorkoutId, planWorkouts, startRunReview, user],
   );
 
   /** The saved history entry as it stands now, for uploading. */
@@ -539,23 +561,28 @@ function ActiveWorkoutInner({
   }, [state.phase, runner.completedEntryId]);
 
   // ── Next-run suggestion ──
-  // Offered after a run that counts, unless the calendar already has one in the next few days.
+  // Plan-aware: when a plan exists, show the next planned workout. Otherwise, fallback to generic.
   const plannedMs = estimatedPlannedSeconds(state.intervals) * 1000;
   const runCounts =
     runQualifies(state.totalElapsedMs, plannedMs) || runner.paceState.totalDistanceMeters >= 1000;
-  const hasUpcomingPlanned = planWorkouts.some(
-    (pw) =>
-      pw.status === 'planned' &&
-      pw.id !== sessionMeta?.planWorkoutId &&
-      pw.date >= localDateKey(0) &&
-      pw.date <= localDateKey(3) &&
-      !pw.day_label?.toLowerCase().includes('rest'),
-  );
   const nextRun = useMemo(
-    () =>
-      state.phase === 'finished' && runner.completedEntryId && runCounts && !hasUpcomingPlanned
-        ? suggestNextRun(workout, state.totalElapsedMs, settings)
-        : null,
+    () => {
+      if (state.phase !== 'finished' || !runner.completedEntryId || !runCounts) return null;
+      // Try plan-aware suggestion first
+      const planned = suggestNextPlannedRun(planWorkouts, sessionMeta?.planWorkoutId, settings, workout);
+      if (planned) return planned;
+      // Fallback: only show generic suggestion when no upcoming planned workouts
+      const hasUpcomingPlanned = planWorkouts.some(
+        (pw) =>
+          pw.status === 'planned' &&
+          pw.id !== sessionMeta?.planWorkoutId &&
+          pw.date >= localDateKey(0) &&
+          pw.date <= localDateKey(3) &&
+          !pw.day_label?.toLowerCase().includes('rest'),
+      );
+      if (hasUpcomingPlanned) return null;
+      return suggestNextRun(workout, state.totalElapsedMs, settings);
+    },
     // Suggest once per finished run; later settings or plan changes shouldn't swap it out.
     [state.phase, runner.completedEntryId],
   );
@@ -602,6 +629,14 @@ function ActiveWorkoutInner({
 
   const handleAddSuggestion = useCallback(() => {
     hapticTap();
+    // Plan suggestions are already on the calendar — just navigate there
+    if (nextRun?.fromPlan) {
+      track('next_run_plan_suggestion_tapped', { suggested_date: nextRun.dateKey, plan_workout_id: nextRun.planWorkoutId });
+      leaveFinishedScreen();
+      requestCalendarDate(nextRun.dateKey, nextRun.planWorkoutId, 'plan_suggestion');
+      router.navigate('/(tabs)/training' as any);
+      return;
+    }
     if (user) {
       addSuggestionToCalendar();
       return;
@@ -610,7 +645,7 @@ function ActiveWorkoutInner({
     pendingSignInAdd.current = true;
     setSuggestionStatus('idle');
     router.push('/login' as any);
-  }, [user, addSuggestionToCalendar, nextRun, router]);
+  }, [user, addSuggestionToCalendar, nextRun, router, leaveFinishedScreen]);
 
   // Finish adding once sign-in succeeds; the login modal returns to this screen.
   useEffect(() => {
@@ -897,8 +932,8 @@ function ActiveWorkoutInner({
 
         {showInvite && <InviteFriendCard />}
 
-        {sessionMeta?.planWorkoutId && (
-          <RunReviewCard placement="finished" planWorkoutId={sessionMeta.planWorkoutId} />
+        {user && (
+          <RunReviewCard placement="finished" planWorkoutId={sessionMeta?.planWorkoutId} />
         )}
 
         {nextRun && (
