@@ -100,8 +100,6 @@ import { PostRunShareCard } from '../../../src/components/PostRunShareCard';
 import { SharedResultComparison } from '../../../src/components/SharedResultComparison';
 import { compareResults, resultOf } from '../../../src/sharing/shareText';
 import { recordShareEvent } from '../../../src/sharing/shareWorkout';
-import { markInvitePromptShown, shouldShowInvitePrompt } from '../../../src/sharing/shareApp';
-import { InviteFriendCard } from '../../../src/components/InviteFriendCard';
 import { AchievementMomentCard } from '../../../src/components/AchievementMomentCard';
 import { pickAchievementMoment } from '../../../src/stats/achievementMoment';
 import { computeIntervalConsistency } from '../../../src/stats/intervalConsistency';
@@ -322,7 +320,6 @@ function ActiveWorkoutInner({
   };
 
   // Detect new personal records when the workout finishes
-  const [showInvite, setShowInvite] = useState(false);
   const [moment, setMoment] = useState<AchievementMoment | null>(null);
   useEffect(() => {
     if (state.phase !== 'finished' || !runner.completedEntryId) return;
@@ -346,11 +343,6 @@ function ActiveWorkoutInner({
         : null;
       setMoment(picked);
       if (picked) track('achievement_moment_shown', { achievement_id: picked.id, kicker: picked.kicker });
-      if (await shouldShowInvitePrompt(history.length)) {
-        markInvitePromptShown();
-        track('invite_prompt_shown', { completed_runs: history.length });
-        setShowInvite(true);
-      }
     }).catch(() => {});
   }, [state.phase, runner.completedEntryId, settings.paceUnit]);
 
@@ -936,8 +928,6 @@ function ActiveWorkoutInner({
             onChallenge={() => handleShareRun('challenge')}
           />
         ) : null}
-
-        {showInvite && <InviteFriendCard />}
 
         {user && (
           <RunReviewCard placement="finished" planWorkoutId={sessionMeta?.planWorkoutId} />

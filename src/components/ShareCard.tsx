@@ -54,8 +54,8 @@ interface ShareCardProps {
 const PAD = 24;
 const VISUAL_WIDTH = SHARE_CARD_WIDTH - PAD * 2;
 const VISUAL_HEIGHT = 96;
-const ROUTE_HEIGHT = 190;
-const REP_BARS_HEIGHT = 120;
+const ROUTE_HEIGHT = 155;
+const REP_BARS_HEIGHT = 96;
 
 /** Weight for drawing intervals to scale; distance intervals assume ~10 min/mile. */
 function intervalWeight(interval: FlatInterval): number {
@@ -495,6 +495,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     paddingBottom: 16,
+    overflow: 'hidden',
   },
   strip: {
     flexDirection: 'row',
