@@ -114,52 +114,54 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
         accessibilityRole="button"
         accessibilityState={{ expanded }}
       >
-        <View style={styles.summaryMain}>
+        <View style={styles.summaryHeader}>
           <Text style={styles.summaryTitle}>Run Settings</Text>
-          <View style={[styles.chip, settings.paceTrackingEnabled && styles.chipActive]}>
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color={Colors.textMuted}
+          />
+        </View>
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryItem}>
             <Ionicons
               name="navigate"
-              size={12}
+              size={14}
               color={settings.paceTrackingEnabled ? Colors.primary : Colors.textMuted}
             />
-            <Text style={[styles.chipText, settings.paceTrackingEnabled && styles.chipTextActive]}>
+            <Text style={[styles.summaryItemText, settings.paceTrackingEnabled && styles.summaryItemTextActive]}>
               GPS {settings.paceTrackingEnabled ? 'On' : 'Off'}
             </Text>
           </View>
-          <View style={[styles.chip, settings.audioCueMode !== 'silent' && styles.chipActive]}>
+          <View style={styles.summaryItem}>
             <Ionicons
               name={settings.audioCueMode === 'silent' ? 'volume-mute' : 'volume-high'}
-              size={12}
+              size={14}
               color={settings.audioCueMode !== 'silent' ? Colors.primary : Colors.textMuted}
             />
-            <Text style={[styles.chipText, settings.audioCueMode !== 'silent' && styles.chipTextActive]}>
+            <Text style={[styles.summaryItemText, settings.audioCueMode !== 'silent' && styles.summaryItemTextActive]}>
               {audioCueLabel}
             </Text>
           </View>
           {cueLabel && (
-            <View style={[styles.chip, styles.chipActive]}>
+            <View style={styles.summaryItem}>
               <Ionicons
                 name={settings.progressCueBasis === 'distance' ? 'map-outline' : 'time-outline'}
-                size={12}
+                size={14}
                 color={Colors.primary}
               />
-              <Text style={[styles.chipText, styles.chipTextActive]}>
+              <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>
                 Progress {cueLabel}
               </Text>
             </View>
           )}
           {paceChipLabel && (
-            <View style={[styles.chip, styles.chipActive]}>
-              <Ionicons name="speedometer-outline" size={12} color={Colors.primary} />
-              <Text style={[styles.chipText, styles.chipTextActive]}>{paceChipLabel}</Text>
+            <View style={styles.summaryItem}>
+              <Ionicons name="speedometer-outline" size={14} color={Colors.primary} />
+              <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>{paceChipLabel}</Text>
             </View>
           )}
         </View>
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={Colors.textMuted}
-        />
       </TouchableOpacity>
 
       {/* Expanded settings */}
@@ -343,40 +345,39 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: Spacing.md,
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
-  summaryMain: {
-    flexGrow: 1,
-    flexShrink: 1,
+  summaryHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    columnGap: Spacing.sm,
-    rowGap: Spacing.xs,
+    justifyContent: 'space-between',
   },
   summaryTitle: {
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textSecondary,
-    marginRight: 'auto',
   },
-  chip: {
+  summaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  summaryItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    gap: 6,
+    backgroundColor: Colors.surfaceLight,
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
   },
-  chipActive: {},
-  chipText: {
-    fontSize: FontSize.xs,
+  summaryItemText: {
+    fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textMuted,
   },
-  chipTextActive: {
+  summaryItemTextActive: {
     color: Colors.primary,
   },
   expandedContent: {

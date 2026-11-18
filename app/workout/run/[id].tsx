@@ -2193,7 +2193,6 @@ const styles = StyleSheet.create({
   },
   preRunPanel: {
     alignSelf: 'stretch',
-    alignItems: 'center',
   },
   preRunPanelLarge: {
     alignItems: 'stretch',

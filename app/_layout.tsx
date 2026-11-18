@@ -280,8 +280,8 @@ function RootLayoutInner() {
 
       if (!shortCode && !isLegacy) return;
 
-      // On cold start the URL doesn't match any app route, so Expo Router
-      // renders an unmatched/404 screen. Navigate to home first to clear it.
+      // +native-intent.tsx redirects share URLs to '/' before the router
+      // sees them, but an explicit replace ensures the back stack is clean.
       if (isInitial) {
         router.replace('/');
       }
@@ -291,9 +291,17 @@ function RootLayoutInner() {
         recordShareEvent(shortCode, 'app_open', shareReferrer(shortCode));
       }
 
-      const shared = shortCode
+      let shared = shortCode
         ? await resolveShareCode(shortCode)
         : decodeWorkoutLink(url);
+
+      // On cold start the Supabase client may still be restoring or
+      // refreshing the auth session from AsyncStorage, causing the first
+      // RPC call to fail. Retry once after a short delay.
+      if (!shared && shortCode) {
+        await new Promise((r) => setTimeout(r, 1500));
+        shared = await resolveShareCode(shortCode);
+      }
 
       if (shared === 'removed') {
         Alert.alert('Link Removed', 'This share link is no longer available. Ask your friend to send a new one.');
