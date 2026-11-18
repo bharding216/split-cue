@@ -251,7 +251,7 @@ export default function PlanSetupScreen() {
     } else if (genPhase === 'generating') {
       Animated.timing(progressAnim, {
         toValue: 0.88,
-        duration: 18000,
+        duration: 8000,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }).start();
@@ -785,7 +785,7 @@ export default function PlanSetupScreen() {
           </View>
 
           {/* Timer / estimate */}
-          <Text style={styles.genTimer}>{genElapsed}s · usually 10–15s</Text>
+          <Text style={styles.genTimer}>{genElapsed}s · usually under 10s</Text>
         </View>
       </ScrollView>
     );

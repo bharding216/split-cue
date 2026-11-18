@@ -12,8 +12,10 @@
  * vs. latency is tuned per call with `reasoningEffort` instead.
  */
 export const MODELS = {
-  /** Plans and workouts runners actually follow. */
+  /** Detailed workouts and plan adjustments runners actually follow. */
   coach: "gpt-6.1-sol",
+  /** Plan outlines — week themes, day labels, and descriptions. No workout detail. */
+  outline: "gpt-6-luna",
   /** Short, frequent, lower-stakes calls (post-run analysis). */
   fast: "gpt-6-luna",
   transcribe: "gpt-transcribe",
@@ -34,6 +36,8 @@ export interface JsonCallOptions<T> {
   maxCompletionTokens: number;
   /** Returns problems for the model to fix; an empty array means the output is acceptable. */
   validate?: (data: T) => string[];
+  /** LLM attempts (1 = no retry on validation failure). Default 2. */
+  maxAttempts?: number;
   /** Filled in as the call runs, so callers can log it even when the call throws. */
   stats?: ChatStats;
 }
@@ -64,8 +68,9 @@ export async function chatJson<T>(opts: JsonCallOptions<T>): Promise<JsonCallRes
 
   const messages = [...opts.messages];
   let last: JsonCallResult<T> | null = null;
+  const maxAttempts = opts.maxAttempts ?? 2;
 
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const choice = await requestCompletion(apiKey, opts, messages);
     const content: string | undefined = choice?.message?.content ?? undefined;
 
@@ -83,7 +88,7 @@ export async function chatJson<T>(opts: JsonCallOptions<T>): Promise<JsonCallRes
         finish_reason: choice?.finish_reason,
         refusal: choice?.message?.refusal ?? null,
       });
-      if (attempt === 2) throw new Error("The coach couldn't finish that request. Please try again.");
+      if (attempt === maxAttempts) throw new Error("The coach couldn't finish that request. Please try again.");
       continue;
     }
 
@@ -93,7 +98,7 @@ export async function chatJson<T>(opts: JsonCallOptions<T>): Promise<JsonCallRes
     opts.stats?.problems.push(problems);
 
     console.warn(`[${opts.name}] attempt ${attempt}: ${problems.length} problem(s)`, problems);
-    if (attempt === 2) break;
+    if (attempt === maxAttempts) break;
 
     const listed = problems.slice(0, MAX_PROBLEMS_IN_RETRY).map((p) => `- ${p}`).join("\n");
     messages.push(

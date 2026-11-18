@@ -188,13 +188,18 @@ Deno.serve(async (req) => {
 
     const outlineCtx = outlineContext(body, dims);
 
+    // Outlines are structural (week themes, day labels, descriptions) — no
+    // detailed workout intervals — so a fast model at low reasoning is enough.
+    // For long plans (>12 weeks), skip the validation retry and rely on the
+    // deterministic repairOutline() pass to save a full round-trip.
     const { data: generated, problems } = await chatJson<CompactOutline>({
       name: "plan_outline",
-      model: MODELS.coach,
+      model: MODELS.outline,
       messages: buildMessages(body, systemPrompt, dims),
       schema: OUTLINE_SCHEMA,
-      reasoningEffort: "medium",
-      maxCompletionTokens: 32000,
+      reasoningEffort: "low",
+      maxCompletionTokens: 16000,
+      maxAttempts: dims.totalWeeks > 12 ? 1 : 2,
       validate: (outline) => validateOutline(outline, outlineCtx),
     });
 
