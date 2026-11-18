@@ -48,7 +48,7 @@ export const PROMPT_MOMENTS: Record<PromptMomentId, PromptMoment> = {
   },
   race_prediction_teaser: {
     id: 'race_prediction_teaser',
-    title: 'See how fast you're getting',
+    title: "See how fast you're getting",
     message: "Pro unlocks predicted race times, pace trends, and progress tracking so you can see exactly how your training is paying off.",
     ctaLabel: 'See My Predictions',
     icon: 'trophy-outline',
