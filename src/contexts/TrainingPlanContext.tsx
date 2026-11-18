@@ -76,6 +76,8 @@ interface TrainingPlanContextType {
   /** Map of YYYY-MM-DD → DayEntry for calendar rendering */
   dayEntries: Record<string, DayEntry>;
   loading: boolean;
+  /** True while showing cached data and waiting for fresh network data */
+  refreshing: boolean;
   /** Reload plan + history data */
   refresh: () => Promise<void>;
   /** Ensure a custom plan exists (for manual workout additions), then refresh. */
@@ -203,6 +205,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
   const [planWorkouts, setPlanWorkouts] = useState<PlanWorkout[]>([]);
   const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [runReview, setRunReview] = useState<RunReview | null>(null);
   const activeReviewId = useRef<string | null>(null);
   const hasLoadedOnce = useRef(false);
@@ -234,6 +237,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         setDeletedPlans([]);
         setPlanWorkouts([]);
         setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -264,6 +268,8 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
           setPlanWorkouts(cached.planWorkouts);
           stateOwnerId.current = user.id;
           setLoading(false);
+          // Cached data is visible; mark as refreshing until the network delivers fresh data.
+          setRefreshing(true);
         } else {
           setPlans([]);
           setArchivedPlans([]);
@@ -277,6 +283,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
 
       const [activePlans, archived, allWorkouts, deleted] = await remote;
       if (refreshEpoch.current !== epoch) return;
+      setRefreshing(false);
       setPlans(activePlans);
       setArchivedPlans(archived);
       setDeletedPlans(deleted);
@@ -332,6 +339,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
     } finally {
       if (refreshEpoch.current === epoch) {
         setLoading(false);
+        setRefreshing(false);
         hasLoadedOnce.current = true;
       }
     }
@@ -540,6 +548,7 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         history,
         dayEntries,
         loading,
+        refreshing,
         refresh,
         ensurePlan: ensurePlanFn,
         removeWorkout,

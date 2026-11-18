@@ -52,6 +52,7 @@ import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
 import { buildHistorySummary } from '../../../src/ai/historySummary';
 import type { AIContext } from '../../../src/ai/aiWorkoutService';
+import { SkeletonBlock } from '../../../src/components/SkeletonBlock';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { useLargeText } from '../../../src/hooks/useLargeText';
 
@@ -111,7 +112,7 @@ export default function TrainingScreen() {
   const startPlanCreation = useStartPlanCreation();
   const large = useLargeText();
   const { user } = useAuth();
-  const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
+  const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refreshing, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
 
   // Include all "real" training plans: non-custom race plans, plus custom-distance
   // plans created through the setup wizard (which have an outline). Exclude the
@@ -578,49 +579,66 @@ export default function TrainingScreen() {
 
           {/* ─── State B: Active plan ─── */}
           {hasPlan && primaryPlan && (
-            <>
-              {/* Plan header — tappable to view full plan */}
-              <TouchableOpacity
-                style={styles.planHeader}
-                onPress={() => router.push('/(tabs)/training/overview' as any)}
-                activeOpacity={0.7}
-              >
+            refreshing ? (
+              /* Skeleton placeholder while fresh data loads — avoids showing stale
+                 plan header content that would visibly snap to the updated version. */
+              <View style={styles.planHeader}>
                 <View style={styles.planHeaderTop}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.planName} numberOfLines={large ? 3 : 1}>
-                      {primaryPlan.title || formatRaceLabel(primaryPlan.race_type)}
+                  <SkeletonBlock width="55%" height={16} />
+                  <SkeletonBlock width={64} height={22} borderRadius={BorderRadius.full} />
+                </View>
+                <SkeletonBlock width="100%" height={3} borderRadius={2} style={{ marginBottom: Spacing.xs }} />
+                <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                  <SkeletonBlock width={80} height={12} />
+                  <SkeletonBlock width={50} height={12} />
+                  <SkeletonBlock width={42} height={12} />
+                </View>
+              </View>
+            ) : (
+              <>
+                {/* Plan header — tappable to view full plan */}
+                <TouchableOpacity
+                  style={styles.planHeader}
+                  onPress={() => router.push('/(tabs)/training/overview' as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.planHeaderTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planName} numberOfLines={large ? 3 : 1}>
+                        {primaryPlan.title || formatRaceLabel(primaryPlan.race_type)}
+                      </Text>
+                    </View>
+                    <View style={styles.weekBadge}>
+                      <Text style={styles.weekBadgeText}>Wk {currentWeekNumber}/{totalWeeks}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                  </View>
+
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${Math.min(100, (currentWeekNumber / totalWeeks) * 100)}%` }]} />
+                  </View>
+
+                  <View style={styles.planMeta}>
+                    {currentPhase && (
+                      <>
+                        <Ionicons name="flag-outline" size={12} color={Colors.primary} />
+                        <Text style={styles.phaseLabel}>{currentPhase.name}</Text>
+                        <Text style={styles.planMetaDot}>·</Text>
+                      </>
+                    )}
+                    <Text style={styles.planMetaText}>
+                      {new Date(primaryPlan.race_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </Text>
+                    <Text style={styles.planMetaDot}>·</Text>
+                    <Text style={styles.planMetaText}>
+                      {daysUntil(primaryPlan.race_date)}d left
                     </Text>
                   </View>
-                  <View style={styles.weekBadge}>
-                    <Text style={styles.weekBadgeText}>Wk {currentWeekNumber}/{totalWeeks}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
-                </View>
+                </TouchableOpacity>
 
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${Math.min(100, (currentWeekNumber / totalWeeks) * 100)}%` }]} />
-                </View>
-
-                <View style={styles.planMeta}>
-                  {currentPhase && (
-                    <>
-                      <Ionicons name="flag-outline" size={12} color={Colors.primary} />
-                      <Text style={styles.phaseLabel}>{currentPhase.name}</Text>
-                      <Text style={styles.planMetaDot}>·</Text>
-                    </>
-                  )}
-                  <Text style={styles.planMetaText}>
-                    {new Date(primaryPlan.race_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  </Text>
-                  <Text style={styles.planMetaDot}>·</Text>
-                  <Text style={styles.planMetaText}>
-                    {daysUntil(primaryPlan.race_date)}d left
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <RunReviewCard placement="training" />
-            </>
+                <RunReviewCard placement="training" />
+              </>
+            )
           )}
 
           {/* Action row */}
@@ -683,33 +701,46 @@ export default function TrainingScreen() {
                 dayDetailY.current = e.nativeEvent.layout.y;
               }}
             >
-              <DayDetail
-                entry={selectedDayEntry}
-                selectedDate={selectedDate}
-                onStartWorkout={handleStartWorkout}
-                onRemoveWorkout={handleRemoveWorkout}
-                onMoveWorkout={handleMoveWorkoutFromDay}
-                onEditWorkout={handleEditWorkout}
-                onViewRun={handleViewRun}
-                onRunAgain={handleRunAgain}
-                onAddWorkout={handleAddWorkout}
-                highlightWorkoutId={highlight?.id}
-                highlightRunId={highlightRunId}
-                highlightContent={
-                  highlightedWorkout && highlight?.from === 'suggestion' ? (
-                    <NewlyPlannedHint
-                      planWorkoutId={highlightedWorkout.id}
-                      date={highlightedWorkout.date}
-                      workoutName={
-                        (highlightedWorkout.workout_data as WorkoutDefinition | null)?.name ??
-                        highlightedWorkout.day_label ??
-                        'Your run'
-                      }
-                      onDismiss={() => setHighlight(null)}
-                    />
-                  ) : null
-                }
-              />
+              {refreshing && hasPlan ? (
+                /* Skeleton for day detail while cached data is being replaced */
+                <View style={{ gap: Spacing.sm }}>
+                  <SkeletonBlock width="50%" height={18} />
+                  <View style={[styles.dayDetailSkeleton]}>
+                    <SkeletonBlock width="30%" height={14} />
+                    <SkeletonBlock width="70%" height={20} style={{ marginTop: Spacing.xs }} />
+                    <SkeletonBlock width="45%" height={12} style={{ marginTop: Spacing.sm }} />
+                    <SkeletonBlock width="100%" height={48} style={{ marginTop: Spacing.md }} borderRadius={BorderRadius.md} />
+                  </View>
+                </View>
+              ) : (
+                <DayDetail
+                  entry={selectedDayEntry}
+                  selectedDate={selectedDate}
+                  onStartWorkout={handleStartWorkout}
+                  onRemoveWorkout={handleRemoveWorkout}
+                  onMoveWorkout={handleMoveWorkoutFromDay}
+                  onEditWorkout={handleEditWorkout}
+                  onViewRun={handleViewRun}
+                  onRunAgain={handleRunAgain}
+                  onAddWorkout={handleAddWorkout}
+                  highlightWorkoutId={highlight?.id}
+                  highlightRunId={highlightRunId}
+                  highlightContent={
+                    highlightedWorkout && highlight?.from === 'suggestion' ? (
+                      <NewlyPlannedHint
+                        planWorkoutId={highlightedWorkout.id}
+                        date={highlightedWorkout.date}
+                        workoutName={
+                          (highlightedWorkout.workout_data as WorkoutDefinition | null)?.name ??
+                          highlightedWorkout.day_label ??
+                          'Your run'
+                        }
+                        onDismiss={() => setHighlight(null)}
+                      />
+                    ) : null
+                  }
+                />
+              )}
             </Animated.View>
           </GestureDetector>
 
@@ -1008,6 +1039,13 @@ const styles = StyleSheet.create({
   dayDetailSection: {
     marginTop: Spacing.md,
     marginBottom: Spacing.md,
+  },
+  dayDetailSkeleton: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.surfaceLight,
   },
 
   // ─── AI Coach promo card (unauthenticated) ───
