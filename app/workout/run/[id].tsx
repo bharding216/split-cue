@@ -743,7 +743,7 @@ function ActiveWorkoutInner({
         <ScrollView
           style={styles.idleScroll}
           contentContainerStyle={styles.idleScrollContent}
-          showsVerticalScrollIndicator={large}
+          showsVerticalScrollIndicator={false}
         >
           {large && idleHeader}
           {sections.map((section) => {
@@ -795,12 +795,11 @@ function ActiveWorkoutInner({
               </View>
             );
           })}
-          {large && preRunPanel}
+          {preRunPanel}
         </ScrollView>
 
         {/* Static footer */}
         <View style={styles.idleFooter}>
-          {!large && preRunPanel}
           <TouchableOpacity
             style={[styles.bigStartBtn, large && styles.bigStartBtnLarge]}
             onPress={handleStart}
@@ -2087,7 +2086,7 @@ const styles = StyleSheet.create({
   },
   idleScrollContent: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.xs,
+    paddingBottom: Spacing.md,
   },
   idleFooter: {
     alignItems: 'center',
@@ -2193,10 +2192,10 @@ const styles = StyleSheet.create({
   },
   preRunPanel: {
     alignSelf: 'stretch',
+    marginTop: Spacing.sm,
   },
   preRunPanelLarge: {
     alignItems: 'stretch',
-    marginTop: Spacing.sm,
   },
   bigStartBtn: {
     backgroundColor: Colors.primary,
