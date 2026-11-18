@@ -47,7 +47,6 @@ import { track } from '../../../src/analytics/track';
 import { consumeCalendarRequest, type CalendarHighlightSource } from '../../../src/navigation/calendarFocus';
 import { WorkoutPickerModal } from '../../../src/components/WorkoutPickerModal';
 import { VoiceWorkoutSheet } from '../../../src/components/VoiceWorkoutSheet';
-import { VoicePlanAdjustSheet } from '../../../src/components/VoicePlanAdjustSheet';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useStartPlanCreation } from '../../../src/hooks/useStartPlanCreation';
 import { supabase } from '../../../src/analytics/supabaseClient';
@@ -137,7 +136,6 @@ export default function TrainingScreen() {
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const [pickerDate, setPickerDate] = useState<string | null>(null);
   const [voiceDate, setVoiceDate] = useState<string | null>(null);
-  const [showReviewSheet, setShowReviewSheet] = useState(false);
   const [aiContext, setAiContext] = useState<AIContext | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ id: string; date: string; label: string } | null>(null);
   const [heroCollapsed, setHeroCollapsed] = useState(false);
@@ -639,17 +637,6 @@ export default function TrainingScreen() {
                 </TouchableOpacity>
 
                 <RunReviewCard placement="training" />
-
-                {/* Review my plan button */}
-                <TouchableOpacity
-                  style={styles.reviewPlanBtn}
-                  onPress={() => { setShowReviewSheet(true); track('review_plan_tapped'); }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={Colors.accent} />
-                  <Text style={styles.reviewPlanText}>Review my plan</Text>
-                  <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
-                </TouchableOpacity>
               </>
             )
           )}
@@ -664,16 +651,6 @@ export default function TrainingScreen() {
               <Ionicons name="add" size={18} color={Colors.black} />
               <Text style={styles.addWorkoutBtnText} numberOfLines={large ? undefined : 1}>Add Workout</Text>
             </TouchableOpacity>
-            {hasPlan && user && (
-              <TouchableOpacity
-                style={[styles.addPlanBanner, large && styles.addPlanBannerGrow]}
-                onPress={startPlanCreation}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add-circle-outline" size={18} color={Colors.accent} />
-                <Text style={styles.addPlanBannerText} numberOfLines={large ? undefined : 1}>New Goal</Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={[styles.statsBtn, large && styles.statsBtnLarge]}
               onPress={() => router.push('/(tabs)/training/history' as any)}
@@ -795,17 +772,6 @@ export default function TrainingScreen() {
           aiContext={aiContext}
           onAccept={handleVoiceWorkoutAccepted}
           onClose={handleVoiceClose}
-        />
-      )}
-
-      {/* Review my plan sheet */}
-      {showReviewSheet && primaryPlan && (
-        <VoicePlanAdjustSheet
-          visible
-          plan={primaryPlan}
-          planWorkouts={planWorkouts}
-          onClose={() => setShowReviewSheet(false)}
-          onApplied={() => { setShowReviewSheet(false); refresh(); }}
         />
       )}
 
@@ -1052,26 +1018,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
 
-  // ─── Review my plan button ───
-  reviewPlanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
-  },
-  reviewPlanText: {
-    flex: 1,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-
   // ─── Detail-fill banner ───
   detailFillBanner: {
     flexDirection: 'row',
@@ -1091,29 +1037,6 @@ const styles = StyleSheet.create({
   detailFillBold: {
     fontWeight: '700',
     color: Colors.textPrimary,
-  },
-
-  // ─── Add plan banner ───
-  addPlanBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md - 2,
-    paddingVertical: Spacing.md,
-    gap: Spacing.xs,
-    borderWidth: 1,
-    borderColor: Colors.surfaceLight,
-  },
-  addPlanBannerGrow: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  addPlanBannerText: {
-    flexShrink: 1,
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textSecondary,
   },
 
   // ─── Day detail section ───

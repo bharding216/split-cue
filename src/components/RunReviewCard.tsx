@@ -44,7 +44,8 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
   if (planWorkoutId && !runReview.standalone && runReview.planWorkoutId !== planWorkoutId) return null;
   if (placement === 'training' && runReview.standalone) return null;
   if (placement === 'training' && runReview.decision !== 'pending') return null;
-  if (runReview.status === 'error') return null;
+  // On the training tab, don't surface transient errors — the runner already left the post-run screen.
+  if (placement === 'training' && runReview.status === 'error') return null;
 
   const { analysis } = runReview;
   const isStandalone = !!runReview.standalone;
@@ -73,6 +74,10 @@ export function RunReviewCard({ placement, planWorkoutId }: Props) {
           <ActivityIndicator size="small" color={Colors.accent} />
           <Text style={styles.loadingText}>Your coach is reviewing this run…</Text>
         </View>
+      )}
+
+      {runReview.status === 'error' && placement === 'finished' && (
+        <Text style={styles.errorText}>Couldn't load the coach review this time. It'll be back next run.</Text>
       )}
 
       {runReview.status === 'ready' && analysis && (
@@ -155,6 +160,11 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     fontStyle: 'italic',
+  },
+  errorText: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    lineHeight: 20,
   },
   changes: {
     marginTop: Spacing.xs,

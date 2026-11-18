@@ -458,10 +458,45 @@ export function TrainingPlanProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Plan path — full review with proposed changes
+      // Plan path — full review with proposed changes when the plan has an AI outline.
+      // Manual/custom plans (no outline) fall back to standalone feedback.
       const ownerPlan = plans.find((p) => p.id === plannedWorkout.plan_id);
-      // Only AI training plans have an outline to coach against; skip the manual-workout plan.
-      if (!ownerPlan?.outline?.length) return;
+      const hasOutline = !!ownerPlan?.outline?.length;
+
+      if (!hasOutline) {
+        // Fallback: treat as a standalone review so the runner still gets coach feedback
+        const reviewId = completedRun.id;
+        activeReviewId.current = reviewId;
+        setRunReview({
+          planId: null,
+          planWorkoutId: null,
+          status: 'loading',
+          analysis: null,
+          adjustments: [],
+          decision: null,
+          standalone: true,
+        });
+
+        const runsIncludingThis = [completedRun, ...history.filter((h) => h.id !== completedRun.id)];
+        loadCoachContext(user.id, runsIncludingThis)
+          .then((context) => reviewStandaloneRun({ completedRun, context, feelTag }))
+          .then(({ analysis }) => {
+            if (activeReviewId.current !== reviewId) return;
+            setRunReview((prev) =>
+              prev && prev.standalone && activeReviewId.current === reviewId
+                ? { ...prev, status: 'ready', analysis, decision: null }
+                : prev,
+            );
+          })
+          .catch((err) => {
+            console.warn('Manual-plan run review failed:', err);
+            if (activeReviewId.current !== reviewId) return;
+            setRunReview((prev) =>
+              prev && activeReviewId.current === reviewId ? { ...prev, status: 'error' } : prev,
+            );
+          });
+        return;
+      }
 
       const reviewId = plannedWorkout.id;
       activeReviewId.current = reviewId;
