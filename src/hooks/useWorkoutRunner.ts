@@ -356,7 +356,12 @@ export function useWorkoutRunner(
         skip_count: skipCountRef.current,
         mid_run_settings_opened: settingsOpenedCountRef.current,
         mid_run_settings_changed: [...midRunSettingsChangedRef.current],
-        ...gpsQuality(paceTrackerRef.current.getFullTrack()),
+        ...gpsQuality(
+          paceTrackerRef.current.getFullTrack(),
+          engineRef.current.totalElapsedMs,
+          paceTrackerRef.current.getSampleCounts(),
+        ),
+        gps_gap_count: paceTrackerRef.current.getGapCount(),
         run_has_hr: heartRateRef.current.getSamples().length > 0,
       };
       const batteryStart = batteryAtStartRef.current;

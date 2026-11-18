@@ -35,12 +35,13 @@ import {
   categorizeWorkout,
   estimatedPlannedSeconds,
   type CompletedWorkout,
+  generateId,
 } from '../../../src/workout/workoutTypes';
 import { resolveWorkoutSource, runQualifies, getRunHistoryContext } from '../../../src/analytics/workoutContext';
 import { FirstRunCheck } from '../../../src/components/FirstRunCheck';
 import { buildCueContext } from '../../../src/audio/cuePhrases';
 import { DISCARD_WINDOW_MS } from '../../../src/analytics/falseStarts';
-import { suggestNextRun, suggestNextPlannedRun } from '../../../src/workout/nextRunSuggestion';
+import { suggestNextRun, suggestNextPlannedRun, getLastWorkoutForRepeat } from '../../../src/workout/nextRunSuggestion';
 import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/components/NextRunSuggestionCard';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
@@ -54,7 +55,7 @@ import {
   AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 import { loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
-import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout } from '../../../src/workout/tempWorkoutCache';
+import { getTempWorkout, getTempWorkoutMeta, clearTempWorkout, setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { loadActiveSession, type ActiveSessionSnapshot } from '../../../src/workout/activeSession';
 import { useWorkoutRunner, type SessionMeta } from '../../../src/hooks/useWorkoutRunner';
 import { Timer } from '../../../src/components/Timer';
@@ -587,7 +588,13 @@ function ActiveWorkoutInner({
     [state.phase, runner.completedEntryId],
   );
   const [suggestionStatus, setSuggestionStatus] = useState<SuggestionStatus>('idle');
+  const [repeatWorkout, setRepeatWorkout] = useState<CompletedWorkout | null>(null);
   const pendingSignInAdd = useRef(false);
+
+  useEffect(() => {
+    if (!nextRun || !runner.completedEntryId) return;
+    getLastWorkoutForRepeat(workout.id).then(setRepeatWorkout);
+  }, [nextRun, runner.completedEntryId, workout.id]);
 
   useEffect(() => {
     if (!nextRun) return;
@@ -942,6 +949,15 @@ function ActiveWorkoutInner({
             signedIn={!!user}
             status={suggestionStatus}
             onAdd={handleAddSuggestion}
+            repeatWorkoutName={repeatWorkout?.configuration?.name || repeatWorkout?.workoutName}
+            onRepeat={repeatWorkout?.configuration ? () => {
+              hapticTap();
+              track('home_repeat_last_tapped', { surface: 'post_run_suggestion' });
+              const draft = { ...repeatWorkout.configuration!, id: generateId(), updatedAt: Date.now() };
+              setTempWorkout(draft, { source: 'post_run_repeat', templateId: repeatWorkout.templateId });
+              leaveFinishedScreen();
+              router.replace(`/workout/run/${draft.id}`);
+            } : undefined}
           />
         )}
 

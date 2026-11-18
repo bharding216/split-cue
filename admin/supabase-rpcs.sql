@@ -252,7 +252,10 @@ returns table(
   order by plan_count desc, latest_at desc;
 $$ language sql security definer;
 
--- Workout started vs completed stats (today + last 7 days)
+-- Workout started vs completed stats (today + last 7 days).
+-- Production only, excludes test devices. Each workout_started has a
+-- matching workout_completed or workout_abandoned, so a restart that fires
+-- a new workout_started is balanced by the previous run's workout_abandoned.
 create or replace function workout_completion_stats(num_days int default 7)
 returns table(
   started_today int,
@@ -279,6 +282,8 @@ returns table(
       )::int as completed_period
     from events
     where event_name in ('workout_started', 'workout_completed')
+      and environment = 'production'
+      and anonymous_user_id not in (select anonymous_user_id from analytics_excluded_devices)
   )
   select
     started_today,
@@ -933,6 +938,134 @@ returns table(step text, user_count int) as $$
   order by s.ord;
 $$ language sql security definer;
 
+-- Suggestion return rate: did the runner come back on the suggested date
+-- (any workout) vs. completing the suggested workout itself?
+drop function if exists suggestion_return_rate(int);
+create or replace function suggestion_return_rate(num_days int default 30)
+returns table(step text, user_count int) as $$
+  with suggestions as (
+    select
+      e.anonymous_user_id,
+      (e.metadata->>'suggested_date')::date as suggested_date
+    from events e
+    where e.environment = 'production'
+      and e.event_name = 'next_run_suggestion_shown'
+      and e.metadata->>'suggested_date' is not null
+      and e.created_at > now() - (num_days || ' days')::interval
+      and e.anonymous_user_id not in (select anonymous_user_id from analytics_excluded_devices)
+  ),
+  distinct_suggestions as (
+    select distinct on (anonymous_user_id, suggested_date)
+      anonymous_user_id,
+      suggested_date
+    from suggestions
+  ),
+  runs as (
+    select
+      q.anonymous_user_id,
+      q.created_at::date as run_date,
+      q.metadata->>'workout_origin' as workout_origin
+    from qualifying_runs q
+    where q.created_at > now() - ((num_days + 2) || ' days')::interval
+  ),
+  matched as (
+    select
+      ds.anonymous_user_id,
+      ds.suggested_date,
+      bool_or(r.run_date between ds.suggested_date - 1 and ds.suggested_date + 1) as returned_any,
+      bool_or(
+        r.run_date between ds.suggested_date - 1 and ds.suggested_date + 1
+        and r.workout_origin = 'next_run_suggestion'
+      ) as returned_suggested
+    from distinct_suggestions ds
+    left join runs r
+      on r.anonymous_user_id = ds.anonymous_user_id
+    group by ds.anonymous_user_id, ds.suggested_date
+  )
+  select s.step, s.n::int
+  from (values
+    (1, 'Saw suggestion',
+      (select count(distinct anonymous_user_id) from distinct_suggestions)),
+    (2, 'Returned on date',
+      (select count(distinct anonymous_user_id) from matched where returned_any)),
+    (3, 'Ran suggested workout',
+      (select count(distinct anonymous_user_id) from matched where returned_suggested))
+  ) as s(ord, step, n)
+  order by s.ord;
+$$ language sql security definer;
+
+-- False start patterns: aggregate restart data to diagnose onboarding friction.
+drop function if exists false_start_patterns(int);
+create or replace function false_start_patterns(num_days int default 30)
+returns table(
+  total_restarts int,
+  unique_restarters int,
+  same_workout_pct numeric,
+  median_seconds_to_restart numeric,
+  top_workout_changes jsonb,
+  restart_by_run_number jsonb
+) as $$
+  with restarts as (
+    select
+      e.anonymous_user_id,
+      e.metadata,
+      coalesce((e.metadata->>'seconds_since_stop')::numeric, 0) as seconds_since_stop,
+      coalesce(e.metadata->>'same_workout_name', 'false') = 'true' as same_name
+    from events e
+    where e.environment = 'production'
+      and e.event_name = 'workout_restarted'
+      and e.created_at > now() - (num_days || ' days')::interval
+      and e.anonymous_user_id not in (select anonymous_user_id from analytics_excluded_devices)
+  ),
+  workout_change_items as (
+    select jsonb_array_elements_text(r.metadata->'workout_changes') as change_field
+    from restarts r
+    where jsonb_typeof(r.metadata->'workout_changes') = 'array'
+  ),
+  change_counts as (
+    select change_field, count(*)::int as cnt
+    from workout_change_items
+    group by change_field
+    order by cnt desc
+    limit 10
+  ),
+  by_run_number as (
+    select
+      case
+        when (r.metadata->>'previous_elapsed_ms')::numeric < 60000 then 'under_1_min'
+        else 'over_1_min'
+      end as bucket,
+      count(*)::int as cnt
+    from restarts r
+    group by 1
+  ),
+  stats as (
+    select
+      count(*)::int as total_restarts,
+      count(distinct anonymous_user_id)::int as unique_restarters,
+      round(
+        count(*) filter (where same_name)::numeric / nullif(count(*), 0) * 100,
+        1
+      ) as same_workout_pct,
+      round((percentile_cont(0.5) within group (order by seconds_since_stop))::numeric, 0) as median_seconds_to_restart
+    from restarts
+  )
+  select
+    s.total_restarts,
+    s.unique_restarters,
+    s.same_workout_pct,
+    s.median_seconds_to_restart,
+    coalesce(
+      (select jsonb_object_agg(c.change_field, c.cnt) from change_counts c),
+      '{}'::jsonb
+    ) as top_workout_changes,
+    coalesce(
+      (select jsonb_object_agg(b.bucket, b.cnt) from by_run_number b),
+      '{}'::jsonb
+    ) as restart_by_run_number
+  from stats s;
+$$ language sql security definer;
+
 -- Why one-run users didn't come back (in-app survey answers).
 drop function if exists lapsed_survey_breakdown(int);
 create or replace function lapsed_survey_breakdown(num_days int default 90)
@@ -1460,6 +1593,8 @@ begin
     'first_run_users(int)',
     'user_timeline(text, int)',
     'next_run_funnel(int)',
+    'suggestion_return_rate(int)',
+    'false_start_patterns(int)',
     'lapsed_survey_breakdown(int)',
     'lapsed_survey_summary(int)',
     'lapsed_survey_comments(int, int)',
@@ -1485,6 +1620,8 @@ begin
     'first_run_users(int)',
     'user_timeline(text, int)',
     'next_run_funnel(int)',
+    'suggestion_return_rate(int)',
+    'false_start_patterns(int)',
     'lapsed_survey_breakdown(int)',
     'run_ladder(int)',
     'lapsed_survey_summary(int)',

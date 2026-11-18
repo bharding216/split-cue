@@ -569,6 +569,45 @@ export async function getNextRunFunnel(days = 30): Promise<FunnelCount[]> {
 }
 
 /**
+ * Suggestion return rate: saw suggestion → returned on date → ran suggested workout.
+ * Measures whether runners come back around the suggested date (±1 day) even
+ * if they choose a different workout, vs. actually running the suggestion.
+ */
+export async function getSuggestionReturnRate(days = 30): Promise<FunnelCount[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('suggestion_return_rate', { num_days: days });
+  return (data as FunnelCount[]) ?? [];
+}
+
+export type FalseStartPatterns = {
+  totalRestarts: number;
+  uniqueRestarters: number;
+  sameWorkoutPct: number;
+  medianSecondsToRestart: number;
+  topWorkoutChanges: Record<string, number>;
+  restartByRunNumber: Record<string, number>;
+};
+
+/**
+ * Aggregate false-start restart patterns (last N days).
+ */
+export async function getFalseStartPatterns(days = 30): Promise<FalseStartPatterns> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('false_start_patterns', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    totalRestarts: row?.total_restarts ?? 0,
+    uniqueRestarters: row?.unique_restarters ?? 0,
+    sameWorkoutPct: Number(row?.same_workout_pct ?? 0),
+    medianSecondsToRestart: Number(row?.median_seconds_to_restart ?? 0),
+    topWorkoutChanges: (row?.top_workout_changes as Record<string, number>) ?? {},
+    restartByRunNumber: (row?.restart_by_run_number as Record<string, number>) ?? {},
+  };
+}
+
+/**
  * Lapsed-runner survey answers (last N days).
  */
 export async function getLapsedSurveyBreakdown(days = 90): Promise<SurveyReason[]> {

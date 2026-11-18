@@ -143,6 +143,7 @@ export default async function UserTimelinePage({ params }: { params: Promise<{ i
 
   const runs = events.filter((e) => e.event_name === 'workout_completed' || e.event_name === 'workout_abandoned');
   const qualifying = runs.filter(qualifies).length;
+  const restarts = events.filter((e) => e.event_name === 'workout_restarted').length;
   const firstSeen = events.length > 0 ? events[events.length - 1].created_at : null;
 
   const facts: [string, string | null | undefined][] = [
@@ -187,6 +188,7 @@ export default async function UserTimelinePage({ params }: { params: Promise<{ i
           <p className="mt-1 text-3xl font-bold tabular-nums">{qualifying}</p>
           <p className="mt-1 text-xs text-gray-500">
             {runs.length} ended, {runs.length - qualifying} stopped too early to count
+            {restarts > 0 && ` · ${restarts} restarted`}
           </p>
         </div>
       </section>

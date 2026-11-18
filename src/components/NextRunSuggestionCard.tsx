@@ -18,13 +18,23 @@ interface NextRunSuggestionCardProps {
   signedIn: boolean;
   status: SuggestionStatus;
   onAdd: () => void;
+  /** When provided, shows a secondary "Or repeat [name]" link below the main CTA. */
+  repeatWorkoutName?: string;
+  onRepeat?: () => void;
 }
 
 function weekdayLabel(dateKey: string): string {
   return new Date(dateKey + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long' });
 }
 
-export function NextRunSuggestionCard({ suggestion, signedIn, status, onAdd }: NextRunSuggestionCardProps) {
+export function NextRunSuggestionCard({
+  suggestion,
+  signedIn,
+  status,
+  onAdd,
+  repeatWorkoutName,
+  onRepeat,
+}: NextRunSuggestionCardProps) {
   const { workout } = suggestion;
   const secs = totalWorkoutSeconds(workout);
   const busy = status === 'adding';
@@ -87,6 +97,20 @@ export function NextRunSuggestionCard({ suggestion, signedIn, status, onAdd }: N
       )}
       {status === 'error' && (
         <Text style={styles.error}>Couldn&apos;t add it to your calendar. Check your connection and try again.</Text>
+      )}
+
+      {repeatWorkoutName && onRepeat && (
+        <TouchableOpacity
+          style={styles.repeatRow}
+          onPress={onRepeat}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+        >
+          <Ionicons name="repeat-outline" size={16} color={Colors.primary} />
+          <Text style={styles.repeatText} numberOfLines={1}>
+            Or repeat {repeatWorkoutName}
+          </Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -168,5 +192,19 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.danger,
     marginTop: Spacing.sm,
+  },
+  repeatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.sm,
+  },
+  repeatText: {
+    fontSize: FontSize.sm,
+    color: Colors.primary,
+    fontWeight: '600',
+    flexShrink: 1,
   },
 });

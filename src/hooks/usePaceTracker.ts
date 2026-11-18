@@ -21,6 +21,7 @@ import {
   MAX_ACCURACY_METERS,
   createPaceState,
 } from '../pace/paceTypes';
+import type { GpsSampleCounts } from '../analytics/runContext';
 import {
   addSample,
   expireStalePace,
@@ -80,6 +81,10 @@ export interface PaceTrackerResult {
   getFullTrack: () => GpsSample[];
   /** The full track split at each resume; no distance is counted between segments. */
   getTrackSegments: () => GpsSample[][];
+  /** Foreground vs background sample counts for analytics. */
+  getSampleCounts: () => GpsSampleCounts;
+  /** Number of GPS gaps (>30 s with no sample while running) detected this session. */
+  getGapCount: () => number;
   /** Ignore fixes and clear the current pace until `resume`. GPS stays on for a quick fix on resume. */
   pause: () => void;
   resume: () => void;
@@ -115,6 +120,9 @@ export function usePaceTracker(
   const lastSampleAtRef = useRef(0);
   const hadPaceRef = useRef(false);
   const pausedRef = useRef(false);
+  const foregroundSampleCountRef = useRef(0);
+  const backgroundSampleCountRef = useRef(0);
+  const gpsGapCountRef = useRef(0);
 
   const commit = useCallback((next: PaceState) => {
     if (next === paceStateRef.current) return;
@@ -123,16 +131,28 @@ export function usePaceTracker(
     setPaceState(next);
   }, []);
 
+  /** Threshold in ms: a gap longer than this between accepted samples is flagged. */
+  const GPS_GAP_THRESHOLD_MS = 30_000;
+
   /** Fold samples into the pace state, skipping any not newer than the last one ingested. */
   const ingest = useCallback(
-    (samples: GpsSample[]) => {
+    (samples: GpsSample[], source: 'foreground' | 'background' | 'session') => {
       if (pausedRef.current) return;
       let state = paceStateRef.current;
       for (const sample of samples) {
         if (sample.timestamp <= lastSampleAtRef.current) continue;
+        const prevTs = lastSampleAtRef.current;
         lastSampleAtRef.current = sample.timestamp;
         if (sample.accuracy <= MAX_ACCURACY_METERS) {
+          if (prevTs > 0 && sample.timestamp - prevTs > GPS_GAP_THRESHOLD_MS) {
+            gpsGapCountRef.current += 1;
+          }
           trackSegmentsRef.current[trackSegmentsRef.current.length - 1].push(sample);
+        }
+        if (source === 'background') {
+          backgroundSampleCountRef.current += 1;
+        } else {
+          foregroundSampleCountRef.current += 1;
         }
         state = addSample(state, sample, windowRef.current);
       }
@@ -141,14 +161,22 @@ export function usePaceTracker(
     [commit],
   );
 
-  const processSample = useCallback((sample: GpsSample) => ingest([sample]), [ingest]);
+  const processSample = useCallback(
+    (sample: GpsSample) => ingest([sample], 'foreground'),
+    [ingest],
+  );
+
+  const processSessionSample = useCallback(
+    (sample: GpsSample) => ingest([sample], 'session'),
+    [ingest],
+  );
 
   /** Drain any samples the background task buffered. */
   const drainBackgroundBuffer = useCallback(() => {
     if (backgroundSampleBuffer.length === 0) return;
     const buffered = backgroundSampleBuffer.sort((a, b) => a.timestamp - b.timestamp);
     backgroundSampleBuffer = [];
-    ingest(buffered);
+    ingest(buffered, 'background');
   }, [ingest]);
 
   const sync = useCallback(() => {
@@ -159,6 +187,11 @@ export function usePaceTracker(
 
   const getPaceState = useCallback(() => paceStateRef.current, []);
   const hasHadPace = useCallback(() => hadPaceRef.current, []);
+  const getSampleCounts = useCallback((): GpsSampleCounts => ({
+    foreground: foregroundSampleCountRef.current,
+    background: backgroundSampleCountRef.current,
+  }), []);
+  const getGapCount = useCallback(() => gpsGapCountRef.current, []);
 
   const pause = useCallback(() => {
     if (pausedRef.current) return;
@@ -198,7 +231,7 @@ export function usePaceTracker(
     // On Android the workout session (started by useWorkoutRunner for GPS
     // workouts) delivers fixes, including with the screen locked.
     if (isWorkoutSessionSupported) {
-      sessionLocationSubRef.current = addWorkoutSessionLocationListener(processSample);
+      sessionLocationSubRef.current = addWorkoutSessionLocationListener(processSessionSample);
       return;
     }
 
@@ -248,7 +281,7 @@ export function usePaceTracker(
         console.warn('Failed to start background location:', e);
       }
     }
-  }, [processSample]);
+  }, [processSample, processSessionSample]);
 
   /** Stop GPS tracking. */
   const stop = useCallback(async () => {
@@ -284,6 +317,9 @@ export function usePaceTracker(
     lastSampleAtRef.current = 0;
     hadPaceRef.current = false;
     pausedRef.current = false;
+    foregroundSampleCountRef.current = 0;
+    backgroundSampleCountRef.current = 0;
+    gpsGapCountRef.current = 0;
   }, []);
 
   const restore = useCallback((totalDistanceMeters: number, segments: GpsSample[][]) => {
@@ -335,6 +371,8 @@ export function usePaceTracker(
     hasHadPace,
     getFullTrack,
     getTrackSegments,
+    getSampleCounts,
+    getGapCount,
     pause,
     resume,
     start,

@@ -5,6 +5,8 @@ import {
   getFirstRunBreakdown,
   getFirstRunUsers,
   getNextRunFunnel,
+  getSuggestionReturnRate,
+  getFalseStartPatterns,
   getLapsedSurveyBreakdown,
   getLapsedSurveySummary,
   getLapsedSurveyComments,
@@ -58,13 +60,15 @@ export default async function RetentionPage() {
     data: { user },
   } = await auth.auth.getUser();
 
-  const [cohorts, breakdown, newRunners, funnel, reminders, survey, surveySummary, surveyComments] =
+  const [cohorts, breakdown, newRunners, funnel, suggestionRate, reminders, falseStarts, survey, surveySummary, surveyComments] =
     await Promise.all([
       getSecondRunRetention(12),
       getFirstRunBreakdown(90),
       getFirstRunUsers(30),
       getNextRunFunnel(30),
+      getSuggestionReturnRate(30),
       getRunReminderFunnel(30),
+      getFalseStartPatterns(30),
       getLapsedSurveyBreakdown(90),
       getLapsedSurveySummary(90),
       getLapsedSurveyComments(90),
@@ -136,7 +140,7 @@ export default async function RetentionPage() {
         <FirstRunBreakdown data={breakdown} overallPct={overallPct} />
       </section>
 
-      <section className="mb-8 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+      <section className="mb-8 grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <CountBars
           title="Next-Run Funnel"
           subtitle="Last 30 days"
@@ -144,6 +148,14 @@ export default async function RetentionPage() {
           mode="funnel"
           rows={funnel.map((f) => ({ label: f.step, count: f.user_count }))}
           emptyText="No next-run suggestions yet. They ship with the next app update."
+        />
+        <CountBars
+          title="Suggestion Return Rate"
+          subtitle="Last 30 days"
+          description="Did the runner return within ±1 day of the suggested date (any workout), and did they run the suggested workout itself?"
+          mode="funnel"
+          rows={suggestionRate.map((f) => ({ label: f.step, count: f.user_count }))}
+          emptyText="No next-run suggestions yet."
         />
         <CountBars
           title="Run Reminders"
@@ -154,6 +166,53 @@ export default async function RetentionPage() {
           emptyText="No reminders yet. They ship with the next app update."
         />
       </section>
+
+      {falseStarts.totalRestarts > 0 && (
+        <>
+          <h2 className="mb-1 text-lg font-semibold">False Starts</h2>
+          <p className="mb-4 max-w-3xl text-sm text-gray-500">
+            Runs abandoned and immediately restarted. Shows what runners change between attempts,
+            which helps distinguish deliberate experimentation from friction.
+          </p>
+          <section className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard
+              label="Total Restarts"
+              value={falseStarts.totalRestarts}
+              detail={`${falseStarts.uniqueRestarters} unique runners`}
+            />
+            <StatCard
+              label="Same Workout"
+              value={falseStarts.sameWorkoutPct}
+              format="percent"
+              detail="Restarted the same workout name"
+            />
+            <StatCard
+              label="Median Restart Time"
+              value={`${falseStarts.medianSecondsToRestart}s`}
+              detail="Seconds between stop and restart"
+            />
+            <StatCard
+              label="Under 1 Min"
+              value={falseStarts.restartByRunNumber['under_1_min'] ?? 0}
+              detail={`vs. ${falseStarts.restartByRunNumber['over_1_min'] ?? 0} over 1 min`}
+            />
+          </section>
+          {Object.keys(falseStarts.topWorkoutChanges).length > 0 && (
+            <section className="mb-8">
+              <CountBars
+                title="What Changed Between Attempts"
+                subtitle="Last 30 days"
+                description="Fields runners changed between the abandoned run and the restart. Multiple changes per restart are counted separately."
+                mode="share"
+                rows={Object.entries(falseStarts.topWorkoutChanges)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([label, count]) => ({ label: label.replace(/_/g, ' '), count }))}
+                emptyText="No workout changes recorded."
+              />
+            </section>
+          )}
+        </>
+      )}
 
       <h2 className="mb-1 text-lg font-semibold">Lapsed-Runner Survey</h2>
       <p className="mb-4 max-w-3xl text-sm text-gray-500">

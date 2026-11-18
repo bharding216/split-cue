@@ -9,12 +9,16 @@
 
 import {
   type AppSettings,
+  type CompletedWorkout,
   type WorkoutDefinition,
   categorizeWorkout,
   createSegment,
   flattenWorkout,
   generateId,
 } from './workoutTypes';
+import { loadHistory } from './workoutStorage';
+import { historyEntryQualifies } from '../analytics/workoutContext';
+import { easyRunName, trainingName } from '../i18n/workoutNames';
 import type { PlanWorkout } from '../types/database';
 
 /** Days between the run just finished and the suggested one (no-plan fallback). */
@@ -51,7 +55,7 @@ function easyRun(actualMs: number): WorkoutDefinition {
   const now = Date.now();
   return {
     id: generateId(),
-    name: `Easy ${minutes}-Minute Run`,
+    name: easyRunName(minutes),
     category: 'easy',
     origin: 'next_run_suggestion',
     blocks: [
@@ -112,12 +116,12 @@ export function suggestNextPlannedRun(
     ? { ...workoutData, id: workoutData.id || generateId() }
     : {
         id: generateId(),
-        name: next.day_label || 'Training',
+        name: next.day_label || trainingName(),
         category: 'easy',
         origin: 'plan',
         blocks: [
           createSegment('run', {
-            label: next.day_label || 'Training',
+            label: next.day_label || trainingName(),
             intensity: 'easy',
             effort: 4,
             target: { type: 'time', durationSeconds: 30 * 60 },
@@ -166,4 +170,27 @@ export function suggestNextRun(
       : 'Same run again in a couple of days. Consistency is what builds fitness.',
     tip: featureTip(completed, settings),
   };
+}
+
+/**
+ * The most recent qualifying run whose workout definition differs from the one
+ * just finished — lets the post-run screen offer "Or repeat [name]" when the
+ * suggestion is a different workout.
+ */
+export async function getLastWorkoutForRepeat(
+  justFinishedId: string,
+): Promise<CompletedWorkout | null> {
+  try {
+    const history = await loadHistory();
+    return (
+      history.find(
+        (r) =>
+          r.configuration &&
+          r.workoutId !== justFinishedId &&
+          historyEntryQualifies(r),
+      ) ?? null
+    );
+  } catch {
+    return null;
+  }
 }
