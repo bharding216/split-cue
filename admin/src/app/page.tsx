@@ -23,6 +23,10 @@ import {
   getHeartRateRetention,
   getShareFunnel,
   getWorkoutCadence,
+  getGpsDeniedWorkoutStats,
+  getHrScanFunnel,
+  getHrNotListedReports,
+  getWorkoutPickerStats,
 } from '@/lib/queries';
 import HeartRateFeatureSection from '@/components/HeartRateFeatureSection';
 import SharingSection from '@/components/SharingSection';
@@ -73,6 +77,10 @@ export default async function DashboardPage() {
     calendarStats,
     calendarDaily,
     workoutCadence,
+    gpsDeniedStats,
+    hrScanFunnel,
+    hrNotListed,
+    pickerStats,
   ] = await Promise.all([
     getOverviewStats(),
     getEngagementStats(),
@@ -97,6 +105,10 @@ export default async function DashboardPage() {
     getTrainingCalendarStats(30),
     getTrainingCalendarDaily(30),
     getWorkoutCadence(),
+    getGpsDeniedWorkoutStats(30),
+    getHrScanFunnel(30),
+    getHrNotListedReports(30),
+    getWorkoutPickerStats(30),
   ]);
 
   return (
@@ -217,6 +229,31 @@ export default async function DashboardPage() {
           detail={`Across ${workoutCadence.userCount} runner${workoutCadence.userCount !== 1 ? 's' : ''} with ≥ 2 sessions`}
         />
       </section>
+      <section className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <StatCard
+          label="GPS-Denied Rate"
+          value={gpsDeniedStats.deniedPct}
+          format="percent"
+          detail={`${gpsDeniedStats.gpsDeniedWorkouts}/${gpsDeniedStats.totalGpsWorkouts} GPS workouts had location blocked`}
+        />
+        <StatCard
+          label="GPS No-Fix Rate"
+          value={gpsDeniedStats.noFixPct}
+          format="percent"
+          detail={`${gpsDeniedStats.gpsNoFixWorkouts} workouts got 0 samples (not denied)`}
+        />
+        <StatCard
+          label="Picker Dismiss Rate"
+          value={pickerStats.dismissRate}
+          format="percent"
+          detail={`${pickerStats.dismissals}/${pickerStats.opens} opens closed without selecting`}
+        />
+        <StatCard
+          label="Picker Dwell Time"
+          value={pickerStats.medianDwellMs > 0 ? `${(pickerStats.medianDwellMs / 1000).toFixed(1)}s` : '—'}
+          detail={`Median time before dismissing (${pickerStats.uniqueDismissers} users)`}
+        />
+      </section>
 
       {/* ── Growth & Engagement ───────────────────────────── */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -277,7 +314,14 @@ export default async function DashboardPage() {
       </section>
 
       {/* ── Heart Rate ────────────────────────────────────── */}
-      <HeartRateFeatureSection stats={hrStats} retention={hrRetention} days={30} retentionDays={90} />
+      <HeartRateFeatureSection
+        stats={hrStats}
+        retention={hrRetention}
+        scanFunnel={hrScanFunnel}
+        notListed={hrNotListed}
+        days={30}
+        retentionDays={90}
+      />
 
       {/* ── Platforms ─────────────────────────────────────── */}
       <PlatformsSection data={countries} />

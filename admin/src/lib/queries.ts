@@ -748,3 +748,101 @@ export async function getUpdatePromptsByVersion(days = 30): Promise<UpdatePrompt
   const { data } = await supabase.rpc('update_prompts_by_version', { num_days: days });
   return (data as UpdatePromptsByVersion[]) ?? [];
 }
+
+// ── UX-Timeline Dashboard Cards ──────────────────────────────
+
+export type GpsDeniedWorkoutStats = {
+  totalGpsWorkouts: number;
+  gpsDeniedWorkouts: number;
+  deniedPct: number;
+  gpsNoFixWorkouts: number;
+  noFixPct: number;
+};
+
+/**
+ * Workouts started with GPS enabled but location blocked (zero samples).
+ */
+export async function getGpsDeniedWorkoutStats(days = 30): Promise<GpsDeniedWorkoutStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('gps_denied_workout_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    totalGpsWorkouts: row?.total_gps_workouts ?? 0,
+    gpsDeniedWorkouts: row?.gps_denied_workouts ?? 0,
+    deniedPct: Number(row?.denied_pct ?? 0),
+    gpsNoFixWorkouts: row?.gps_no_fix_workouts ?? 0,
+    noFixPct: Number(row?.no_fix_pct ?? 0),
+  };
+}
+
+export type HrScanFunnelRow = {
+  guide_kind: string;
+  scans_found: number;
+  scans_empty: number;
+  total_scans: number;
+  success_pct: number;
+};
+
+/**
+ * HR scan outcomes (found vs. empty) grouped by device guide kind.
+ */
+export async function getHrScanFunnel(days = 30): Promise<HrScanFunnelRow[]> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_scan_funnel', { num_days: days });
+  return (data as HrScanFunnelRow[]) ?? [];
+}
+
+export type HrNotListedReport = {
+  name: string;
+  type: string;
+};
+
+export type HrNotListedStats = {
+  totalReports: number;
+  uniqueReporters: number;
+  deviceNames: HrNotListedReport[];
+};
+
+/**
+ * HR "device not listed" reports with device names.
+ */
+export async function getHrNotListedReports(days = 30): Promise<HrNotListedStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('hr_not_listed_reports', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    totalReports: row?.total_reports ?? 0,
+    uniqueReporters: row?.unique_reporters ?? 0,
+    deviceNames: (row?.device_names as HrNotListedReport[]) ?? [],
+  };
+}
+
+export type WorkoutPickerStats = {
+  opens: number;
+  dismissals: number;
+  dismissRate: number;
+  medianDwellMs: number;
+  uniqueOpeners: number;
+  uniqueDismissers: number;
+};
+
+/**
+ * Workout picker open / dismiss engagement stats.
+ */
+export async function getWorkoutPickerStats(days = 30): Promise<WorkoutPickerStats> {
+  const supabase = createServiceClient();
+
+  const { data } = await supabase.rpc('workout_picker_stats', { num_days: days });
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    opens: row?.opens ?? 0,
+    dismissals: row?.dismissals ?? 0,
+    dismissRate: Number(row?.dismiss_rate ?? 0),
+    medianDwellMs: Number(row?.median_dwell_ms ?? 0),
+    uniqueOpeners: row?.unique_openers ?? 0,
+    uniqueDismissers: row?.unique_dismissers ?? 0,
+  };
+}

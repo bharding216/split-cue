@@ -788,7 +788,16 @@ returns table(
         where e.anonymous_user_id = f.anonymous_user_id
           and e.event_name = 'next_run_suggestion_added'
           and e.created_at between f.first_at and f.first_at + interval '1 day'
-      ) as planned_next
+      ) as planned_next,
+      (
+        select chk.metadata->>'location_access'
+        from events chk
+        where chk.anonymous_user_id = f.anonymous_user_id
+          and chk.event_name = 'first_run_check_shown'
+          and chk.created_at between f.first_at - interval '1 hour' and f.first_at + interval '5 minutes'
+        order by chk.created_at desc
+        limit 1
+      ) as location_access
     from first_run_returns f
     where f.first_at > now() - (num_days || ' days')::interval
   ),
@@ -817,6 +826,7 @@ returns table(
         when (b.first_metadata->>'gps_sample_count')::int = 0 then 'no fix'
         when (b.first_metadata->>'gps_accuracy_p90_m')::numeric > 30 then 'poor'
         else 'good' end),
+      ('Location access', coalesce(b.location_access, 'unknown')),
       ('Ended', case b.first_event
         when 'workout_completed' then 'finished'
         else 'stopped early' end),
@@ -1546,6 +1556,187 @@ returns table(runtime_version text, required_count int, suggested_count int) as 
   order by required_count desc, suggested_count desc;
 $$ language sql security definer;
 
+-- ── UX-Timeline Dashboard Cards ──────────────────────────────
+
+-- GPS-denied workout rate: workouts with GPS enabled but zero samples.
+drop function if exists gps_denied_workout_stats(int);
+create or replace function gps_denied_workout_stats(num_days int default 30)
+returns table(
+  total_gps_workouts int,
+  gps_denied_workouts int,
+  denied_pct numeric,
+  gps_no_fix_workouts int,
+  no_fix_pct numeric
+) as $$
+  with ended as (
+    select e.metadata
+    from events e
+    where e.environment = 'production'
+      and e.event_name in ('workout_completed', 'workout_abandoned')
+      and e.created_at > now() - (num_days || ' days')::interval
+      and (e.metadata->>'gps_enabled')::boolean = true
+      and not exists (
+        select 1 from analytics_excluded_devices x
+        where x.anonymous_user_id = e.anonymous_user_id
+      )
+  ),
+  counts as (
+    select
+      count(*)::int as total,
+      count(*) filter (
+        where (metadata->>'gps_sample_count')::int = 0
+      )::int as no_samples,
+      count(*) filter (
+        where (metadata->>'gps_sample_count')::int = 0
+          and coalesce((metadata->>'gps_expected_samples')::int, 0) > 0
+      )::int as denied
+    from ended
+  )
+  select
+    c.total,
+    c.denied,
+    case when c.total = 0 then 0
+      else round(c.denied::numeric / c.total * 100, 1) end,
+    c.no_samples - c.denied,
+    case when c.total = 0 then 0
+      else round((c.no_samples - c.denied)::numeric / c.total * 100, 1) end
+  from counts c;
+$$ language sql security definer set search_path = public;
+
+-- HR scan outcome funnel by device guide kind.
+drop function if exists hr_scan_funnel(int);
+create or replace function hr_scan_funnel(num_days int default 30)
+returns table(
+  guide_kind text,
+  scans_found int,
+  scans_empty int,
+  total_scans int,
+  success_pct numeric
+) as $$
+  with scan_events as (
+    select
+      e.event_name,
+      coalesce(e.metadata->>'guide', 'none') as guide_id
+    from events e
+    where e.environment = 'production'
+      and e.event_name in ('hr_scan_empty', 'hr_device_connected')
+      and e.created_at > now() - (num_days || ' days')::interval
+      and not exists (
+        select 1 from analytics_excluded_devices x
+        where x.anonymous_user_id = e.anonymous_user_id
+      )
+  ),
+  classified as (
+    select
+      case
+        when guide_id in ('polar', 'garmin-strap', 'wahoo', 'other-strap') then 'strap'
+        when guide_id in ('garmin-watch', 'amazfit', 'coros', 'whoop') then 'watch'
+        when guide_id in ('apple-watch', 'other-watch') then 'limited'
+        else 'none'
+      end as kind,
+      event_name
+    from scan_events
+  )
+  select
+    kind as guide_kind,
+    count(*) filter (where event_name = 'hr_device_connected')::int as scans_found,
+    count(*) filter (where event_name = 'hr_scan_empty')::int as scans_empty,
+    count(*)::int as total_scans,
+    case when count(*) = 0 then 0
+      else round(
+        count(*) filter (where event_name = 'hr_device_connected')::numeric / count(*) * 100, 1
+      ) end as success_pct
+  from classified
+  group by kind
+  order by total_scans desc;
+$$ language sql security definer set search_path = public;
+
+-- HR "device not listed" reports with device names.
+drop function if exists hr_not_listed_reports(int);
+create or replace function hr_not_listed_reports(num_days int default 30)
+returns table(
+  total_reports int,
+  unique_reporters int,
+  device_names jsonb
+) as $$
+  with reports as (
+    select
+      e.anonymous_user_id,
+      e.metadata->>'device_name' as device_name,
+      e.metadata->>'device_type' as device_type
+    from events e
+    where e.environment = 'production'
+      and e.event_name = 'hr_device_not_listed'
+      and e.created_at > now() - (num_days || ' days')::interval
+      and not exists (
+        select 1 from analytics_excluded_devices x
+        where x.anonymous_user_id = e.anonymous_user_id
+      )
+  )
+  select
+    count(*)::int as total_reports,
+    count(distinct anonymous_user_id)::int as unique_reporters,
+    coalesce(
+      jsonb_agg(
+        jsonb_build_object('name', device_name, 'type', device_type)
+        order by device_name
+      ) filter (where device_name is not null),
+      '[]'::jsonb
+    ) as device_names
+  from reports;
+$$ language sql security definer set search_path = public;
+
+-- Workout picker open / dismiss engagement.
+drop function if exists workout_picker_stats(int);
+create or replace function workout_picker_stats(num_days int default 30)
+returns table(
+  opens int,
+  dismissals int,
+  dismiss_rate numeric,
+  median_dwell_ms numeric,
+  unique_openers int,
+  unique_dismissers int
+) as $$
+  with picker as (
+    select
+      e.event_name,
+      e.metadata
+    from events e
+    where e.environment = 'production'
+      and e.event_name in ('workout_picker_opened', 'workout_picker_dismissed')
+      and e.created_at > now() - (num_days || ' days')::interval
+      and not exists (
+        select 1 from analytics_excluded_devices x
+        where x.anonymous_user_id = e.anonymous_user_id
+      )
+  ),
+  counts as (
+    select
+      count(*) filter (where event_name = 'workout_picker_opened')::int as opens,
+      count(*) filter (where event_name = 'workout_picker_dismissed')::int as dismissals,
+      count(distinct (metadata->>'anonymous_user_id')) filter (where event_name = 'workout_picker_opened')::int as unique_openers,
+      count(distinct (metadata->>'anonymous_user_id')) filter (where event_name = 'workout_picker_dismissed')::int as unique_dismissers
+    from picker
+  ),
+  dwell as (
+    select percentile_cont(0.5) within group (
+      order by (metadata->>'dwell_ms')::numeric
+    ) as median_ms
+    from picker
+    where event_name = 'workout_picker_dismissed'
+      and metadata ? 'dwell_ms'
+  )
+  select
+    c.opens,
+    c.dismissals,
+    case when c.opens = 0 then 0
+      else round(c.dismissals::numeric / c.opens * 100, 1) end,
+    coalesce(d.median_ms, 0),
+    c.unique_openers,
+    c.unique_dismissers
+  from counts c, dwell d;
+$$ language sql security definer set search_path = public;
+
 -- ── Access Control ───────────────────────────────────────────
 -- Keep this block last. Dropping and recreating a function restores the
 -- default execute grant to anon/authenticated (the mobile app's public key).
@@ -1601,7 +1792,11 @@ begin
     'run_reminder_funnel(int)',
     'update_funnel(int)',
     'update_prompts_by_version(int)',
-    'median_days_between_workouts()'
+    'median_days_between_workouts()',
+    'gps_denied_workout_stats(int)',
+    'hr_scan_funnel(int)',
+    'hr_not_listed_reports(int)',
+    'workout_picker_stats(int)'
   ] loop
     execute format('revoke execute on function %s from public, anon, authenticated', fn);
     execute format('grant execute on function %s to service_role', fn);

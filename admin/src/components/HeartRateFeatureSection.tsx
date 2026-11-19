@@ -1,15 +1,22 @@
-import type { HeartRateFeatureStats, HeartRateRetentionRow } from '@/lib/queries';
+import type { HeartRateFeatureStats, HeartRateRetentionRow, HrScanFunnelRow, HrNotListedStats } from '@/lib/queries';
 import StatCard from '@/components/StatCard';
+import CountBars from '@/components/CountBars';
 
 type Props = {
   stats: HeartRateFeatureStats;
   retention: HeartRateRetentionRow[];
+  scanFunnel: HrScanFunnelRow[];
+  notListed: HrNotListedStats;
   days: number;
   retentionDays: number;
 };
 
-export default function HeartRateFeatureSection({ stats, retention, days, retentionDays }: Props) {
+export default function HeartRateFeatureSection({ stats, retention, scanFunnel, notListed, days, retentionDays }: Props) {
   const consentAnswers = stats.consentGranted + stats.consentDeclined;
+
+  const uniqueDeviceNames = Array.from(
+    new Map(notListed.deviceNames.map((d) => [d.name.toLowerCase(), d])).values(),
+  );
 
   return (
     <>
@@ -52,6 +59,54 @@ export default function HeartRateFeatureSection({ stats, retention, days, retent
           value={stats.connectionFailures}
           detail={`Monitors that never connected, last ${days} days`}
         />
+      </section>
+
+      {/* ── Scan Funnel & Not-Listed ─────────────────── */}
+      <section className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CountBars
+          title="HR Scan Outcomes by Guide Kind"
+          subtitle={`Last ${days} days`}
+          description="Scans that ended with a device found vs. timed out / user-cancelled, grouped by the active device guide."
+          mode="share"
+          rows={scanFunnel.map((r) => ({
+            label: `${r.guide_kind}: ${r.scans_found} found / ${r.scans_empty} empty (${r.success_pct}%)`,
+            count: r.total_scans,
+          }))}
+          emptyText="No HR scan events in this window."
+        />
+
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+          <div className="mb-1 flex items-baseline justify-between">
+            <h3 className="text-sm font-medium text-gray-400">Device Not Listed</h3>
+            <p className="text-xs text-gray-500">Last {days} days</p>
+          </div>
+          <p className="mb-3 text-xs text-gray-600">
+            Users who tapped &ldquo;My device isn&apos;t listed&rdquo; during an empty scan.
+          </p>
+          <div className="mb-3 grid grid-cols-2 gap-4">
+            <StatCard label="Reports" value={notListed.totalReports} detail={`${notListed.uniqueReporters} unique users`} />
+          </div>
+          {uniqueDeviceNames.length > 0 && (
+            <div className="max-h-40 overflow-y-auto rounded border border-gray-800 bg-gray-950 p-3">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-gray-500">
+                    <th className="pb-1 font-medium">Device</th>
+                    <th className="pb-1 text-right font-medium">Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniqueDeviceNames.map((d, i) => (
+                    <tr key={i} className="border-t border-gray-800 text-gray-300">
+                      <td className="py-1">{d.name}</td>
+                      <td className="py-1 text-right text-gray-500">{d.type}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="mb-8 rounded-xl border border-gray-800 bg-gray-900 p-5">
