@@ -17,7 +17,7 @@ export default function TrainingLayout() {
         headerShadowVisible: false,
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Training' }} />
+      <Stack.Screen name="index" options={{ title: 'Calendar' }} />
       <Stack.Screen name="overview" options={{ title: 'Plan Overview' }} />
       <Stack.Screen name="workout-detail" options={{ title: 'Workout' }} />
       <Stack.Screen name="setup" options={{ title: 'Build Plan' }} />

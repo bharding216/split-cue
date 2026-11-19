@@ -28,10 +28,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Workouts',
+          title: 'Run',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'fitness' : 'fitness-outline'}
+              name={focused ? 'play-circle' : 'play-circle-outline'}
               size={22}
               color={color}
             />
@@ -41,7 +41,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="training"
         options={{
-          title: 'Training',
+          title: 'Calendar',
           headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons

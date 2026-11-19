@@ -107,7 +107,7 @@ export function TodayWorkoutCard({ planWorkout, onView, freshlyDetailed }: Today
         <View style={styles.pendingRow}>
           <Ionicons name="sparkles-outline" size={14} color={Colors.accent} />
           <Text style={styles.pendingText}>
-            Your AI coach is preparing today's workout details…
+            Preparing today's workout details…
           </Text>
         </View>
       )}
@@ -116,7 +116,7 @@ export function TodayWorkoutCard({ planWorkout, onView, freshlyDetailed }: Today
         <View style={styles.pendingRow}>
           <Ionicons name="checkmark-circle" size={14} color={Colors.primary} />
           <Text style={styles.freshlyDetailedText}>
-            Just updated by your AI coach
+            Workout details just updated
           </Text>
         </View>
       )}

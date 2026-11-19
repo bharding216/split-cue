@@ -333,7 +333,7 @@ export function DayDetail({
                   <View style={styles.outlineOnlyHint}>
                     <Ionicons name="sparkles-outline" size={14} color={Colors.accent} />
                     <Text style={styles.outlineOnlyText}>
-                      Your AI coach will add workout details when this day is within the 2-week planning window
+                      Workout details will be added when this day is within the 2-week planning window
                     </Text>
                   </View>
                 )}

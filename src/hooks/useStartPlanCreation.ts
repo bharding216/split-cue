@@ -1,6 +1,6 @@
 /**
  * Entry point for the create-plan flow. Free users who already used their
- * one AI plan are told up front instead of after filling out the whole form.
+ * one free plan are told up front instead of after filling out the whole form.
  */
 
 import { useCallback } from 'react';
@@ -23,7 +23,7 @@ export function useStartPlanCreation() {
     track('plan_limit_prompt_shown');
     Alert.alert(
       'Free Plan Already Used',
-      "You've already created your free AI training plan. Upgrade to Pro for unlimited plans that adapt to your progress.",
+      "You've already created your free training plan. Upgrade to Pro for unlimited plans.",
       [
         { text: 'Not Now', style: 'cancel' },
         { text: 'See Pro', onPress: () => router.push('/paywall' as any) },

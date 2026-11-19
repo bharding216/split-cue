@@ -15,8 +15,8 @@ export function aiBuilderPage(): string {
     },
     `
     <section class="page-header">
-      <h1>AI Workout Builder — Describe It, Run It</h1>
-      <p>Tell SplitCue what kind of workout you want in plain English, and the AI builds a complete interval workout for you.</p>
+      <h1>Describe a Workout, Start Running</h1>
+      <p>Tell SplitCue what kind of workout you want in plain English, and it builds a complete interval workout for you — ready to run immediately.</p>
     </section>
 
     <section class="section section-center">
@@ -63,7 +63,7 @@ export function aiBuilderPage(): string {
         </ul>
         <p>Once generated, the workout appears in your workout list. You can edit any part of it manually — change durations, add or remove intervals, adjust target paces — and then run it with full voice coaching like any other SplitCue workout.</p>
 
-        <p>Want more than one workout? <a href="/features/training-plans">AI Training Plans</a> build a full multi-week schedule around your race date and adapt it after every run.</p>
+        <p>Looking for more workouts? SplitCue includes 16 built-in presets, a full manual workout builder, and <a href="/features/training-plans">voice-coached execution</a> for any structured workout.</p>
 
         <h2>Example: Generating a Speed Session</h2>
         <p>If you type <em>"6 × 3 minutes hard with 2 minutes easy, plus a 10-minute warmup"</em>, the AI builder creates:</p>
@@ -83,7 +83,7 @@ export function aiBuilderPage(): string {
       </div>
     </section>
 
-    ${ctaBanner('Build a Workout With AI', 'Download SplitCue, sign in, and tap "AI Builder" to describe your next workout.')}
+    ${ctaBanner('Build a Workout in Seconds', 'Download SplitCue, sign in, and describe your next workout — then start running immediately.')}
     `,
   );
 }

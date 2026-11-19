@@ -573,7 +573,7 @@ export function TrainingCalendar({
         <View style={styles.aiWindowLegend}>
           <View style={styles.aiWindowLegendDot} />
           <Text style={styles.aiWindowLegendText}>
-            AI coach adds workout details within this 2-week window
+            Workout details filled in within this 2-week window
           </Text>
         </View>
       )}

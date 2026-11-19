@@ -27,15 +27,16 @@ const FEATURES_FREE = [
   'Unlimited workouts & intervals',
   'Full pace tracking',
   'Heart rate recording & graphs',
-  '1 AI training plan',
   'Cloud sync',
+  '5 premium runs',
 ];
 
 const FEATURES_PRO = [
-  'Unlimited AI training plans',
-  'Plans adapt to your performance',
-  'Interval heart rate analysis',
+  'Premium voice coach',
+  'Detailed interval HR analysis',
+  'Race time predictions',
   'Unlimited cloud history',
+  'Post-run performance insights',
   'Priority support',
 ];
 

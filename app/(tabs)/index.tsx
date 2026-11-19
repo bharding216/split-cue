@@ -1,14 +1,13 @@
 /**
- * Home screen — categorized workout list with collapsible sections.
- * Categories: Easy/Recovery, Tempo, Intervals, Long Runs, Race/Time Trial.
- * Users can long-press and drag to reorder workouts within a category.
+ * Run tab — execution-first home screen.
+ * "What do you want to run today?" Quick-start actions at the top,
+ * saved workout library below, and a Create Workout action.
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
@@ -794,15 +793,26 @@ export default function HomeScreen() {
           scrollY.current = event.nativeEvent.contentOffset.y;
         }}
       >
-        {/* Compact hero */}
-        <View style={styles.hero}>
-          <Image
-            source={require('../../assets/icon.png')}
-            style={styles.heroLogo}
-          />
-          <View style={styles.heroText}>
-            <Text style={styles.heroTitle} maxFontSizeMultiplier={MaxFontScale.display}>SplitCue</Text>
-            <Text style={styles.heroSub}>Run hard. We'll call the splits.</Text>
+        {/* Start a Run — primary actions, always first */}
+        <View style={styles.quickStartSection}>
+          <Text style={styles.startRunTitle} maxFontSizeMultiplier={MaxFontScale.display}>
+            Start a Run
+          </Text>
+          <View style={styles.quickStartGrid}>
+            {QUICK_START_TILES.map((tile) => (
+              <TouchableOpacity
+                key={tile.type}
+                style={[styles.quickStartTile, large && styles.quickStartTileLarge]}
+                onPress={() => openQuickStart(tile.type)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+              >
+                <View style={[styles.quickStartIcon, { backgroundColor: tile.color + '22' }]}>
+                  <Ionicons name={tile.icon as any} size={22} color={tile.color} />
+                </View>
+                <Text style={styles.quickStartLabel}>{tile.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -825,6 +835,8 @@ export default function HomeScreen() {
           </RevealOnMount>
         )}
 
+        {showFirstRunCard && <FirstRunCard workout={firstRun} onStart={startFirstRun} />}
+
         {/* Next run: repeat the last one, or jump to the next calendar workout */}
         {showNextRunCard && lastRun && (
           <NextRunCard
@@ -838,32 +850,6 @@ export default function HomeScreen() {
             onOpenUpcoming={() => upcomingWorkout && openUpcoming(upcomingWorkout)}
           />
         )}
-
-        {showFirstRunCard && <FirstRunCard workout={firstRun} onStart={startFirstRun} />}
-
-        {/* Quick Start */}
-        <View style={styles.quickStartSection}>
-          <Text style={styles.sectionLabel}>QUICK START</Text>
-          <Text style={styles.sectionSubtext}>
-            {showFirstRunCard ? 'Or pick another kind of run' : 'What kind of run are you doing today?'}
-          </Text>
-          <View style={styles.quickStartGrid}>
-            {QUICK_START_TILES.map((tile) => (
-              <TouchableOpacity
-                key={tile.type}
-                style={[styles.quickStartTile, large && styles.quickStartTileLarge]}
-                onPress={() => openQuickStart(tile.type)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-              >
-                <View style={[styles.quickStartIcon, { backgroundColor: tile.color + '22' }]}>
-                  <Ionicons name={tile.icon as any} size={22} color={tile.color} />
-                </View>
-                <Text style={styles.quickStartLabel}>{tile.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
         {/* Recently Used */}
         {inlineRecentRuns.length > 0 && (
@@ -989,10 +975,21 @@ export default function HomeScreen() {
           );
         })}
 
+        {/* Create Workout */}
+        <TouchableOpacity
+          style={styles.createWorkoutBtn}
+          onPress={() => router.push('/workout/new' as any)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+        >
+          <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
+          <Text style={styles.createWorkoutText}>Create Workout</Text>
+        </TouchableOpacity>
+
         {workouts.length === 0 && (
           <>
             <Text style={styles.emptyText}>
-              No saved workouts yet. Tap Quick Start above to begin, or tap Save to My Workouts on any workout you want to keep.
+              No saved workouts yet. Start a run above, or create a custom workout.
             </Text>
             <TouchableOpacity
               style={styles.running101EmptyBtn}
@@ -1044,31 +1041,11 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingBottom: Spacing.xxl,
   },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-    paddingTop: Spacing.sm,
-  },
-  heroLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-  },
-  heroText: {
-    flex: 1,
-  },
-  heroTitle: {
+  startRunTitle: {
     fontSize: FontSize.xl,
     fontWeight: '900',
-    color: Colors.primary,
-    letterSpacing: 1,
-  },
-  heroSub: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    marginTop: 1,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.md,
   },
   reveal: {
     overflow: 'hidden',
@@ -1292,10 +1269,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: Spacing.md,
   },
+  createWorkoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderStyle: 'dashed',
+    gap: Spacing.sm,
+  },
+  createWorkoutText: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
   emptyText: {
     color: Colors.textMuted,
     fontSize: FontSize.md,
     textAlign: 'center',
-    marginTop: Spacing.xxl,
+    marginTop: Spacing.md,
   },
 });

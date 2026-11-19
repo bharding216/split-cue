@@ -1,5 +1,8 @@
 /**
- * Feature page: AI Training Plans
+ * Feature page: Structured Running Workouts
+ *
+ * Previously "AI Training Plans". Refocused on the execution experience
+ * — what makes SplitCue great for running any structured workout.
  */
 
 import { renderPage, ctaBanner } from '../layout';
@@ -7,50 +10,34 @@ import { renderPage, ctaBanner } from '../layout';
 export function trainingPlansPage(): string {
   return renderPage(
     {
-      title: 'AI Running Training Plans That Adapt to Every Run — SplitCue',
+      title: 'Run Any Structured Workout With Voice Coaching — SplitCue',
       description:
-        'SplitCue builds a personalized training plan for your 5K, 10K, half marathon, marathon, or pace goal, then adapts it after every run. Every workout is voice coached.',
+        'SplitCue makes structured running workouts easy. Intervals, tempos, long runs, and custom workouts — all with real-time voice coaching, pace tracking, and heart rate monitoring.',
       path: '/features/training-plans',
     },
     `
     <section class="page-header">
-      <h1>Training Plans That Adapt to Every Run</h1>
-      <p>Tell SplitCue what you're training for. It builds a plan around your race date, your schedule, and your recent runs, then adjusts it as your training goes.</p>
+      <h1>Run Any Workout, Coached Every Step</h1>
+      <p>Pick a workout — intervals, tempo, easy run, or anything custom — and SplitCue coaches you through every interval with voice cues, pace updates, and countdown warnings. Phone stays in your pocket.</p>
     </section>
 
     <section class="section">
       <div class="prose">
-        <h2>Build a Plan in Four Steps</h2>
+        <h2>How It Works</h2>
         <ol>
-          <li><strong>Pick your goal.</strong> Train for a 5K, 10K, half marathon, marathon, or a custom distance. Or skip the race and train toward a target pace.</li>
-          <li><strong>Set your race date and goal time.</strong> Not sure what's realistic? SplitCue suggests goal times based on your recent runs, or lets the coach pick for you.</li>
-          <li><strong>Choose your running days.</strong> Pick how many days a week you can run and which days work best.</li>
-          <li><strong>Review the proposal.</strong> The coach explains its approach and lays out the training phases. Ask for changes in plain English before you approve it.</li>
+          <li><strong>Choose a workout.</strong> Pick from built-in presets, your saved workouts, or create something custom.</li>
+          <li><strong>Start running.</strong> SplitCue calls out every interval transition, your pace, and your progress.</li>
+          <li><strong>Review your run.</strong> See interval splits, pace consistency, heart rate, and route — then share your results.</li>
         </ol>
 
-        <h2>A Plan Built Around You</h2>
-        <p>Plans use your running profile — experience, typical run length, weekly mileage, recent race times, and any limitations — along with your workout history. Your plan is organized into phases, from base building through taper, and laid out on a training calendar so you always know what's next.</p>
-        <p>Upcoming workouts are filled in using your most recent runs, so the paces and durations keep up with your fitness instead of being fixed on day one.</p>
+        <h2>Voice Coached From Start to Finish</h2>
+        <p>Every warmup, interval, recovery, and cooldown gets called out with clear voice cues. You hear your current pace, distance, and time without looking at your phone. Premium voices or device TTS — your choice.</p>
 
-        <h2>Every Workout Is Voice Coached</h2>
-        <p>Each day in your plan is a full SplitCue interval workout. When you start it, SplitCue coaches you through every warmup, interval, recovery, and cooldown with voice cues, pace announcements, and countdown warnings — with your phone in your pocket.</p>
+        <h2>Build Any Workout</h2>
+        <p>The workout builder supports intervals, repeat groups, tempo segments, distance-based targets, time-based targets, and open-ended manual segments. Or just describe what you want — "6 by 400 with 90 second recovery" — and SplitCue builds it instantly.</p>
 
-        <h2>Adapts After Every Run</h2>
-        <p>When you finish a plan workout, the AI coach reviews how it went: whether you hit your targets, exceeded them, or struggled. If your upcoming workouts should change, it proposes specific edits and shows you a before-and-after comparison. Apply the changes or keep your original plan — and undo if you change your mind.</p>
-
-        <h2>Change Your Plan by Asking</h2>
-        <p>Life happens. Talk to your plan by typing or using your voice:</p>
-        <ul>
-          <li><em>"This week is too much. Can you make it easier?"</em></li>
-          <li><em>"Swap Thursday and Saturday."</em></li>
-          <li><em>"I've been sick for a week. Help me ease back in."</em></li>
-          <li><em>"Push me harder."</em></li>
-          <li><em>"Help me taper for race day."</em></li>
-        </ul>
-        <p>SplitCue shows exactly which workouts will change before anything is applied.</p>
-
-        <h2>Pricing</h2>
-        <p>Your first AI training plan is free. SplitCue Pro adds unlimited training plans. Custom interval workouts, built-in presets, and voice coaching are free.</p>
+        <h2>Track Everything</h2>
+        <p>GPS pace, Bluetooth heart rate, interval splits, distance, elevation, and route — all recorded automatically. See your results on a calendar that shows every run you've done.</p>
       </div>
     </section>
 
@@ -58,26 +45,26 @@ export function trainingPlansPage(): string {
       <div class="container-wide">
         <div class="features-grid">
           <div class="feature-card">
-            <h3>Race or Pace Goals</h3>
-            <p>5K through marathon, any custom distance, or a target pace without a race.</p>
+            <h3>16 Built-In Presets</h3>
+            <p>Easy runs, intervals, tempo, fartlek, hill repeats, and more — ready to run immediately.</p>
           </div>
           <div class="feature-card">
-            <h3>Phases and Calendar</h3>
-            <p>See where you are in your training block and every workout on your calendar.</p>
+            <h3>Calendar</h3>
+            <p>See every completed run and scheduled workout on your training calendar.</p>
           </div>
           <div class="feature-card">
-            <h3>Post-Run Coaching</h3>
-            <p>Feedback after every plan run, with suggested changes you approve.</p>
+            <h3>Heart Rate Monitoring</h3>
+            <p>Connect any Bluetooth heart rate monitor. Per-interval HR stats, recovery tracking. <a href="/help/heart-rate-monitors">Supported devices</a></p>
           </div>
           <div class="feature-card">
-            <h3>Heart Rate Aware</h3>
-            <p>Connect a Bluetooth heart rate monitor or compatible watch to record heart rate on every run. <a href="/help/heart-rate-monitors">Supported devices</a></p>
+            <h3>Share Your Runs</h3>
+            <p>Paceprint visual fingerprints, challenge friends, share to Strava. See how consistent your splits were.</p>
           </div>
         </div>
       </div>
     </section>
 
-    ${ctaBanner('Start Your Training Plan', 'Download SplitCue, open the Training tab, and build your first plan free.')}
+    ${ctaBanner('Start Running With SplitCue', 'Download SplitCue and start your first run in under 30 seconds.')}
     `,
   );
 }

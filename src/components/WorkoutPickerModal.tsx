@@ -356,7 +356,7 @@ export function WorkoutPickerModal({
                           </View>
                           <View style={styles.workoutInfo}>
                             <Text style={styles.workoutName}>Describe with Voice</Text>
-                            <Text style={styles.workoutMeta}>Tell the AI coach what you want</Text>
+                            <Text style={styles.workoutMeta}>Describe a workout in plain English</Text>
                           </View>
                           <View style={styles.aiBadge}>
                             <Ionicons name="sparkles" size={12} color={Colors.accent} />
