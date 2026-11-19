@@ -67,7 +67,8 @@ export default function HeartRateSettingsScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanEmpty, setScanEmpty] = useState(false);
   const [guide, setGuide] = useState<DeviceGuide | null>(null);
-  const [guidesOpen, setGuidesOpen] = useState(false);
+  // guidesOpen replaced by helpOpen
+  const [helpOpen, setHelpOpen] = useState(false);
   const stopScanRef = useRef<(() => void) | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanStartedAtRef = useRef(0);
@@ -191,7 +192,7 @@ export default function HeartRateSettingsScreen() {
   };
 
   const visibleFound = found.filter((d) => d.id !== device?.id);
-  const showGuides = !device || guidesOpen;
+  // showGuides removed — help section gated by helpOpen
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -241,80 +242,8 @@ export default function HeartRateSettingsScreen() {
         </>
       )}
 
-      <Text style={styles.sectionTitle}>{device ? 'Use a Different Monitor' : 'Find Your Monitor'}</Text>
-
-      {device && (
-        <TouchableOpacity
-          onPress={() => setGuidesOpen((open) => !open)}
-          style={styles.guidesToggle}
-          accessibilityRole="button"
-        >
-          <Text style={styles.linkText}>
-            {guidesOpen ? 'Hide setup steps' : 'Show setup steps by device'}
-          </Text>
-          <Ionicons
-            name={guidesOpen ? 'chevron-up' : 'chevron-down'}
-            size={14}
-            color={Colors.accent}
-          />
-        </TouchableOpacity>
-      )}
-
-      {showGuides && (
-        <>
-          <Text style={styles.stepLabel}>1. Choose your device</Text>
-          <View style={styles.tileGrid}>
-            {DEVICE_GUIDES.map((g) => {
-              const selected = guide?.id === g.id;
-              return (
-                <TouchableOpacity
-                  key={g.id}
-                  style={[styles.tile, selected && styles.tileSelected]}
-                  onPress={() => selectGuide(g)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.tileName, selected && styles.tileNameSelected]} numberOfLines={1}>
-                    {g.name}
-                  </Text>
-                  <Text style={styles.tileExamples} numberOfLines={1}>
-                    {g.examples}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {guide && (
-            <View style={styles.guideCard}>
-              {guide.kind === 'limited' && (
-                <View style={styles.limitedWarning}>
-                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
-                  <Text style={styles.limitedWarningText}>
-                    Most {guide.name} models don{'\u2019'}t broadcast heart rate over Bluetooth to other apps. A chest strap like the Polar H10 works with any running app including SplitCue.
-                  </Text>
-                </View>
-              )}
-              {guide.steps.map((step, i) => (
-                <View key={i} style={styles.guideStep}>
-                  <Text style={styles.guideStepNum}>{i + 1}</Text>
-                  <Text style={styles.guideStepText}>{step}</Text>
-                </View>
-              ))}
-              {guide.note && <Text style={styles.guideNote}>{guide.note}</Text>}
-              <TouchableOpacity
-                onPress={() => openHeartRateHelp('settings_guide', guide.id)}
-                accessibilityRole="link"
-              >
-                <Text style={styles.linkText}>Full {guide.name} guide</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <Text style={styles.stepLabel}>2. Search for it</Text>
-        </>
-      )}
+      {/* ─── Add Device (primary CTA) ─── */}
+      <Text style={styles.sectionTitle}>{device ? 'Use a Different Monitor' : 'Add Device'}</Text>
 
       <TouchableOpacity
         style={[styles.scanButton, scanning && styles.scanButtonActive]}
@@ -327,8 +256,14 @@ export default function HeartRateSettingsScreen() {
         ) : (
           <Ionicons name="bluetooth" size={18} color={Colors.primary} />
         )}
-        <Text style={styles.scanText}>{scanning ? 'Searching… tap to stop' : 'Add Device'}</Text>
+        <Text style={styles.scanText}>{scanning ? 'Searching\u2026 tap to stop' : 'Search for Monitors'}</Text>
       </TouchableOpacity>
+
+      {!scanning && found.length === 0 && !scanEmpty && !accessIssue && !scanError && (
+        <Text style={styles.hint}>
+          Wear your strap or turn on heart rate broadcasting on your watch, then tap search.
+        </Text>
+      )}
 
       {accessIssue && (
         <View style={styles.issueBox}>
@@ -342,7 +277,7 @@ export default function HeartRateSettingsScreen() {
       )}
       {scanError && (
         <View style={styles.issueBox}>
-          <Text style={styles.issueText}>Couldn’t search for monitors: {scanError}</Text>
+          <Text style={styles.issueText}>Couldn't search for monitors: {scanError}</Text>
         </View>
       )}
 
@@ -365,26 +300,7 @@ export default function HeartRateSettingsScreen() {
 
       {scanEmpty && !scanning && (
         <View style={styles.issueBox}>
-          <Text style={styles.issueTitle}>Didn’t find your monitor?</Text>
-          {!guide && (
-            <View style={styles.guidePrompt}>
-              <Text style={styles.guidePromptText}>Which device are you trying to connect?</Text>
-              <View style={styles.tileGrid}>
-                {DEVICE_GUIDES.map((g) => (
-                  <TouchableOpacity
-                    key={g.id}
-                    style={styles.tile}
-                    onPress={() => selectGuide(g)}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.tileName} numberOfLines={1}>{g.name}</Text>
-                    <Text style={styles.tileExamples} numberOfLines={1}>{g.examples}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
+          <Text style={styles.issueTitle}>Didn't find your monitor?</Text>
           {(guide ? NOT_FOUND_TIPS_BY_KIND[guide.kind] : NOT_FOUND_TIPS).map((tip, i) => (
             <View key={i} style={styles.tipRow}>
               <Text style={styles.tipBullet}>•</Text>
@@ -438,11 +354,78 @@ export default function HeartRateSettingsScreen() {
         </View>
       )}
 
-      {!scanning && found.length === 0 && !scanEmpty && !accessIssue && !scanError && (
-        <Text style={styles.hint}>
-          Wear your strap while searching so it’s awake, or turn on heart rate broadcasting on
-          your watch. No need to pair in your phone’s Bluetooth settings.
+      {/* ─── Collapsible setup help ─── */}
+      <TouchableOpacity
+        onPress={() => { setHelpOpen((open) => !open); }}
+        style={styles.helpToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+      >
+        <Ionicons name="help-circle-outline" size={18} color={Colors.accent} />
+        <Text style={styles.helpToggleText}>
+          {helpOpen ? 'Hide setup help' : 'Need help connecting?'}
         </Text>
+        <Ionicons
+          name={helpOpen ? 'chevron-up' : 'chevron-down'}
+          size={14}
+          color={Colors.accent}
+        />
+      </TouchableOpacity>
+
+      {helpOpen && (
+        <View style={styles.helpSection}>
+          <Text style={styles.stepLabel}>1. Choose your device</Text>
+          <View style={styles.tileGrid}>
+            {DEVICE_GUIDES.map((g) => {
+              const selected = guide?.id === g.id;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[styles.tile, selected && styles.tileSelected]}
+                  onPress={() => selectGuide(g)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <Text style={[styles.tileName, selected && styles.tileNameSelected]} numberOfLines={1}>
+                    {g.name}
+                  </Text>
+                  <Text style={styles.tileExamples} numberOfLines={1}>
+                    {g.examples}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {guide && (
+            <View style={styles.guideCard}>
+              {guide.kind === 'limited' && (
+                <View style={styles.limitedWarning}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+                  <Text style={styles.limitedWarningText}>
+                    Most {guide.name} models don{'\u2019'}t broadcast heart rate over Bluetooth to other apps. A chest strap like the Polar H10 works with any running app including SplitCue.
+                  </Text>
+                </View>
+              )}
+              {guide.steps.map((step, i) => (
+                <View key={i} style={styles.guideStep}>
+                  <Text style={styles.guideStepNum}>{i + 1}</Text>
+                  <Text style={styles.guideStepText}>{step}</Text>
+                </View>
+              ))}
+              {guide.note && <Text style={styles.guideNote}>{guide.note}</Text>}
+              <TouchableOpacity
+                onPress={() => openHeartRateHelp('settings_guide', guide.id)}
+                accessibilityRole="link"
+              >
+                <Text style={styles.linkText}>Full {guide.name} guide</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.stepLabel}>2. Tap "Search for Monitors" above</Text>
+        </View>
       )}
 
       <Text style={styles.sectionTitle}>Your Heart Rate Data</Text>
@@ -562,6 +545,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginBottom: Spacing.sm,
+  },
+  helpToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+    paddingVertical: Spacing.xs,
+  },
+  helpToggleText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.accent,
+    fontWeight: '500',
+  },
+  helpSection: {
+    marginBottom: Spacing.md,
   },
   tileGrid: {
     flexDirection: 'row',
