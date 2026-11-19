@@ -18,6 +18,7 @@ import {
   type SegmentTarget,
 } from './workoutTypes';
 import { PREMIUM_VOICES, DEFAULT_PREMIUM_VOICE_ID } from '../audio/voiceCatalog';
+import { localeDefaultPaceUnit } from '../i18n/localeUnits';
 import {
   clearAllHeartRateSamples,
   deleteHeartRateSamples,
@@ -361,7 +362,9 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
 
 export async function loadSettings(): Promise<AppSettings> {
   const raw = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
-  if (!raw) return DEFAULT_SETTINGS;
+  if (!raw) {
+    return { ...DEFAULT_SETTINGS, paceUnit: localeDefaultPaceUnit() };
+  }
   return normalizeSettings(JSON.parse(raw));
 }
 

@@ -47,7 +47,7 @@ import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/compo
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import type { PaceCueFrequency } from '../../../src/pace/paceTypes';
-import { paceCuesEnabled, distanceProgressCuesNeedGps } from '../../../src/audio/cueSchedule';
+import { paceCuesEnabled, distanceProgressCuesNeedGps, cueDistanceLabel } from '../../../src/audio/cueSchedule';
 import {
   CueBasisToggle,
   CueDistanceChips,
@@ -78,6 +78,8 @@ import { hapticTap } from '../../../src/audio/haptics';
 import { setDuckingEnabled, setVoiceIdentifier, playCue } from '../../../src/audio/audioManager';
 import { prepareWorkoutAudio } from '../../../src/audio/prepareVoice';
 import { PreRunSettings } from '../../../src/components/PreRunSettings';
+import CollapsibleSection from '../../../src/components/CollapsibleSection';
+import { SheetContainer } from '../../../src/components/SheetContainer';
 import { HeartRateBadge } from '../../../src/components/HeartRateBadge';
 import { PreRunHeartRateCard } from '../../../src/components/PreRunHeartRateCard';
 import { PreRunLocationCard, BackgroundLocationCard } from '../../../src/components/LocationPermissionCards';
@@ -191,12 +193,18 @@ export default function ActiveWorkoutScreen() {
           const meta: SessionMeta = { source: 'saved_template', templateId: found.id };
           setSessionMeta(meta);
           trackOpened(found, meta);
+        } else {
+          // Workout data no longer available (e.g. after a dev reload wiped
+          // the in-memory temp store). Navigate home so the user isn't stuck
+          // on a "Loading…" screen with no way out.
+          router.replace('/');
+          return;
         }
         setSettings(s);
         setSettingsLoaded(true);
       });
     }
-  }, [id, resume]);
+  }, [id, resume, router]);
 
   // Settings start as defaults until loaded, so only prepare once both are real.
   useEffect(() => {
@@ -934,7 +942,6 @@ function ActiveWorkoutInner({
           <PostRunShareCard
             achievement={!moment && (newRecords.length > 0 || newAwards.length > 0)}
             onShare={() => handleShareRun('results')}
-            onChallenge={() => handleShareRun('challenge')}
           />
         ) : null}
 
@@ -1313,13 +1320,7 @@ function MidRunSettingsSheet({
     >
       <View style={sheetStyles.overlay}>
         <TouchableOpacity style={sheetStyles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={[sheetStyles.sheet, large && sheetStyles.sheetLarge]}>
-          {/* Handle */}
-          <View style={sheetStyles.handleRow}>
-            <View style={sheetStyles.handle} />
-          </View>
-
-          {/* Header */}
+        <SheetContainer style={[sheetStyles.sheet, large && sheetStyles.sheetLarge]} onDismiss={onClose}>
           <View style={sheetStyles.header}>
             <Text style={sheetStyles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>
               Settings
@@ -1340,318 +1341,367 @@ function MidRunSettingsSheet({
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            {/* Audio Mode */}
-            <Text style={sheetStyles.sectionTitle}>Audio Cues</Text>
-            <View style={sheetStyles.chipRow}>
-              {AUDIO_MODES.map((mode) => (
-                <TouchableOpacity
-                  key={mode.value}
-                  style={[
-                    sheetStyles.chip,
-                    settings.audioCueMode === mode.value && sheetStyles.chipActive,
-                  ]}
-                  onPress={() => {
-                    hapticTap();
-                    onUpdate({ audioCueMode: mode.value });
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={mode.icon}
-                    size={14}
-                    color={
-                      settings.audioCueMode === mode.value
-                        ? Colors.primary
-                        : Colors.textSecondary
-                    }
-                  />
-                  <Text
+            {/* ── Audio Cues ── */}
+            <CollapsibleSection
+              title="Audio Cues"
+              icon="volume-high-outline"
+              summary={
+                AUDIO_MODES.find((m) => m.value === settings.audioCueMode)?.label
+                + (settings.hapticEnabled ? ' · Haptic' : '')
+              }
+              defaultExpanded
+            >
+              <View style={sheetStyles.chipRow}>
+                {AUDIO_MODES.map((mode) => (
+                  <TouchableOpacity
+                    key={mode.value}
                     style={[
-                      sheetStyles.chipLabel,
-                      settings.audioCueMode === mode.value && sheetStyles.chipLabelActive,
+                      sheetStyles.chip,
+                      settings.audioCueMode === mode.value && sheetStyles.chipActive,
                     ]}
+                    onPress={() => {
+                      hapticTap();
+                      onUpdate({ audioCueMode: mode.value });
+                    }}
+                    activeOpacity={0.7}
                   >
-                    {mode.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Ionicons
+                      name={mode.icon}
+                      size={14}
+                      color={
+                        settings.audioCueMode === mode.value
+                          ? Colors.primary
+                          : Colors.textSecondary
+                      }
+                    />
+                    <Text
+                      style={[
+                        sheetStyles.chipLabel,
+                        settings.audioCueMode === mode.value && sheetStyles.chipLabelActive,
+                      ]}
+                    >
+                      {mode.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            {/* Duck other audio */}
-            {settings.audioCueMode !== 'silent' && (
+              {settings.audioCueMode !== 'silent' && (
+                <View style={sheetStyles.toggleRow}>
+                  <Text style={sheetStyles.toggleLabel}>Lower music during cues</Text>
+                  <Switch
+                    value={settings.duckOtherAudio}
+                    onValueChange={(v) => {
+                      hapticTap();
+                      onUpdate({ duckOtherAudio: v });
+                    }}
+                    trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+                    thumbColor={Colors.white}
+                  />
+                </View>
+              )}
+
               <View style={sheetStyles.toggleRow}>
-                <Text style={sheetStyles.toggleLabel}>Lower music during cues</Text>
+                <Text style={sheetStyles.toggleLabel}>Haptic feedback</Text>
                 <Switch
-                  value={settings.duckOtherAudio}
+                  value={settings.hapticEnabled}
                   onValueChange={(v) => {
-                    hapticTap();
-                    onUpdate({ duckOtherAudio: v });
+                    if (v) hapticTap();
+                    onUpdate({ hapticEnabled: v });
                   }}
                   trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
                   thumbColor={Colors.white}
                 />
               </View>
-            )}
+            </CollapsibleSection>
 
-            {/* Haptic */}
-            <View style={sheetStyles.toggleRow}>
-              <Text style={sheetStyles.toggleLabel}>Haptic feedback</Text>
-              <Switch
-                value={settings.hapticEnabled}
-                onValueChange={(v) => {
-                  if (v) hapticTap();
-                  onUpdate({ hapticEnabled: v });
-                }}
-                trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                thumbColor={Colors.white}
-              />
-            </View>
-
-            {/* Countdown Warnings */}
-            <Text style={sheetStyles.sectionTitle}>Countdown Warnings</Text>
-            <View style={sheetStyles.chipRow}>
-              {WARNING_OPTIONS.map((sec) => {
-                const isSelected = settings.countdownWarningSeconds.includes(sec);
-                return (
-                  <TouchableOpacity
-                    key={sec}
-                    style={[
-                      sheetStyles.chip,
-                      isSelected && sheetStyles.chipActive,
-                    ]}
-                    onPress={() => {
-                      hapticTap();
-                      let next: number[];
-                      if (isSelected) {
-                        next = settings.countdownWarningSeconds.filter((s) => s !== sec);
-                      } else {
-                        next = [...settings.countdownWarningSeconds, sec].sort((a, b) => a - b);
-                      }
-                      if (next.length === 0) return;
-                      onUpdate({ countdownWarningSeconds: next });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    {isSelected && (
-                      <Ionicons name="checkmark" size={12} color={Colors.primary} />
-                    )}
-                    <Text
-                      style={[
-                        sheetStyles.chipLabel,
-                        isSelected && sheetStyles.chipLabelActive,
-                      ]}
-                    >
-                      {sec}s
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Interval Progress */}
-            <Text style={sheetStyles.sectionTitle}>Interval Progress</Text>
-            <Text style={sheetStyles.sectionSub}>
-              {settings.progressCueBasis === 'auto'
-                ? 'Elapsed time in timed intervals and Free Runs, distance and time in distance intervals. Pace is set separately below.'
-                : settings.progressCueBasis === 'distance'
-                  ? 'Announce distance covered during each interval. Pace is set separately below.'
-                  : 'Announce elapsed time during intervals. Pace is set separately below.'}
-            </Text>
-            <CueBasisToggle
-              value={settings.progressCueBasis}
-              options={PROGRESS_CUE_BASES}
-              onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
-            />
-            {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
-            )}
-            {settings.progressCueBasis !== 'distance' && (
+            {/* ── Countdown Warnings ── */}
+            <CollapsibleSection
+              title="Countdown Warnings"
+              icon="timer-outline"
+              summary={
+                settings.countdownWarningSeconds
+                  .slice()
+                  .sort((a, b) => a - b)
+                  .map((s) => `${s}s`)
+                  .join(', ')
+              }
+            >
               <View style={sheetStyles.chipRow}>
-                {TIME_ANNOUNCE_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[
-                      sheetStyles.chip,
-                      settings.timeRemainingInterval === opt.value && sheetStyles.chipActive,
-                    ]}
-                    onPress={() => {
-                      hapticTap();
-                      onUpdate({ timeRemainingInterval: opt.value });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text
+                {WARNING_OPTIONS.map((sec) => {
+                  const isSelected = settings.countdownWarningSeconds.includes(sec);
+                  return (
+                    <TouchableOpacity
+                      key={sec}
                       style={[
-                        sheetStyles.chipLabel,
-                        settings.timeRemainingInterval === opt.value && sheetStyles.chipLabelActive,
+                        sheetStyles.chip,
+                        isSelected && sheetStyles.chipActive,
                       ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {settings.progressCueBasis === 'auto' && (
-              <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
-            )}
-            {settings.progressCueBasis !== 'time' && (
-              <CueDistanceChips
-                value={settings.progressCueDistance}
-                unit={settings.paceUnit}
-                onChange={(progressCueDistance) => onUpdate({ progressCueDistance })}
-              />
-            )}
-
-            {/* Pace Tracking */}
-            <Text style={sheetStyles.sectionTitle}>Pace</Text>
-            <View style={sheetStyles.toggleRow}>
-              <Text style={sheetStyles.toggleLabel}>GPS pace tracking</Text>
-              <Switch
-                value={settings.paceTrackingEnabled}
-                onValueChange={(v) => {
-                  hapticTap();
-                  onUpdate({ paceTrackingEnabled: v });
-                }}
-                trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                thumbColor={Colors.white}
-              />
-            </View>
-
-            {settings.paceTrackingEnabled && (
-              <>
-                {/* Units */}
-                <View style={sheetStyles.chipRow}>
-                  <TouchableOpacity
-                    style={[
-                      sheetStyles.chip,
-                      settings.paceUnit === 'minPerMile' && sheetStyles.chipActive,
-                    ]}
-                    onPress={() => {
-                      hapticTap();
-                      onUpdate({ paceUnit: 'minPerMile' });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        sheetStyles.chipLabel,
-                        settings.paceUnit === 'minPerMile' && sheetStyles.chipLabelActive,
-                      ]}
-                    >
-                      Miles
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      sheetStyles.chip,
-                      settings.paceUnit === 'minPerKm' && sheetStyles.chipActive,
-                    ]}
-                    onPress={() => {
-                      hapticTap();
-                      onUpdate({ paceUnit: 'minPerKm' });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        sheetStyles.chipLabel,
-                        settings.paceUnit === 'minPerKm' && sheetStyles.chipLabelActive,
-                      ]}
-                    >
-                      Kilometers
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Pace cue frequency */}
-                <Text style={sheetStyles.sectionSub}>
-                  {settings.paceCueBasis === 'auto'
-                    ? 'Pace by time in timed intervals and Free Runs, by distance in distance intervals. Choose By distance to hear pace every distance on every run.'
-                    : settings.paceCueBasis === 'distance'
-                      ? 'Announce pace each time you cover this distance, on every run'
-                      : 'Announce pace on this timer, on every run'}
-                </Text>
-                <CueBasisToggle
-                  value={settings.paceCueBasis}
-                  options={PROGRESS_CUE_BASES}
-                  onChange={(paceCueBasis) => onUpdate({ paceCueBasis })}
-                />
-                {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
-                )}
-                {settings.paceCueBasis !== 'distance' && (
-                  <View style={sheetStyles.chipRow}>
-                    {PACE_CUE_OPTIONS.map((opt) => (
-                      <TouchableOpacity
-                        key={opt.value}
-                        style={[
-                          sheetStyles.chip,
-                          settings.paceCueFrequency === opt.value && sheetStyles.chipActive,
-                        ]}
-                        onPress={() => {
-                          hapticTap();
-                          onUpdate({ paceCueFrequency: opt.value });
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            sheetStyles.chipLabel,
-                            settings.paceCueFrequency === opt.value && sheetStyles.chipLabelActive,
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                {settings.paceCueBasis === 'auto' && (
-                  <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
-                )}
-                {settings.paceCueBasis !== 'time' && (
-                  <CueDistanceChips
-                    value={settings.paceCueDistance}
-                    unit={settings.paceUnit}
-                    onChange={(paceCueDistance) => onUpdate({ paceCueDistance })}
-                  />
-                )}
-
-                {/* Only cue on intervals with target pace */}
-                {paceCuesEnabled(settings) && (
-                  <View style={sheetStyles.toggleRow}>
-                    <Text style={sheetStyles.toggleLabel}>Only with target pace</Text>
-                    <Switch
-                      value={settings.paceCueOnlyWithTarget}
-                      onValueChange={(v) => {
+                      onPress={() => {
                         hapticTap();
-                        onUpdate({ paceCueOnlyWithTarget: v });
+                        let next: number[];
+                        if (isSelected) {
+                          next = settings.countdownWarningSeconds.filter((s) => s !== sec);
+                        } else {
+                          next = [...settings.countdownWarningSeconds, sec].sort((a, b) => a - b);
+                        }
+                        if (next.length === 0) return;
+                        onUpdate({ countdownWarningSeconds: next });
                       }}
-                      trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                      thumbColor={Colors.white}
-                    />
-                  </View>
-                )}
-              </>
-            )}
+                      activeOpacity={0.7}
+                    >
+                      {isSelected && (
+                        <Ionicons name="checkmark" size={12} color={Colors.primary} />
+                      )}
+                      <Text
+                        style={[
+                          sheetStyles.chipLabel,
+                          isSelected && sheetStyles.chipLabelActive,
+                        ]}
+                      >
+                        {sec}s
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </CollapsibleSection>
 
-            {/* Keep screen on */}
-            <Text style={sheetStyles.sectionTitle}>Display</Text>
-            <View style={sheetStyles.toggleRow}>
-              <Text style={sheetStyles.toggleLabel}>Keep screen on</Text>
-              <Switch
-                value={settings.keepScreenOn}
-                onValueChange={(v) => {
-                  hapticTap();
-                  onUpdate({ keepScreenOn: v });
-                }}
-                trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                thumbColor={Colors.white}
+            {/* ── Interval Progress ── */}
+            <CollapsibleSection
+              title="Interval Progress"
+              icon="bar-chart-outline"
+              summary={(() => {
+                const basis = settings.progressCueBasis;
+                if (basis === 'distance')
+                  return settings.progressCueDistance === 'off'
+                    ? 'Off'
+                    : `Every ${cueDistanceLabel(settings.progressCueDistance, settings.paceUnit)}`;
+                if (basis === 'time')
+                  return settings.timeRemainingInterval === 0
+                    ? 'Off'
+                    : `Every ${TIME_ANNOUNCE_OPTIONS.find((o) => o.value === settings.timeRemainingInterval)?.label ?? settings.timeRemainingInterval + 's'}`;
+                return 'Auto';
+              })()}
+            >
+              <Text style={sheetStyles.sectionSub}>
+                {settings.progressCueBasis === 'auto'
+                  ? 'Elapsed time in timed intervals and Free Runs, distance and time in distance intervals. Pace is set separately below.'
+                  : settings.progressCueBasis === 'distance'
+                    ? 'Announce distance covered during each interval. Pace is set separately below.'
+                    : 'Announce elapsed time during intervals. Pace is set separately below.'}
+              </Text>
+              <CueBasisToggle
+                value={settings.progressCueBasis}
+                options={PROGRESS_CUE_BASES}
+                onChange={(progressCueBasis) => onUpdate({ progressCueBasis })}
               />
-            </View>
+              {settings.progressCueBasis === 'auto' && (
+                <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
+              )}
+              {settings.progressCueBasis !== 'distance' && (
+                <View style={sheetStyles.chipRow}>
+                  {TIME_ANNOUNCE_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[
+                        sheetStyles.chip,
+                        settings.timeRemainingInterval === opt.value && sheetStyles.chipActive,
+                      ]}
+                      onPress={() => {
+                        hapticTap();
+                        onUpdate({ timeRemainingInterval: opt.value });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          sheetStyles.chipLabel,
+                          settings.timeRemainingInterval === opt.value && sheetStyles.chipLabelActive,
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {settings.progressCueBasis === 'auto' && (
+                <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
+              )}
+              {settings.progressCueBasis !== 'time' && (
+                <CueDistanceChips
+                  value={settings.progressCueDistance}
+                  unit={settings.paceUnit}
+                  onChange={(progressCueDistance) => onUpdate({ progressCueDistance })}
+                />
+              )}
+            </CollapsibleSection>
+
+            {/* ── Pace ── */}
+            <CollapsibleSection
+              title="Pace"
+              icon="speedometer-outline"
+              summary={
+                !settings.paceTrackingEnabled
+                  ? 'Off'
+                  : settings.paceCueBasis === 'distance'
+                    ? `GPS · Every ${cueDistanceLabel(settings.paceCueDistance, settings.paceUnit)}`
+                    : settings.paceCueFrequency === 0
+                      ? 'GPS · Cues off'
+                      : `GPS · Every ${PACE_CUE_OPTIONS.find((o) => o.value === settings.paceCueFrequency)?.label ?? settings.paceCueFrequency + 's'}`
+              }
+            >
+              <View style={sheetStyles.toggleRow}>
+                <Text style={sheetStyles.toggleLabel}>GPS pace tracking</Text>
+                <Switch
+                  value={settings.paceTrackingEnabled}
+                  onValueChange={(v) => {
+                    hapticTap();
+                    onUpdate({ paceTrackingEnabled: v });
+                  }}
+                  trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              {settings.paceTrackingEnabled && (
+                <>
+                  <View style={sheetStyles.chipRow}>
+                    <TouchableOpacity
+                      style={[
+                        sheetStyles.chip,
+                        settings.paceUnit === 'minPerMile' && sheetStyles.chipActive,
+                      ]}
+                      onPress={() => {
+                        hapticTap();
+                        onUpdate({ paceUnit: 'minPerMile' });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          sheetStyles.chipLabel,
+                          settings.paceUnit === 'minPerMile' && sheetStyles.chipLabelActive,
+                        ]}
+                      >
+                        Miles
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        sheetStyles.chip,
+                        settings.paceUnit === 'minPerKm' && sheetStyles.chipActive,
+                      ]}
+                      onPress={() => {
+                        hapticTap();
+                        onUpdate({ paceUnit: 'minPerKm' });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          sheetStyles.chipLabel,
+                          settings.paceUnit === 'minPerKm' && sheetStyles.chipLabelActive,
+                        ]}
+                      >
+                        Kilometers
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={sheetStyles.sectionSub}>
+                    {settings.paceCueBasis === 'auto'
+                      ? 'Pace by time in timed intervals and Free Runs, by distance in distance intervals. Choose By distance to hear pace every distance on every run.'
+                      : settings.paceCueBasis === 'distance'
+                        ? 'Announce pace each time you cover this distance, on every run'
+                        : 'Announce pace on this timer, on every run'}
+                  </Text>
+                  <CueBasisToggle
+                    value={settings.paceCueBasis}
+                    options={PROGRESS_CUE_BASES}
+                    onChange={(paceCueBasis) => onUpdate({ paceCueBasis })}
+                  />
+                  {settings.paceCueBasis === 'auto' && (
+                    <Text style={sheetStyles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
+                  )}
+                  {settings.paceCueBasis !== 'distance' && (
+                    <View style={sheetStyles.chipRow}>
+                      {PACE_CUE_OPTIONS.map((opt) => (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[
+                            sheetStyles.chip,
+                            settings.paceCueFrequency === opt.value && sheetStyles.chipActive,
+                          ]}
+                          onPress={() => {
+                            hapticTap();
+                            onUpdate({ paceCueFrequency: opt.value });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              sheetStyles.chipLabel,
+                              settings.paceCueFrequency === opt.value && sheetStyles.chipLabelActive,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  {settings.paceCueBasis === 'auto' && (
+                    <Text style={sheetStyles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
+                  )}
+                  {settings.paceCueBasis !== 'time' && (
+                    <CueDistanceChips
+                      value={settings.paceCueDistance}
+                      unit={settings.paceUnit}
+                      onChange={(paceCueDistance) => onUpdate({ paceCueDistance })}
+                    />
+                  )}
+
+                  {paceCuesEnabled(settings) && (
+                    <View style={sheetStyles.toggleRow}>
+                      <Text style={sheetStyles.toggleLabel}>Only with target pace</Text>
+                      <Switch
+                        value={settings.paceCueOnlyWithTarget}
+                        onValueChange={(v) => {
+                          hapticTap();
+                          onUpdate({ paceCueOnlyWithTarget: v });
+                        }}
+                        trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+                        thumbColor={Colors.white}
+                      />
+                    </View>
+                  )}
+                </>
+              )}
+            </CollapsibleSection>
+
+            {/* ── Display ── */}
+            <CollapsibleSection
+              title="Display"
+              icon="phone-portrait-outline"
+              summary={settings.keepScreenOn ? 'Screen stays on' : 'Screen dims'}
+            >
+              <View style={sheetStyles.toggleRow}>
+                <Text style={sheetStyles.toggleLabel}>Keep screen on</Text>
+                <Switch
+                  value={settings.keepScreenOn}
+                  onValueChange={(v) => {
+                    hapticTap();
+                    onUpdate({ keepScreenOn: v });
+                  }}
+                  trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+            </CollapsibleSection>
           </ScrollView>
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -1681,16 +1731,6 @@ const sheetStyles = StyleSheet.create({
   sheetLarge: {
     maxHeight: '92%',
   },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1710,13 +1750,6 @@ const sheetStyles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
-  },
-  sectionTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.xs,
   },
   sectionSub: {
     fontSize: FontSize.xs,

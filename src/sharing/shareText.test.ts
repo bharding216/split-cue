@@ -4,6 +4,8 @@ import type { CompletedWorkout, WorkoutDefinition } from '../workout/workoutType
 import {
   compareResults,
   composeShareBody,
+  composePaceprintText,
+  composeAchievementText,
   defaultCaption,
   formatResultMark,
   type ShareSubject,
@@ -150,4 +152,46 @@ test('body lists the structure, and splits only when included', () => {
   assert.match(withSplits, /Splits:/);
   assert.doesNotMatch(composeShareBody(subject, { includeResult: true, includeSplits: false }, 'minPerMile'), /Splits:/);
   assert.doesNotMatch(composeShareBody(subject, none, 'minPerMile'), /Splits:/);
+});
+
+test('composePaceprintText includes header and emoji row', () => {
+  const runWithSplits: CompletedWorkout = {
+    ...run,
+    splits: Array.from({ length: 4 }, () => run.splits![0]),
+  };
+  const subject: ShareSubject = { kind: 'results', workout, workoutName: 'Tempo Mile', run: runWithSplits };
+  const text = composePaceprintText(subject, {
+    includeTime: true,
+    includeDistance: true,
+    includePace: true,
+  }, 'minPerMile');
+  assert.match(text, /SplitCue/);
+  assert.match(text, /32:00/);
+  // Should contain emoji tiles (blue, purple, or red)
+  assert.match(text, /[🟦🟪🟥]/);
+});
+
+test('composePaceprintText respects toggle options', () => {
+  const subject: ShareSubject = { kind: 'results', workout, workoutName: 'Tempo Mile', run };
+  const text = composePaceprintText(subject, {
+    includeTime: true,
+    includeDistance: false,
+    includePace: false,
+  }, 'minPerMile');
+  assert.match(text, /SplitCue/);
+  assert.match(text, /32:00/);
+  assert.doesNotMatch(text, /\/mi/);
+});
+
+test('composeAchievementText produces clean text', () => {
+  const subject: ShareSubject = {
+    kind: 'achievement',
+    workout: null,
+    workoutName: 'Fastest 5K',
+    achievement: { id: 'fastest_5k', label: 'Fastest 5K', value: '21:48', kicker: 'New PR', message: '' },
+  };
+  const text = composeAchievementText(subject);
+  assert.match(text, /Fastest 5K: 21:48/);
+  assert.match(text, /🏆/);
+  assert.match(text, /SplitCue/);
 });

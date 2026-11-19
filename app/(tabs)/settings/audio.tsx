@@ -1,6 +1,7 @@
 /**
- * Audio & Cues settings — audio mode, voice selection, countdown warning,
- * interval progress announcements, and music ducking.
+ * Audio & Cues settings — simplified with collapsible sections.
+ * Audio mode is always visible; voice, countdown, and interval progress
+ * collapse to show a summary of the current value.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -46,16 +47,39 @@ import {
 import { paceCue, VOICE_PREVIEW_TEXT } from '../../../src/audio/cuePhrases';
 import { PREMIUM_VOICES } from '../../../src/audio/voiceCatalog';
 import VoicePickerSheet from '../../../src/components/VoicePickerSheet';
+import CollapsibleSection from '../../../src/components/CollapsibleSection';
 
 const AUDIO_MODES: {
   value: AudioCueMode;
   label: string;
   icon: React.ComponentProps<typeof Ionicons>['name'];
+  description: string;
 }[] = [
-  { value: 'beeps', label: 'Beeps', icon: 'notifications-outline' },
-  { value: 'voice', label: 'Voice', icon: 'volume-high-outline' },
-  { value: 'both', label: 'Both', icon: 'volume-medium-outline' },
-  { value: 'silent', label: 'Silent', icon: 'volume-mute-outline' },
+  {
+    value: 'beeps',
+    label: 'Beeps',
+    icon: 'notifications-outline',
+    description: 'Short tones mark interval changes — no spoken announcements.',
+  },
+  {
+    value: 'voice',
+    label: 'Voice',
+    icon: 'volume-high-outline',
+    description: 'Speaks your pace, elapsed time, and interval changes aloud.',
+  },
+  {
+    value: 'both',
+    label: 'Both',
+    icon: 'volume-medium-outline',
+    description:
+      'Beeps on interval changes plus spoken pace, time, and progress cues.',
+  },
+  {
+    value: 'silent',
+    label: 'Silent',
+    icon: 'volume-mute-outline',
+    description: 'No audio — rely on screen and haptics only.',
+  },
 ];
 
 const WARNING_OPTIONS = [3, 5, 10, 15, 30];
@@ -78,6 +102,34 @@ function formatVoiceName(voice: Speech.Voice): string {
     voice.quality === Speech.VoiceQuality.Enhanced ? ' (Enhanced)' : '';
   if (name.includes('Enhanced') || name.includes('Premium')) return name;
   return `${name}${quality}`;
+}
+
+function countdownSummary(seconds: number[]): string {
+  return seconds.map((s) => `${s}s`).join(', ');
+}
+
+function progressSummary(settings: AppSettings): string {
+  const basis =
+    settings.progressCueBasis === 'auto'
+      ? 'Match interval'
+      : settings.progressCueBasis === 'time'
+        ? 'By time'
+        : 'By distance';
+  return basis;
+}
+
+function voiceSummaryText(
+  settings: AppSettings,
+  voices: Speech.Voice[],
+  premiumActive: boolean,
+): string {
+  if (premiumActive) {
+    const pv = PREMIUM_VOICES.find((v) => v.id === settings.premiumVoiceId) ?? PREMIUM_VOICES[0];
+    return pv.name;
+  }
+  if (settings.voiceIdentifier === null) return 'System Default';
+  const v = voices.find((v) => v.identifier === settings.voiceIdentifier);
+  return v ? formatVoiceName(v) : 'Device voice';
 }
 
 export default function AudioSettingsScreen() {
@@ -120,9 +172,12 @@ export default function AudioSettingsScreen() {
     speak(VOICE_PREVIEW_TEXT);
   };
 
+  const showVoiceSection =
+    settings.audioCueMode === 'voice' || settings.audioCueMode === 'both';
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Audio Mode */}
+      {/* Audio Mode — always visible */}
       <Text style={styles.sectionTitle}>Audio Cues</Text>
       <View style={styles.row}>
         {AUDIO_MODES.map((mode) => (
@@ -159,13 +214,18 @@ export default function AudioSettingsScreen() {
         ))}
       </View>
 
+      {/* Mode description */}
+      <Text style={styles.modeDescription}>
+        {AUDIO_MODES.find((m) => m.value === settings.audioCueMode)?.description}
+      </Text>
+
       {/* Duck other audio */}
       {settings.audioCueMode !== 'silent' && (
         <View style={styles.settingRow}>
           <View style={{ flex: 1, marginRight: Spacing.md }}>
             <Text style={styles.settingLabel}>Lower music during cues</Text>
             <Text style={styles.settingHint}>
-              Automatically dips Spotify and other audio so cues stand out
+              Dips Spotify / other audio so cues stand out
             </Text>
           </View>
           <Switch
@@ -181,10 +241,13 @@ export default function AudioSettingsScreen() {
         </View>
       )}
 
-      {/* Voice Selection */}
-      {(settings.audioCueMode === 'voice' || settings.audioCueMode === 'both') && (
-        <>
-          <Text style={styles.sectionTitle}>Voice</Text>
+      {/* Voice — collapsible */}
+      {showVoiceSection && (
+        <CollapsibleSection
+          title="Voice"
+          icon="mic-outline"
+          summary={voiceSummaryText(settings, voices, premiumActive)}
+        >
           <TouchableOpacity
             style={styles.voiceSelector}
             onPress={() => {
@@ -224,7 +287,7 @@ export default function AudioSettingsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.downloadVoicesRow}
+            style={styles.secondaryRow}
             onPress={() => {
               hapticTap();
               speakCuePhrases([paceCue(7 + 39 / 60, settings.paceUnit)], 'voice');
@@ -232,10 +295,31 @@ export default function AudioSettingsScreen() {
             activeOpacity={0.7}
           >
             <Ionicons name="play-circle-outline" size={18} color={Colors.textSecondary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.downloadVoicesLabel}>Preview pace announcement</Text>
-            </View>
+            <Text style={styles.secondaryRowLabel}>Preview pace announcement</Text>
           </TouchableOpacity>
+
+          {Platform.OS === 'ios' && !premiumActive && (
+            <TouchableOpacity
+              style={styles.secondaryRow}
+              onPress={() => {
+                Linking.openURL('App-prefs:').catch(() =>
+                  Linking.openURL('app-settings:').catch(() => {}),
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="download-outline" size={18} color={Colors.textSecondary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.secondaryRowLabel}>
+                  Download Enhanced Voices — Free
+                </Text>
+                <Text style={styles.secondaryRowSub}>
+                  Settings › Accessibility › Voices › English
+                </Text>
+              </View>
+              <Text style={styles.chevron} maxFontSizeMultiplier={MaxFontScale.display}>›</Text>
+            </TouchableOpacity>
+          )}
 
           <VoicePickerSheet
             visible={voicePickerVisible}
@@ -257,133 +341,112 @@ export default function AudioSettingsScreen() {
             }}
             onClose={() => setVoicePickerVisible(false)}
           />
-
-          {Platform.OS === 'ios' && !premiumActive && (
-            <TouchableOpacity
-              style={styles.downloadVoicesRow}
-              onPress={() => {
-                Linking.openURL('App-prefs:').catch(() =>
-                  Linking.openURL('app-settings:').catch(() => {}),
-                );
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="download-outline" size={18} color={Colors.textSecondary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.downloadVoicesLabel}>
-                  Download Enhanced Device Voices — Free
-                </Text>
-                <Text style={styles.downloadVoicesSub}>
-                  Apple includes high-quality voices at no cost — we recommend Zoe.
-                  Opens Settings › Accessibility › Read & Speak › Voices › English
-                </Text>
-              </View>
-              <Text style={styles.chevron} maxFontSizeMultiplier={MaxFontScale.display}>›</Text>
-            </TouchableOpacity>
-          )}
-        </>
+        </CollapsibleSection>
       )}
 
-      {/* Countdown warning */}
-      <Text style={styles.sectionTitle}>Countdown Warnings</Text>
-      <Text style={styles.sectionSub}>
-        Play warning cues before an interval ends — tap to toggle each
-      </Text>
-      <View style={styles.row}>
-        {WARNING_OPTIONS.map((sec) => {
-          const isSelected = settings.countdownWarningSeconds.includes(sec);
-          return (
-            <TouchableOpacity
-              key={sec}
-              style={[
-                styles.chip,
-                isSelected && styles.chipActive,
-              ]}
-              onPress={() => {
-                hapticTap();
-                let next: number[];
-                if (isSelected) {
-                  next = settings.countdownWarningSeconds.filter((s) => s !== sec);
-                } else {
-                  next = [...settings.countdownWarningSeconds, sec].sort((a, b) => a - b);
-                }
-                // Keep at least one selected
-                if (next.length === 0) return;
-                update({ countdownWarningSeconds: next });
-              }}
-              activeOpacity={0.7}
-            >
-              {isSelected && (
-                <Ionicons name="checkmark" size={14} color={Colors.primary} />
-              )}
-              <Text
-                style={[
-                  styles.chipLabel,
-                  isSelected && styles.chipLabelActive,
-                ]}
-              >
-                {sec}s
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Interval progress announcements */}
-      <Text style={styles.sectionTitle}>Interval Progress</Text>
-      <Text style={styles.sectionSub}>
-        {settings.progressCueBasis === 'auto'
-          ? 'Timed intervals and Free Runs announce elapsed time. Distance intervals announce distance and elapsed time (requires Voice or Both audio mode). These are separate from pace announcements.'
-          : settings.progressCueBasis === 'distance'
-            ? 'Announce distance covered each time you reach this distance in the interval. GPS starts automatically. Pace announcements are set separately under Pace.'
-            : 'Announce elapsed time during each interval (requires Voice or Both audio mode). Pace announcements are set separately under Pace.'}
-      </Text>
-      <CueBasisToggle
-        value={settings.progressCueBasis}
-        options={PROGRESS_CUE_BASES}
-        onChange={(progressCueBasis) => update({ progressCueBasis })}
-      />
-      {settings.progressCueBasis === 'auto' && (
-        <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
-      )}
-      {settings.progressCueBasis !== 'distance' && (
+      {/* Countdown Warnings — collapsible */}
+      <CollapsibleSection
+        title="Countdown Warnings"
+        icon="timer-outline"
+        summary={countdownSummary(settings.countdownWarningSeconds)}
+      >
+        <Text style={styles.sectionSub}>
+          Play warning cues before an interval ends
+        </Text>
         <View style={styles.row}>
-          {TIME_REMAINING_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[
-                styles.chip,
-                settings.timeRemainingInterval === opt.value && styles.chipActive,
-              ]}
-              onPress={() => {
-                hapticTap();
-                update({ timeRemainingInterval: opt.value });
-              }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.chipLabel,
-                  settings.timeRemainingInterval === opt.value &&
-                    styles.chipLabelActive,
-                ]}
+          {WARNING_OPTIONS.map((sec) => {
+            const isSelected = settings.countdownWarningSeconds.includes(sec);
+            return (
+              <TouchableOpacity
+                key={sec}
+                style={[styles.chip, isSelected && styles.chipActive]}
+                onPress={() => {
+                  hapticTap();
+                  let next: number[];
+                  if (isSelected) {
+                    next = settings.countdownWarningSeconds.filter((s) => s !== sec);
+                  } else {
+                    next = [...settings.countdownWarningSeconds, sec].sort((a, b) => a - b);
+                  }
+                  if (next.length === 0) return;
+                  update({ countdownWarningSeconds: next });
+                }}
+                activeOpacity={0.7}
               >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                {isSelected && (
+                  <Ionicons name="checkmark" size={14} color={Colors.primary} />
+                )}
+                <Text
+                  style={[styles.chipLabel, isSelected && styles.chipLabelActive]}
+                >
+                  {sec}s
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      )}
-      {settings.progressCueBasis === 'auto' && (
-        <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
-      )}
-      {settings.progressCueBasis !== 'time' && (
-        <CueDistanceChips
-          value={settings.progressCueDistance}
-          unit={settings.paceUnit}
-          onChange={(progressCueDistance) => update({ progressCueDistance })}
+      </CollapsibleSection>
+
+      {/* Interval Progress — collapsible */}
+      <CollapsibleSection
+        title="Interval Progress"
+        icon="analytics-outline"
+        summary={progressSummary(settings)}
+      >
+        <Text style={styles.sectionSub}>
+          {settings.progressCueBasis === 'auto'
+            ? 'Timed intervals announce elapsed time; distance intervals announce distance covered.'
+            : settings.progressCueBasis === 'distance'
+              ? 'Announce distance covered at each step within the interval.'
+              : 'Announce elapsed time during each interval.'}
+        </Text>
+        <CueBasisToggle
+          value={settings.progressCueBasis}
+          options={PROGRESS_CUE_BASES}
+          onChange={(progressCueBasis) => update({ progressCueBasis })}
         />
-      )}
+        {settings.progressCueBasis === 'auto' && (
+          <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
+        )}
+        {settings.progressCueBasis !== 'distance' && (
+          <View style={styles.row}>
+            {TIME_REMAINING_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.chip,
+                  settings.timeRemainingInterval === opt.value && styles.chipActive,
+                ]}
+                onPress={() => {
+                  hapticTap();
+                  update({ timeRemainingInterval: opt.value });
+                }}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.chipLabel,
+                    settings.timeRemainingInterval === opt.value &&
+                      styles.chipLabelActive,
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {settings.progressCueBasis === 'auto' && (
+          <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
+        )}
+        {settings.progressCueBasis !== 'time' && (
+          <CueDistanceChips
+            value={settings.progressCueDistance}
+            unit={settings.paceUnit}
+            onChange={(progressCueDistance) => update({ progressCueDistance })}
+          />
+        )}
+      </CollapsibleSection>
     </ScrollView>
   );
 }
@@ -395,8 +458,13 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginTop: Spacing.lg,
     marginBottom: Spacing.xs,
+  },
+  modeDescription: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: Spacing.sm,
+    lineHeight: 20,
   },
   sectionSub: {
     fontSize: FontSize.sm,
@@ -418,7 +486,7 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
@@ -437,26 +505,27 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.sm,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
   },
-  settingLabel: { fontSize: FontSize.md, color: Colors.textPrimary, flex: 1, marginRight: Spacing.md },
+  settingLabel: { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '600' },
   settingHint: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
   voiceSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
-    marginTop: Spacing.sm,
     borderWidth: 1.5,
     borderColor: Colors.primary + '44',
   },
   voiceSelectorName: { fontSize: FontSize.md, fontWeight: '600', color: Colors.primary },
   voiceSelectorSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
   chevron: { fontSize: 24, fontWeight: '300', color: Colors.textMuted, marginLeft: Spacing.sm },
-  downloadVoicesRow: {
+  secondaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.sm,
@@ -464,6 +533,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.surfaceLight,
     gap: Spacing.sm,
   },
-  downloadVoicesLabel: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
-  downloadVoicesSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
+  secondaryRowLabel: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary, flex: 1 },
+  secondaryRowSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
 });

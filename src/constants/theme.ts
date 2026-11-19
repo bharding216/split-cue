@@ -15,6 +15,10 @@ export const Colors = {
   warning: '#FBBF24', // yellow – countdown warning
   danger: '#F87171', // red – hard intervals / stop
 
+  paceprintSlow: '#60A5FA',    // blue – slower than typical pace
+  paceprintTypical: '#A78BFA', // purple – near typical pace
+  paceprintFast: '#F472B6',    // pink – faster than typical pace
+
   textPrimary: '#F1F5F9',
   textSecondary: '#94A3B8',
   textMuted: '#475569',

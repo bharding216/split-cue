@@ -8,6 +8,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CompletedWorkout, totalWorkoutSeconds, formatTime } from '../workout/workoutTypes';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 
 export function formatRelativeDate(epoch: number): string {
   const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
@@ -34,11 +35,7 @@ export function RecentRunsSheet({ visible, runs, onOpen, onRepeat, onClose }: Re
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={styles.sheet}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
+        <SheetContainer style={styles.sheet} onDismiss={onClose}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Recently Used</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -73,7 +70,7 @@ export function RecentRunsSheet({ visible, runs, onOpen, onRepeat, onClose }: Re
               );
             }}
           />
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -99,16 +96,6 @@ const styles = StyleSheet.create({
     height: '75%',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
   header: {
     flexDirection: 'row',

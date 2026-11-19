@@ -18,6 +18,7 @@ import {
   BALANCED_WEEK_NOTE,
 } from '../content/running101';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 
 interface Running101SheetProps {
   visible: boolean;
@@ -38,11 +39,7 @@ export function Running101Sheet({ visible, onClose }: Running101SheetProps) {
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={styles.sheet}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
+        <SheetContainer style={styles.sheet} onDismiss={onClose}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Running 101</Text>
             <TouchableOpacity
@@ -118,7 +115,7 @@ export function Running101Sheet({ visible, onClose }: Running101SheetProps) {
               <Text style={styles.note}>{BALANCED_WEEK_NOTE}</Text>
             </Section>
           </ScrollView>
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -144,16 +141,6 @@ const styles = StyleSheet.create({
     height: '85%',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
   header: {
     flexDirection: 'row',

@@ -31,6 +31,7 @@ import {
 import { createPresets } from '../workout/presets';
 import { loadHistory, loadWorkouts } from '../workout/workoutStorage';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { useLargeText } from '../hooks/useLargeText';
 import { track } from '../analytics/track';
 
@@ -218,11 +219,7 @@ export function WorkoutPickerModal({
     >
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={handleDismiss} activeOpacity={1} accessibilityLabel="Close" />
-        <View style={[styles.sheet, large && styles.sheetLarge]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
+        <SheetContainer style={[styles.sheet, large && styles.sheetLarge]} onDismiss={handleDismiss}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>Add Workout</Text>
@@ -423,7 +420,7 @@ export function WorkoutPickerModal({
               />
             </>
           )}
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -454,16 +451,6 @@ const styles = StyleSheet.create({
   },
   sheetLarge: {
     height: '94%',
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
   header: {
     flexDirection: 'row',

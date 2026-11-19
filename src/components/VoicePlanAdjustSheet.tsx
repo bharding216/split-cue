@@ -38,6 +38,7 @@ import {
 } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { useLargeText } from '../hooks/useLargeText';
 import { transcribeAudio } from '../ai/transcriptionService';
 import {
@@ -477,12 +478,7 @@ export function VoicePlanAdjustSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={[styles.sheet, large && styles.sheetLarge]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
+        <SheetContainer style={[styles.sheet, large && styles.sheetLarge]} onDismiss={handleClose}>
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.headerTitleRow}>
@@ -670,7 +666,7 @@ export function VoicePlanAdjustSheet({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </SheetContainer>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -702,16 +698,6 @@ const styles = StyleSheet.create({
   },
   sheetLarge: {
     maxHeight: '92%',
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
 
   // Header

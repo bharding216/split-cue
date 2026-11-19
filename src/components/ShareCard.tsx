@@ -3,21 +3,18 @@
  * previews. Fixed size so captures look the same on every device.
  *
  * Variants:
- *  - paceprint:    compact stat line + a Paceprint (colored-block fingerprint
- *                  of the run). This is the default for all workout types.
- *  - route:        the route outline (ends trimmed) with compact stats
+ *  - paceprint:    clean stat card (workout name + time/distance/pace).
+ *                  The paceprint emoji grid is text-only — this card
+ *                  intentionally omits it so the image stays clean.
  *  - achievement:  one big number for a record or milestone
- *
- * Legacy variant names ('performance', 'intervals') map to 'paceprint'.
  */
 
-import React, { useMemo, type Ref } from 'react';
+import React, { type Ref } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors } from '../constants/theme';
 import {
-  categorizeWorkout,
   formatTime,
 } from '../workout/workoutTypes';
 import type { PaceUnit } from '../pace/paceTypes';
@@ -29,16 +26,12 @@ import {
   resultPaceMinPerMile,
   type ShareSubject,
 } from '../sharing/shareText';
-import { routeToSvgPath, trimRouteForPrivacy } from '../sharing/routeOutline';
 import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH } from '../sharing/shareCardImage';
-import type { IntervalConsistency } from '../stats/intervalConsistency';
-import { generatePaceprint } from '../sharing/paceprint';
-import { Paceprint } from './Paceprint';
 
-export type ShareCardVariant = 'paceprint' | 'route' | 'achievement';
+export type ShareCardVariant = 'paceprint' | 'achievement';
 
 /** @deprecated Alias kept so call sites that still reference the old names compile. */
-export type LegacyShareCardVariant = 'performance' | 'intervals';
+export type LegacyShareCardVariant = 'performance' | 'intervals' | 'route';
 
 interface ShareCardProps {
   ref?: Ref<View>;
@@ -46,33 +39,21 @@ interface ShareCardProps {
   paceUnit: PaceUnit;
   /** Shown in the footer; omitted when the runner hides their name. */
   senderName?: string;
-  showResult: boolean;
-  showSplits: boolean;
-  showRoute: boolean;
+  /** Individual stat toggles. */
+  showTime: boolean;
+  showDistance: boolean;
+  showPace: boolean;
   /** e.g. "New PR · Fastest Mile 7:02". */
   badge?: string;
   variant?: ShareCardVariant | LegacyShareCardVariant;
-  /** Required by the intervals variant. */
-  consistency?: IntervalConsistency | null;
 }
 
 const PAD = 24;
-const VISUAL_WIDTH = SHARE_CARD_WIDTH - PAD * 2;
-const ROUTE_HEIGHT = 155;
-const PACEPRINT_HEIGHT = 160;
 
 /** Map legacy variant names to the new set. */
 function normalizeVariant(v: string): ShareCardVariant {
-  if (v === 'performance' || v === 'intervals') return 'paceprint';
+  if (v === 'performance' || v === 'intervals' || v === 'route') return 'paceprint';
   return v as ShareCardVariant;
-}
-
-function RouteOutline({ path, height }: { path: string; height: number }) {
-  return (
-    <Svg width={VISUAL_WIDTH} height={height}>
-      <Path d={path} stroke={Colors.primary} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -91,41 +72,22 @@ export function ShareCard({
   subject,
   paceUnit,
   senderName,
-  showResult,
-  showSplits,
-  showRoute,
+  showTime,
+  showDistance,
+  showPace,
   badge,
   variant = 'paceprint',
-  consistency,
 }: ShareCardProps) {
   const { kind, workout, run, achievement } = subject;
-  const result = run && showResult ? resultOf(run) : null;
+  const result = run ? resultOf(run) : null;
   const pace = result ? resultPaceMinPerMile(result) : null;
 
   const normalizedVariant = normalizeVariant(variant);
 
-  const wantsRoute = showRoute || normalizedVariant === 'route';
-  const routePath = useMemo(() => {
-    if (!wantsRoute || !run?.route) return '';
-    return routeToSvgPath(trimRouteForPrivacy(run.route), VISUAL_WIDTH, ROUTE_HEIGHT, 6);
-  }, [wantsRoute, run?.route]);
-
   const shown: ShareCardVariant =
     normalizedVariant === 'achievement' && achievement
       ? 'achievement'
-      : normalizedVariant === 'route' && routePath && result
-        ? 'route'
-        : 'paceprint';
-
-  const category = useMemo(
-    () => (workout ? categorizeWorkout(workout) : 'other'),
-    [workout],
-  );
-
-  const paceprintData = useMemo(() => {
-    if (!run || !showResult) return null;
-    return generatePaceprint(run, category);
-  }, [run, category, showResult]);
+      : 'paceprint';
 
   const eyebrow =
     kind === 'planned' && subject.plannedDate
@@ -149,15 +111,18 @@ export function ShareCard({
 
   // Compact single-line stat: "24:18 · 5.0 km · 7:52/mi"
   const statParts: string[] = [];
-  if (result) {
+  if (result && showTime) {
     statParts.push(formatTime(Math.floor(result.durationMs / 1000)));
-    if (result.distanceMeters) statParts.push(formatDistance(result.distanceMeters, paceUnit));
-    if (pace != null) statParts.push(formatPaceValue(pace, paceUnit) + paceSuffix(paceUnit));
+  }
+  if (result?.distanceMeters && showDistance) {
+    statParts.push(formatDistance(result.distanceMeters, paceUnit));
+  }
+  if (pace != null && showPace) {
+    statParts.push(formatPaceValue(pace, paceUnit) + paceSuffix(paceUnit));
   }
   const compactStatLine = statParts.length > 0 ? statParts.join(' · ') : null;
 
   let body: React.ReactNode;
-  let visual: React.ReactNode = null;
 
   if (shown === 'achievement' && achievement) {
     body = (
@@ -176,20 +141,12 @@ export function ShareCard({
         ) : null}
       </View>
     );
-  } else if (shown === 'route') {
-    body = compactStatLine ? (
-      <Text style={styles.compactStat} allowFontScaling={false}>{compactStatLine}</Text>
-    ) : null;
-    visual = <RouteOutline path={routePath} height={ROUTE_HEIGHT} />;
   } else {
-    // Paceprint variant — the default for all run types.
+    // Clean stat card — workout name + stats, no paceprint bars.
     body = compactStatLine ? (
       <Text style={styles.compactStat} allowFontScaling={false}>{compactStatLine}</Text>
     ) : workout ? (
       <Text style={styles.summary} allowFontScaling={false}>{formatWorkoutSummary(workout)}</Text>
-    ) : null;
-    visual = paceprintData ? (
-      <Paceprint data={paceprintData} width={VISUAL_WIDTH} height={PACEPRINT_HEIGHT} />
     ) : null;
   }
 
@@ -233,7 +190,7 @@ export function ShareCard({
 
       {body}
 
-      <View style={styles.visual}>{visual}</View>
+      <View style={styles.spacer} />
 
       <View style={styles.footer}>
         <View style={styles.footerText}>
@@ -366,11 +323,8 @@ const styles = StyleSheet.create({
   achievementTotals: {
     marginTop: 18,
   },
-  visual: {
+  spacer: {
     flex: 1,
-    justifyContent: 'flex-end',
-    paddingBottom: 16,
-    overflow: 'hidden',
   },
   footer: {
     flexDirection: 'row',

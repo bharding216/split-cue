@@ -7,7 +7,6 @@ import {
   View,
   Text,
   FlatList,
-  SectionList,
   StyleSheet,
   TouchableOpacity,
   Alert,
@@ -21,8 +20,8 @@ import ReanimatedSwipeable, {
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { CompletedWorkout, WorkoutDefinition, formatTime, generateId, METERS_PER_MILE } from '../../../src/workout/workoutTypes';
-import { loadHistory, clearHistory, deleteHistoryEntry, updateHistoryEntry, loadWorkouts, loadSettings } from '../../../src/workout/workoutStorage';
+import { CompletedWorkout, WorkoutDefinition, formatTime, generateId } from '../../../src/workout/workoutTypes';
+import { loadHistory, clearHistory, deleteHistoryEntry, updateHistoryEntry, loadWorkouts, loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { TagBadges, TagPicker } from '../../../src/components/TagPicker';
 import { useShareSheet } from '../../../src/components/ShareSheet';
@@ -38,19 +37,11 @@ import { DEFAULT_SETTINGS } from '../../../src/workout/workoutTypes';
 import type { PaceUnit } from '../../../src/pace/paceTypes';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../../../src/constants/theme';
 import { useLargeText } from '../../../src/hooks/useLargeText';
-import { SplitsTable } from '../../../src/components/SplitsTable';
+import { RunSplits } from '../../../src/components/RunSplits';
+import type { SplitDistancePreset } from '../../../src/pace/paceTypes';
 import {
-  distanceUnitLabel,
-  distanceUnitName,
   formatDistance,
-  formatPaceValue,
-  paceUnitLabel,
-  toDisplayDistance,
 } from '../../../src/units/format';
-import { computeStats } from '../../../src/stats/personalRecords';
-import type { StatsSnapshot } from '../../../src/stats/personalRecords';
-import { RecordsGrid, AwardsList, LifetimeStats } from '../../../src/components/PersonalBests';
-import { ProgressChart } from '../../../src/components/ProgressChart';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -106,8 +97,6 @@ function ElevationSection({
   );
 }
 
-type HistoryTab = 'workouts' | 'stats';
-
 export default function HistoryScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
@@ -115,25 +104,20 @@ export default function HistoryScreen() {
   const [history, setHistory] = useState<CompletedWorkout[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
+  const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
   const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<HistoryTab>('workouts');
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
   const workoutsRef = useRef<WorkoutDefinition[]>([]);
 
   // Chart width = screen width minus container padding, card padding, and accent bar
   const chartWidth = screenWidth - Spacing.md * 2 - Spacing.md * 2 - 4;
 
-  const stats = useMemo<StatsSnapshot | null>(() => {
-    if (history.length === 0) return null;
-    return computeStats(history, paceUnit);
-  }, [history, paceUnit]);
-
   const { user } = useAuth();
 
   const reload = useCallback(() => {
     loadHistory().then(setHistory);
     loadWorkouts().then((w) => { workoutsRef.current = w; });
-    loadSettings().then((s) => setPaceUnit(s.paceUnit));
+    loadSettings().then((s) => { setPaceUnit(s.paceUnit); setSplitDistance(s.splitDistance); });
   }, []);
 
   useFocusEffect(
@@ -236,6 +220,13 @@ export default function HistoryScreen() {
     setHistory(updated);
   };
 
+  const handleSplitDistanceChange = (preset: SplitDistancePreset) => {
+    setSplitDistance(preset);
+    loadSettings()
+      .then((settings) => saveSettings({ ...settings, splitDistance: preset }))
+      .catch(() => {});
+  };
+
   const formatDate = (epoch: number) => {
     const d = new Date(epoch);
     return d.toLocaleDateString(undefined, {
@@ -258,106 +249,8 @@ export default function HistoryScreen() {
     return formatTime(totalSec);
   };
 
-  const formatPaceForChart = useCallback((v: number) => formatPaceValue(v, paceUnit), [paceUnit]);
-  const formatDistForChart = useCallback(
-    (miles: number) =>
-      `${toDisplayDistance(miles * METERS_PER_MILE, paceUnit).toFixed(1)} ${distanceUnitLabel(paceUnit)}`,
-    [paceUnit],
-  );
-  const formatDurForChart = useCallback((v: number) => `${Math.round(v)} min`, []);
-
   return (
     <View style={styles.container}>
-      {/* Tab switcher — only show when there's history */}
-      {history.length > 0 && (
-        <View style={[styles.tabRow, large && styles.tabRowLarge]}>
-          <TouchableOpacity
-            style={[styles.tab, large && styles.tabLarge, activeTab === 'workouts' && styles.tabActive]}
-            onPress={() => setActiveTab('workouts')}
-            activeOpacity={0.7}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'workouts' }}
-          >
-            <Ionicons
-              name="time-outline"
-              size={14}
-              color={activeTab === 'workouts' ? Colors.primary : Colors.textMuted}
-            />
-            <Text style={[styles.tabLabel, activeTab === 'workouts' && styles.tabLabelActive]}>
-              History
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, large && styles.tabLarge, activeTab === 'stats' && styles.tabActive]}
-            onPress={() => setActiveTab('stats')}
-            activeOpacity={0.7}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'stats' }}
-          >
-            <Ionicons
-              name="stats-chart-outline"
-              size={14}
-              color={activeTab === 'stats' ? Colors.primary : Colors.textMuted}
-            />
-            <Text style={[styles.tabLabel, activeTab === 'stats' && styles.tabLabelActive]}>
-              Stats
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── Stats tab ── */}
-      {activeTab === 'stats' && stats && (
-        <FlatList
-          data={[1]}
-          keyExtractor={() => 'stats'}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          renderItem={() => (
-            <View>
-              <LifetimeStats
-                totalWorkouts={stats.totalWorkouts}
-                totalDistanceMeters={stats.totalDistanceMeters}
-                totalDurationMs={stats.totalDurationMs}
-              />
-
-              <RecordsGrid records={stats.records} />
-
-              <AwardsList awards={stats.awards} />
-
-              {/* Progress charts */}
-              <View style={styles.chartsSection}>
-                <Text style={styles.chartsSectionTitle}>Progress Over Time</Text>
-                <ProgressChart
-                  data={stats.paceTrend}
-                  title={`Pace (${paceUnitLabel(paceUnit)})`}
-                  formatValue={formatPaceForChart}
-                  lowerIsBetter
-                  width={chartWidth}
-                  color={Colors.primary}
-                />
-                <ProgressChart
-                  data={stats.distanceTrend}
-                  title={`Distance (${distanceUnitName(paceUnit).toLowerCase()})`}
-                  formatValue={formatDistForChart}
-                  width={chartWidth}
-                  color={Colors.accent}
-                />
-                <ProgressChart
-                  data={stats.durationTrend}
-                  title="Duration (minutes)"
-                  formatValue={formatDurForChart}
-                  width={chartWidth}
-                  color={Colors.warning}
-                />
-              </View>
-            </View>
-          )}
-        />
-      )}
-
-      {/* ── Workouts tab ── */}
-      {activeTab === 'workouts' && (
       <FlatList
         data={history}
         keyExtractor={(item) => item.id}
@@ -498,8 +391,16 @@ export default function HistoryScreen() {
                       </View>
                     )}
 
-                    {item.splits && item.splits.length > 0 && (
-                      <SplitsTable splits={item.splits} paceUnit={paceUnit} style={{ marginBottom: Spacing.md }} />
+                    {(item.splits?.length ?? 0) > 0 && (
+                      <View style={{ marginBottom: Spacing.md }}>
+                        <RunSplits
+                          intervalSplits={item.splits}
+                          route={item.route}
+                          paceUnit={paceUnit}
+                          splitDistance={splitDistance}
+                          onSplitDistanceChange={handleSplitDistanceChange}
+                        />
+                      </View>
                     )}
 
                     {item.route && item.route.length >= 2 && (
@@ -508,7 +409,6 @@ export default function HistoryScreen() {
                         splits={item.splits}
                         paceUnit={paceUnit}
                         height={220}
-                        records={stats?.records}
                       />
                     )}
 
@@ -585,7 +485,6 @@ export default function HistoryScreen() {
           </View>
         }
       />
-      )}
       {shareSheet}
     </View>
   );
@@ -595,52 +494,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: 3,
-    gap: 3,
-  },
-  tabRowLarge: {
-    flexDirection: 'column',
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.md - 2,
-    gap: Spacing.xs,
-  },
-  tabLarge: {
-    flexGrow: 0,
-    flexBasis: 'auto',
-  },
-  tabActive: {
-    backgroundColor: Colors.surfaceLight,
-  },
-  tabLabel: {
-    flexShrink: 1,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.textMuted,
-  },
-  tabLabelActive: {
-    color: Colors.primary,
-  },
-  chartsSection: {
-    marginTop: Spacing.md,
-  },
-  chartsSectionTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
   },
   list: {
     padding: Spacing.md,

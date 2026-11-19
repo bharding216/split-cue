@@ -43,6 +43,7 @@ import {
 } from '../workout/workoutTypes';
 import { loadSettings } from '../workout/workoutStorage';
 import type { PaceUnit } from '../pace/paceTypes';
+import { localeDefaultPaceUnit } from '../i18n/localeUnits';
 import { formatPace, metersPerUnit, paceSuffix, paceToUnit } from '../units/format';
 import { paceFromUnit, splitPace } from '../workout/goalPaceSuggestions';
 import {
@@ -78,7 +79,7 @@ export function WorkoutEditorForm({ initial, onSave, onSaveAsNew, onCancel, auto
   const [blocks, setBlocks] = useState<WorkoutBlock[]>(initial.blocks);
   const [targetDistance, setTargetDistance] = useState(initial.targetDistanceMeters ?? 0);
   const [category, setCategory] = useState<WorkoutCategory | undefined>(initial.category);
-  const [paceUnit, setPaceUnit] = useState<PaceUnit>('minPerMile');
+  const [paceUnit, setPaceUnit] = useState<PaceUnit>(localeDefaultPaceUnit);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [showEditHint, setShowEditHint] = useState(false);
   const [hasEdits, setHasEdits] = useState(false);

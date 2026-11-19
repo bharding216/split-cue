@@ -32,6 +32,7 @@ interface DayDetailProps {
   onRemoveWorkout?: (workoutId: string) => void;
   onMoveWorkout?: (workoutId: string) => void;
   onEditWorkout?: (workoutData: WorkoutDefinition, planWorkoutId: string) => void;
+  onShareWorkout?: (workoutData: WorkoutDefinition, plannedDate: string) => void;
   onViewRun: (historyEntryId: string) => void;
   onRunAgain: (run: CompletedWorkout) => void;
   onAddWorkout?: (date: string) => void;
@@ -179,6 +180,7 @@ export function DayDetail({
   onRemoveWorkout,
   onMoveWorkout,
   onEditWorkout,
+  onShareWorkout,
   onViewRun,
   onRunAgain,
   onAddWorkout,
@@ -282,9 +284,9 @@ export function DayDetail({
             {isPlanned && !isRest && (
               <>
                 {hasWorkoutData && (
-                  <View style={[styles.actionRow, large && styles.actionRowWrap]}>
+                  <View style={styles.actionGroup}>
                     <TouchableOpacity
-                      style={[styles.startBtn, large && styles.fullRowBtn]}
+                      style={styles.startBtn}
                       onPress={() => onStartWorkout(pw.workout_data as WorkoutDefinition, pw.id)}
                       activeOpacity={0.8}
                     >
@@ -292,39 +294,52 @@ export function DayDetail({
                       <Text style={styles.startBtnText}>Start</Text>
                     </TouchableOpacity>
 
-                    {onEditWorkout && (
-                      <TouchableOpacity
-                        style={[styles.editBtn, large && styles.editBtnGrow]}
-                        onPress={() => onEditWorkout(pw.workout_data as WorkoutDefinition, pw.id)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="create-outline" size={14} color={Colors.textPrimary} />
-                        <Text style={styles.editBtnText}>Edit</Text>
-                      </TouchableOpacity>
-                    )}
+                    <View style={styles.actionRow}>
+                      {onEditWorkout && (
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          onPress={() => onEditWorkout(pw.workout_data as WorkoutDefinition, pw.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="create-outline" size={14} color={Colors.textPrimary} />
+                          <Text style={styles.editBtnText}>Edit</Text>
+                        </TouchableOpacity>
+                      )}
 
-                    {onMoveWorkout && (
-                      <TouchableOpacity
-                        style={[styles.editBtn, large && styles.editBtnGrow]}
-                        onPress={() => onMoveWorkout(pw.id)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="swap-horizontal-outline" size={14} color={Colors.textPrimary} />
-                        <Text style={styles.editBtnText}>Move</Text>
-                      </TouchableOpacity>
-                    )}
+                      {onMoveWorkout && (
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          onPress={() => onMoveWorkout(pw.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="swap-horizontal-outline" size={14} color={Colors.textPrimary} />
+                          <Text style={styles.editBtnText}>Move</Text>
+                        </TouchableOpacity>
+                      )}
 
-                    {onRemoveWorkout && (
-                      <TouchableOpacity
-                        style={styles.iconBtn}
-                        onPress={() => handleRemove(pw.id)}
-                        activeOpacity={0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel="Remove workout"
-                      >
-                        <Ionicons name="trash-outline" size={16} color={Colors.danger} />
-                      </TouchableOpacity>
-                    )}
+                      {onShareWorkout && (
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          onPress={() => onShareWorkout(pw.workout_data as WorkoutDefinition, selectedDate)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="share-outline" size={14} color={Colors.textPrimary} />
+                          <Text style={styles.editBtnText}>Share</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {onRemoveWorkout && (
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={() => handleRemove(pw.id)}
+                          activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel="Remove workout"
+                        >
+                          <Ionicons name="trash-outline" size={16} color={Colors.danger} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 )}
 
@@ -386,9 +401,9 @@ export function DayDetail({
             )}
           </View>
 
-          <View style={[styles.actionRow, large && styles.actionRowWrap]}>
+          <View style={styles.actionRow}>
             <TouchableOpacity
-              style={[styles.primaryBtn, large && styles.fullRowBtn]}
+              style={styles.primaryBtn}
               onPress={() => onViewRun(run.id)}
               activeOpacity={0.7}
             >
@@ -396,7 +411,7 @@ export function DayDetail({
               <Text style={styles.primaryBtnText}>Details</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.secondaryBtn, large && styles.fullRowBtn]}
+              style={styles.secondaryBtn}
               onPress={() => onRunAgain(run)}
               activeOpacity={0.7}
             >
@@ -522,23 +537,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Action row
+  // Action group — stacks the Start button above the secondary row
+  actionGroup: {
+    gap: Spacing.sm,
+  },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  actionRowWrap: {
-    flexWrap: 'wrap',
-  },
-  fullRowBtn: {
-    flexBasis: '100%',
-  },
-  editBtnGrow: {
-    flexGrow: 1,
-  },
   startBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -553,12 +561,12 @@ const styles = StyleSheet.create({
     color: Colors.black,
   },
   editBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.surfaceLight,
     paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     gap: Spacing.xs,
   },

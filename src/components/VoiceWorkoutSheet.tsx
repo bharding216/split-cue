@@ -35,6 +35,7 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale, intervalColor } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { useLargeText } from '../hooks/useLargeText';
 import { transcribeAudio } from '../ai/transcriptionService';
 import {
@@ -594,12 +595,7 @@ function VoiceWorkoutSheetInner({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={[styles.sheet, large && styles.sheetLarge]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
+        <SheetContainer style={[styles.sheet, large && styles.sheetLarge]} onDismiss={handleClose}>
           <View style={styles.header}>
             <View style={styles.headerInfo}>
               <View style={styles.headerTitleRow}>
@@ -795,7 +791,7 @@ function VoiceWorkoutSheetInner({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </SheetContainer>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -827,16 +823,6 @@ const styles = StyleSheet.create({
   },
   sheetLarge: {
     maxHeight: '92%',
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
 
   // Header

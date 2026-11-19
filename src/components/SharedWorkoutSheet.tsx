@@ -9,6 +9,7 @@ import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity } from 'rea
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import type { WorkoutDefinition } from '../workout/workoutTypes';
 import { useUnits } from '../hooks/useUnits';
 import { formatPlannedDate, formatResultMark, formatWorkoutSummary } from '../sharing/shareText';
@@ -49,10 +50,7 @@ export function SharedWorkoutSheet({ shared, onRun, onSave, onClose }: Props) {
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
+        <SheetContainer style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]} onDismiss={onClose}>
           <View style={styles.header}>
             <Text style={styles.eyebrow}>{eyebrow}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
@@ -94,7 +92,7 @@ export function SharedWorkoutSheet({ shared, onRun, onSave, onClose }: Props) {
               <Text style={styles.secondaryBtnText}>Save to My Workouts</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -120,16 +118,6 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
   header: {
     flexDirection: 'row',

@@ -1,13 +1,16 @@
 /**
  * ShareSheet — the one place workouts and runs are shared from.
  *
- * Shows a preview of the share card, an editable caption, and switches for
- * what the share reveals (name, result, splits, route). Switch choices are
- * remembered as defaults. Sends a link through the system share sheet, the
- * card image (for Stories and the like), or copies the link.
+ * For completed workouts (results/challenge): shows a live paceprint
+ * text preview with toggles for time, distance, and pace. Two buttons:
+ * "Share" (system share sheet) and "Copy" (clipboard).
  *
- * Render `shareSheet` from `useShareSheet()` in the screen that shares, so the
- * sheet presents above that screen even when it's a modal.
+ * For achievements/stats: ultra-simple text preview + Share / Copy.
+ *
+ * For workout structures and planned runs: a link share with the system
+ * share sheet (legacy flow).
+ *
+ * Render `shareSheet` from `useShareSheet()` in the screen that shares.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,45 +34,34 @@ import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { hapticTap } from '../audio/haptics';
 import { track } from '../analytics/track';
 import { useAuth } from '../contexts/AuthContext';
 import { loadSettings } from '../workout/workoutStorage';
 import { DEFAULT_SETTINGS } from '../workout/workoutTypes';
 import type { PaceUnit } from '../pace/paceTypes';
+import { localeDefaultPaceUnit } from '../i18n/localeUnits';
 import type { AwardBadge, PersonalRecord } from '../stats/personalRecords';
 import {
   composeShareBody,
   composeShareMessage,
+  composePaceprintText,
+  composeAchievementText,
   defaultCaption,
   resultOf,
   type ShareSubject,
+  type PaceprintShareOptions,
 } from '../sharing/shareText';
-import { createShareLink, generateShortCode, SENDER_NAME_MAX_LENGTH, type CreatedShareLink } from '../sharing/shareWorkout';
+import { createShareLink, generateShortCode, type CreatedShareLink } from '../sharing/shareWorkout';
 import {
   DEFAULT_SHARE_PREFERENCES,
-  loadProfileFirstName,
   loadSharePreferences,
   saveSharePreferences,
   type SharePreferences,
 } from '../sharing/sharePreferences';
-import {
-  SHARE_CARD_HEIGHT,
-  SHARE_CARD_WIDTH,
-  canCaptureShareCards,
-  captureShareCard,
-  uploadShareCard,
-} from '../sharing/shareCardImage';
-import { trimRouteForPrivacy } from '../sharing/routeOutline';
 import { computeIntervalConsistency } from '../stats/intervalConsistency';
 import type { ChallengeType, SharedResult } from '../workout/workoutTypes';
-import { ShareCard, type ShareCardVariant } from './ShareCard';
-
-const VARIANT_LABELS: Record<ShareCardVariant, string> = {
-  paceprint: 'Paceprint',
-  route: 'Route',
-  achievement: 'Milestone',
-};
 
 const CHALLENGE_LABELS: Record<ChallengeType, string> = {
   time: 'Beat my time',
@@ -84,7 +76,7 @@ export interface ShareRequest extends ShareSubject {
   awards?: AwardBadge[];
 }
 
-type ShareMethod = 'link' | 'image' | 'copy';
+type ShareMethod = 'link' | 'copy';
 
 const TITLES: Record<ShareSubject['kind'], string> = {
   structure: 'Share Workout',
@@ -94,62 +86,39 @@ const TITLES: Record<ShareSubject['kind'], string> = {
   achievement: 'Share Your Achievement',
 };
 
-function badgeFor(request: ShareRequest): string | undefined {
-  const record = request.records?.[0];
-  if (record) return `New PR · ${record.label} ${record.displayValue}${record.unit ?? ''}`;
-  const award = request.awards?.[0];
-  return award ? `Award · ${award.label}` : undefined;
-}
-
 interface ShareSheetProps {
   request: ShareRequest | null;
   onClose: () => void;
-  /** Called after the system share sheet reports a completed share. */
   onShared?: (request: ShareRequest) => void;
 }
 
 export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const cardRef = useRef<View>(null);
-  const canCapture = useMemo(() => canCaptureShareCards(), []);
 
   const [prefs, setPrefs] = useState<SharePreferences>(DEFAULT_SHARE_PREFERENCES);
-  const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
+  const [paceUnit, setPaceUnit] = useState<PaceUnit>(localeDefaultPaceUnit);
   const [caption, setCaption] = useState('');
   const [captionEdited, setCaptionEdited] = useState(false);
   const [busy, setBusy] = useState<ShareMethod | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  /** Link already created for the current choices, reused across buttons. */
-  const createdLink = useRef<{ key: string; link: CreatedShareLink | null; imageUri: string | null } | null>(null);
+  const createdLink = useRef<{ key: string; link: CreatedShareLink | null } | null>(null);
 
   const run = request?.run;
   const hasResult =
     !!run &&
     run.totalDurationMs > 0 &&
     (request?.kind === 'results' || request?.kind === 'challenge' || request?.kind === 'achievement');
-  const hasSplits = hasResult && (run?.splits?.length ?? 0) > 1;
-  const hasRoute = hasResult && trimRouteForPrivacy(run?.route ?? []).length > 0;
 
-  const showResult = hasResult && prefs.includeResult;
-  const showSplits = showResult && hasSplits && prefs.includeSplits;
-  const senderName = prefs.includeName ? prefs.senderName.trim() : '';
+  const isRunShare = request?.kind === 'results' || request?.kind === 'challenge';
+  const isAchievementShare = request?.kind === 'achievement';
+  const isWorkoutShare = request?.kind === 'structure' || request?.kind === 'planned';
 
   const consistency = useMemo(
     () => (hasResult ? computeIntervalConsistency(run?.splits) : null),
     [hasResult, run?.splits],
   );
-  const variants = useMemo<ShareCardVariant[]>(() => {
-    if (!request) return [];
-    const list: ShareCardVariant[] = [];
-    if (request.achievement) list.push('achievement');
-    list.push('paceprint');
-    if (showResult && hasRoute) list.push('route');
-    return list;
-  }, [request, showResult, hasRoute]);
 
-  // Replies keep the original challenge's type; new challenges default to consistency when it can be scored.
   const challengeTypes: ChallengeType[] =
     request?.kind === 'challenge' && !request.replyTo && consistency ? ['consistency', 'time'] : [];
   const [pickedChallengeType, setPickedChallengeType] = useState<ChallengeType | null>(null);
@@ -160,50 +129,35 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
         ? request.replyTo.challengeType
         : (pickedChallengeType ?? (consistency ? 'consistency' : 'time'));
 
-  const [pickedVariant, setPickedVariant] = useState<ShareCardVariant | null>(null);
-  const defaultVariant: ShareCardVariant = request?.achievement
-    ? 'achievement'
-    : 'paceprint';
-  const variant: ShareCardVariant =
-    pickedVariant && variants.includes(pickedVariant) ? pickedVariant : defaultVariant;
-
-  // Picking the route card opts this share in to the route, still with its ends hidden.
-  const showRoute = showResult && hasRoute && (prefs.includeRoute || variant === 'route');
-  const textOptions = { includeResult: showResult, includeSplits: showSplits };
+  const showTime = prefs.includeTime;
+  const showDistance = prefs.includeDistance;
+  const showPace = prefs.includePace;
+  const showResult = hasResult && (showTime || showDistance || showPace);
+  const textOptions = { includeResult: showResult, includeSplits: false };
   const subject = request ? { ...request, challengeType } : null;
 
-  // Load preferences and units each time the sheet opens.
   useEffect(() => {
     if (!request) return;
     let cancelled = false;
     setCaptionEdited(false);
     setNotice(null);
-    setPickedVariant(null);
     setPickedChallengeType(null);
     createdLink.current = null;
     track('share_sheet_opened', { share_type: request.kind, surface: request.surface });
     (async () => {
       const [loaded, settings] = await Promise.all([loadSharePreferences(), loadSettings().catch(() => DEFAULT_SETTINGS)]);
-      let next = loaded;
-      if (!loaded.senderName && user) {
-        const profileName = await loadProfileFirstName(user.id);
-        if (profileName) next = { ...loaded, senderName: profileName };
-      }
       if (cancelled) return;
-      setPrefs(next);
+      setPrefs(loaded);
       setPaceUnit(settings.paceUnit);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [request, user]);
 
-  // Keep the default caption in step with the switches until the runner edits it.
   useEffect(() => {
-    if (!subject || captionEdited) return;
+    if (!subject || captionEdited || !isWorkoutShare) return;
     setCaption(defaultCaption(subject, textOptions, paceUnit));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, captionEdited, showResult, showSplits, paceUnit, challengeType]);
+  }, [request, captionEdited, showResult, paceUnit, challengeType, isWorkoutShare]);
 
   const updatePrefs = (partial: Partial<SharePreferences>) => {
     const next = { ...prefs, ...partial };
@@ -211,17 +165,14 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     saveSharePreferences(next);
   };
 
-  /** Create the link (and upload the card) once per set of choices. */
   const ensureLink = useCallback(async () => {
-    if (!request) return { link: null, imageUri: null };
-    const key = JSON.stringify([senderName, showResult, showSplits, showRoute, variant, challengeType]);
+    if (!request) return { link: null };
+    const key = JSON.stringify([showTime, showDistance, showPace, challengeType]);
     if (createdLink.current?.key === key) return createdLink.current;
 
-    const imageUri = canCapture ? await captureShareCard(cardRef) : null;
     let link: CreatedShareLink | null = null;
     if (request.workout) {
       const code = generateShortCode();
-      const imagePath = imageUri ? await uploadShareCard(code, imageUri) : null;
       let result: SharedResult | undefined = showResult && run ? resultOf(run) : undefined;
       if (result && request.kind === 'challenge' && consistency) {
         result = { ...result, consistency: consistency.score, repPaces: consistency.repPaces };
@@ -232,20 +183,19 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
         {
           kind: request.kind,
           plannedDate: request.plannedDate,
-          senderName: senderName || undefined,
           result,
           challengeType,
           achievement: achievement ? { id: achievement.id, label: achievement.label, value: achievement.value } : undefined,
           parentCode: request.replyTo?.code ?? request.workout.sharedFrom?.code,
         },
-        { code, imagePath },
+        { code },
       );
     }
-    createdLink.current = { key, link, imageUri };
+    createdLink.current = { key, link };
     return createdLink.current;
-  }, [request, senderName, showResult, showSplits, showRoute, variant, challengeType, consistency, canCapture, run]);
+  }, [request, showTime, showDistance, showPace, showResult, challengeType, consistency, run]);
 
-  const trackShare = (method: ShareMethod, link: CreatedShareLink | null, imageUri: string | null) => {
+  const trackShare = (method: ShareMethod, link: CreatedShareLink | null) => {
     if (!request) return;
     track('workout_shared', {
       workout_id: request.workout?.id ?? request.run?.workoutId,
@@ -255,17 +205,26 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
       method,
       share_code: link?.code ?? null,
       has_link: !!link,
-      has_image: !!imageUri,
-      include_name: !!senderName,
-      include_result: showResult,
-      include_splits: showSplits,
-      include_route: showRoute,
-      card_variant: imageUri ? variant : null,
+      include_time: showTime,
+      include_distance: showDistance,
+      include_pace: showPace,
       challenge_type: challengeType ?? null,
       consistency_score: consistency?.score ?? null,
       is_reply: !!request.replyTo,
-      caption_edited: captionEdited,
     });
+  };
+
+  const paceprintOptions: PaceprintShareOptions = {
+    includeTime: showTime,
+    includeDistance: showDistance,
+    includePace: showPace,
+  };
+
+  const getShareText = (): string => {
+    if (!subject) return '';
+    if (isAchievementShare) return composeAchievementText(subject);
+    if (isRunShare) return composePaceprintText(subject, paceprintOptions, paceUnit);
+    return composeShareMessage(caption, composeShareBody(subject, textOptions, paceUnit));
   };
 
   const handleShare = async (method: ShareMethod) => {
@@ -274,39 +233,25 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
     setBusy(method);
     setNotice(null);
     try {
-      const { link, imageUri } = await ensureLink();
-      const message = composeShareMessage(caption, composeShareBody(subject ?? request, textOptions, paceUnit));
+      const { link } = await ensureLink();
+      const text = getShareText();
       const url = link?.url;
 
       if (method === 'copy') {
-        await Clipboard.setStringAsync(url ?? message);
-        setNotice(url ? 'Link copied.' : 'Message copied.');
-        trackShare(method, link, imageUri);
+        await Clipboard.setStringAsync([text, url].filter(Boolean).join('\n'));
+        setNotice('Copied!');
+        trackShare(method, link);
         return;
       }
 
-      if (method === 'image' && imageUri) {
-        await Clipboard.setStringAsync([caption.trim(), url].filter(Boolean).join('\n'));
-        setNotice('Caption and link copied. Paste them with the image.');
-        await Sharing.shareAsync(imageUri, {
-          mimeType: 'image/png',
-          UTI: 'public.png',
-          dialogTitle: TITLES[request.kind],
-        });
-        trackShare(method, link, imageUri);
-        return;
-      }
-
-      const lead = request.kind === 'planned' ? 'Add it to your SplitCue calendar:' : 'Open it in SplitCue:';
+      // method === 'link': share via system share sheet
       const result = await Share.share(
         Platform.OS === 'ios'
-          ? url
-            ? { message: `${message}\n\n${lead}`, url }
-            : { message }
-          : { message: url ? `${message}\n\n${lead}\n${url}` : message, title: TITLES[request.kind] },
+          ? url ? { message: text, url } : { message: text }
+          : { message: url ? `${text}\n${url}` : text, title: TITLES[request.kind] },
       );
       if (result.action === Share.sharedAction) {
-        trackShare(method, link, imageUri);
+        trackShare(method, link);
         onShared?.(request);
         onClose();
       }
@@ -319,17 +264,118 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
 
   if (!request) return null;
 
-  const previewWidth = Math.min(screenWidth - Spacing.lg * 2, 260, (screenHeight * 0.36 * SHARE_CARD_WIDTH) / SHARE_CARD_HEIGHT);
-  const scale = previewWidth / SHARE_CARD_WIDTH;
+  // ── Run share or Achievement: text-only paceprint ──
+  if (isRunShare || isAchievementShare) {
+    return (
+      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+        <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} accessibilityLabel="Close" />
+          <SheetContainer style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]} onDismiss={onClose}>
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>{TITLES[request.kind]}</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
+                <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
+            <ScrollView
+              contentContainerStyle={styles.content}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Live paceprint text preview */}
+              <View style={styles.textPreview}>
+                <Text style={styles.textPreviewContent} selectable>
+                  {getShareText()}
+                </Text>
+              </View>
+
+              {challengeTypes.length > 1 && (
+                <ChipRow
+                  label="Challenge"
+                  options={challengeTypes.map((t) => ({ value: t, label: CHALLENGE_LABELS[t] }))}
+                  value={challengeType ?? 'time'}
+                  onChange={(t) => {
+                    hapticTap();
+                    setPickedChallengeType(t);
+                  }}
+                />
+              )}
+
+              {hasResult && isRunShare && (
+                <>
+                  <Text style={styles.label}>Include</Text>
+                  <View style={styles.group}>
+                    <ToggleRow
+                      label="Time"
+                      value={prefs.includeTime}
+                      onChange={(v) => updatePrefs({ includeTime: v })}
+                    />
+                    <ToggleRow
+                      label="Distance"
+                      value={prefs.includeDistance}
+                      onChange={(v) => updatePrefs({ includeDistance: v })}
+                    />
+                    <ToggleRow
+                      label="Pace"
+                      value={prefs.includePace}
+                      onChange={(v) => updatePrefs({ includePace: v })}
+                    />
+                  </View>
+                </>
+              )}
+
+              {notice && <Text style={styles.notice}>{notice}</Text>}
+
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={() => handleShare('link')}
+                  disabled={!!busy}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                >
+                  {busy === 'link' ? (
+                    <ActivityIndicator color={Colors.black} />
+                  ) : (
+                    <>
+                      <Ionicons name="paper-plane" size={16} color={Colors.black} />
+                      <Text style={styles.primaryBtnText}>
+                        {request.kind === 'challenge' ? 'Send Challenge' : 'Share'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => handleShare('copy')}
+                  disabled={!!busy}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  {busy === 'copy' ? (
+                    <ActivityIndicator color={Colors.textPrimary} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="copy-outline" size={16} color={Colors.textPrimary} />
+                      <Text style={styles.secondaryBtnText}>Copy</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </SheetContainer>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
+
+  // ── Structure / Planned share: legacy flow ──
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
+        <SheetContainer style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.md }]} onDismiss={onClose}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{TITLES[request.kind]}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="Close">
@@ -342,61 +388,6 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {canCapture && (
-              <View style={[styles.preview, { width: previewWidth, height: SHARE_CARD_HEIGHT * scale }]}>
-                <View
-                  style={{
-                    width: SHARE_CARD_WIDTH,
-                    height: SHARE_CARD_HEIGHT,
-                    transform: [
-                      { translateX: (previewWidth - SHARE_CARD_WIDTH) / 2 },
-                      { translateY: (SHARE_CARD_HEIGHT * scale - SHARE_CARD_HEIGHT) / 2 },
-                      { scale },
-                    ],
-                  }}
-                  accessible={false}
-                  importantForAccessibility="no-hide-descendants"
-                >
-                  <ShareCard
-                    ref={cardRef}
-                    subject={subject ?? request}
-                    paceUnit={paceUnit}
-                    senderName={senderName || undefined}
-                    showResult={showResult}
-                    showSplits={showSplits}
-                    showRoute={showRoute}
-                    badge={showResult ? badgeFor(request) : undefined}
-                    variant={variant}
-                    consistency={consistency}
-                  />
-                </View>
-              </View>
-            )}
-
-            {canCapture && variants.length > 1 && (
-              <ChipRow
-                label="Card"
-                options={variants.map((v) => ({ value: v, label: VARIANT_LABELS[v] }))}
-                value={variant}
-                onChange={(v) => {
-                  hapticTap();
-                  setPickedVariant(v);
-                }}
-              />
-            )}
-
-            {challengeTypes.length > 1 && (
-              <ChipRow
-                label="Challenge"
-                options={challengeTypes.map((t) => ({ value: t, label: CHALLENGE_LABELS[t] }))}
-                value={challengeType ?? 'time'}
-                onChange={(t) => {
-                  hapticTap();
-                  setPickedChallengeType(t);
-                }}
-              />
-            )}
-
             <Text style={styles.label}>Message</Text>
             <TextInput
               style={styles.caption}
@@ -412,51 +403,6 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
               accessibilityLabel="Share message"
             />
 
-            <Text style={styles.label}>Include</Text>
-            <View style={styles.group}>
-              <ToggleRow
-                label="My name"
-                value={prefs.includeName}
-                onChange={(v) => updatePrefs({ includeName: v })}
-              />
-              {prefs.includeName && (
-                <TextInput
-                  style={styles.nameInput}
-                  value={prefs.senderName}
-                  onChangeText={(text) => updatePrefs({ senderName: text })}
-                  placeholder="Your first name"
-                  placeholderTextColor={Colors.textMuted}
-                  maxLength={SENDER_NAME_MAX_LENGTH}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  accessibilityLabel="Name shown on shares"
-                />
-              )}
-              {hasResult && (
-                <ToggleRow
-                  label="Time, distance, and pace"
-                  value={prefs.includeResult}
-                  onChange={(v) => updatePrefs({ includeResult: v })}
-                />
-              )}
-              {hasSplits && showResult && (
-                <ToggleRow
-                  label="Splits"
-                  value={prefs.includeSplits}
-                  onChange={(v) => updatePrefs({ includeSplits: v })}
-                />
-              )}
-              {hasRoute && showResult && variant !== 'route' && (
-                <ToggleRow
-                  label="Route shape"
-                  hint="Start and finish are always hidden"
-                  value={prefs.includeRoute}
-                  onChange={(v) => updatePrefs({ includeRoute: v })}
-                />
-              )}
-            </View>
-
             {notice && <Text style={styles.notice}>{notice}</Text>}
 
             <TouchableOpacity
@@ -471,33 +417,29 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
               ) : (
                 <>
                   <Ionicons name="paper-plane" size={16} color={Colors.black} />
-                  <Text style={styles.primaryBtnText}>
-                    {request.kind === 'challenge' ? 'Send Challenge' : 'Share'}
-                  </Text>
+                  <Text style={styles.primaryBtnText}>Share</Text>
                 </>
               )}
             </TouchableOpacity>
 
-            <View style={styles.secondaryRow}>
-              {canCapture && (
-                <SecondaryButton
-                  icon="image-outline"
-                  label="Share Image"
-                  busy={busy === 'image'}
-                  disabled={!!busy}
-                  onPress={() => handleShare('image')}
-                />
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { marginTop: Spacing.sm }]}
+              onPress={() => handleShare('copy')}
+              disabled={!!busy}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              {busy === 'copy' ? (
+                <ActivityIndicator color={Colors.textPrimary} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="copy-outline" size={16} color={Colors.textPrimary} />
+                  <Text style={styles.secondaryBtnText}>{request.workout ? 'Copy Link' : 'Copy Text'}</Text>
+                </>
               )}
-              <SecondaryButton
-                icon="link-outline"
-                label={request.workout ? 'Copy Link' : 'Copy Text'}
-                busy={busy === 'copy'}
-                disabled={!!busy}
-                onPress={() => handleShare('copy')}
-              />
-            </View>
+            </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SheetContainer>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -505,21 +447,16 @@ export function ShareSheet({ request, onClose, onShared }: ShareSheetProps) {
 
 function ToggleRow({
   label,
-  hint,
   value,
   onChange,
 }: {
   label: string;
-  hint?: string;
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
     <View style={styles.toggleRow}>
-      <View style={styles.toggleText}>
-        <Text style={styles.toggleLabel}>{label}</Text>
-        {hint ? <Text style={styles.toggleHint}>{hint}</Text> : null}
-      </View>
+      <Text style={styles.toggleLabel}>{label}</Text>
       <Switch
         value={value}
         onValueChange={onChange}
@@ -566,38 +503,6 @@ function ChipRow<T extends string>({
   );
 }
 
-function SecondaryButton({
-  icon,
-  label,
-  busy,
-  disabled,
-  onPress,
-}: {
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  busy: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.secondaryBtn}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-    >
-      {busy ? (
-        <ActivityIndicator color={Colors.textPrimary} size="small" />
-      ) : (
-        <Ionicons name={icon} size={16} color={Colors.textPrimary} />
-      )}
-      <Text style={styles.secondaryBtnText}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-/** A share sheet for one screen: call `openShare`, and render `shareSheet`. */
 export function useShareSheet(onShared?: (request: ShareRequest) => void) {
   const [request, setRequest] = useState<ShareRequest | null>(null);
   const openShare = useCallback((next: ShareRequest) => setRequest(next), []);
@@ -627,16 +532,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.surfaceLight,
   },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -655,13 +550,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
   },
-  preview: {
-    alignSelf: 'center',
+  textPreview: {
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
-    overflow: 'hidden',
+    padding: Spacing.md,
     marginBottom: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.surfaceLight,
+  },
+  textPreviewContent: {
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+    lineHeight: 24,
   },
   label: {
     fontSize: FontSize.xs,
@@ -693,17 +593,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     gap: Spacing.md,
   },
-  toggleText: {
-    flex: 1,
-  },
   toggleLabel: {
     fontSize: FontSize.md,
     color: Colors.textPrimary,
-  },
-  toggleHint: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
   },
   chipRow: {
     flexDirection: 'row',
@@ -732,20 +624,15 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: Colors.primary,
   },
-  nameInput: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm + 2,
-    paddingVertical: Spacing.sm,
-    color: Colors.textPrimary,
-    fontSize: FontSize.sm,
-    marginBottom: Spacing.sm,
-  },
   notice: {
     fontSize: FontSize.sm,
     color: Colors.primary,
     marginTop: Spacing.md,
     textAlign: 'center',
+  },
+  buttonRow: {
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
   primaryBtn: {
     flexDirection: 'row',
@@ -763,15 +650,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.black,
   },
-  secondaryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
   secondaryBtn: {
-    flexGrow: 1,
-    flexBasis: 140,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

@@ -35,6 +35,7 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { Colors, Spacing, FontSize, BorderRadius, intervalColor } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { transcribeAudio } from '../ai/transcriptionService';
 import { adjustPlan, type PlanAdjustmentInput, type PlanModification } from '../ai/planService';
 import type { TrainingPlan, PlanWorkout } from '../types/database';
@@ -686,12 +687,7 @@ export function VoiceEditSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity style={styles.backdrop} onPress={handleClose} activeOpacity={1} />
-        <View style={[styles.sheet, large && styles.sheetLarge, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
+        <SheetContainer style={[styles.sheet, large && styles.sheetLarge, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]} onDismiss={handleClose}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <View style={styles.headerTitleRow}>
@@ -961,7 +957,7 @@ export function VoiceEditSheet({
             </View>
           )}
           </ScrollView>
-        </View>
+        </SheetContainer>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -992,16 +988,6 @@ const styles = StyleSheet.create({
   },
   sheetLarge: {
     maxHeight: '92%',
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
 
   // Header

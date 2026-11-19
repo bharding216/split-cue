@@ -1,10 +1,10 @@
 /**
  * Paceprint — the visual fingerprint of a completed run.
  *
- * Renders a row of colored blocks whose heights and colors are derived
- * from real workout data. Work segments stand tall, recovery segments sit
- * low, and color encodes pace accuracy. The result is a compact, abstract
- * pattern unique to each run — recognizable at a glance like Wordle's grid.
+ * Renders a row of colored tiles whose colors encode pace relative to
+ * the session average: blue (slower), purple (near), pink (faster).
+ * All tiles are equal height and equal width — a compact, abstract
+ * pattern unique to each run, like Wordle's grid.
  */
 
 import React from 'react';
@@ -15,17 +15,14 @@ interface PaceprintProps {
   data: PaceprintData;
   /** Available width in points. */
   width: number;
-  /** Maximum height in points. */
+  /** Height in points. */
   height: number;
 }
 
 const GAP = 3;
 const BORDER_RADIUS = 3;
 
-/**
- * Minimum cell width in points so blocks never vanish on small patterns.
- * Cells below this width are clamped up and their neighbours shrink to fit.
- */
+/** Minimum cell width in points so blocks never vanish on small patterns. */
 const MIN_CELL_WIDTH = 4;
 
 export function Paceprint({ data, width, height }: PaceprintProps) {

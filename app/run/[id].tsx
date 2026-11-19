@@ -49,7 +49,6 @@ import {
   type AwardBadge,
 } from '../../src/stats/personalRecords';
 import { NewRecordsBanner } from '../../src/components/PersonalBests';
-import { ChallengeFriendCard } from '../../src/components/ChallengeFriendCard';
 import { RunSplits } from '../../src/components/RunSplits';
 import { HeartRateSection } from '../../src/components/HeartRateSection';
 import { useSubscription } from '../../src/contexts/SubscriptionContext';
@@ -150,10 +149,7 @@ export default function RunDetailsScreen() {
   const [annotations, setAnnotations] = useState<Annotations>({ tags: [], notes: '' });
   const hrSamples = useHeartRateSamples(run?.heartRate ? run.id : null);
   const isPro = tier === 'pro';
-  const [challengeSent, setChallengeSent] = useState(false);
-  const { openShare, shareSheet } = useShareSheet((request) => {
-    if (request.kind === 'challenge') setChallengeSent(true);
-  });
+  const { openShare, shareSheet } = useShareSheet();
 
   const hrViewedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -258,6 +254,17 @@ export default function RunDetailsScreen() {
       <Stack.Screen
         options={{
           title: run.workoutName,
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => handleShare('results')}
+              hitSlop={8}
+              accessibilityLabel="Share run"
+              accessibilityRole="button"
+              style={styles.headerShareBtn}
+            >
+              <Ionicons name="share-outline" size={22} color={Colors.black} />
+            </TouchableOpacity>
+          ),
         }}
       />
       <Stack.Screen.BackButton>Training</Stack.Screen.BackButton>
@@ -390,17 +397,6 @@ export default function RunDetailsScreen() {
           notes={annotations.notes}
           stravaActivityId={run.stravaActivityId}
         />
-
-        {run.configuration && (
-          <View style={styles.section}>
-            <ChallengeFriendCard
-              mark={formatResultMark(resultOf(run), paceUnit)}
-              sent={challengeSent}
-              replyToName={run.configuration.sharedFrom ? run.configuration.sharedFrom.senderName ?? '' : undefined}
-              onPress={() => handleShare('challenge')}
-            />
-          </View>
-        )}
 
         <View style={[styles.actionRow, large && styles.actionRowLarge]}>
           <TouchableOpacity
@@ -622,5 +618,9 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.primary,
+  },
+  headerShareBtn: {
+    padding: Spacing.xs,
+    marginRight: -Spacing.xs,
   },
 });

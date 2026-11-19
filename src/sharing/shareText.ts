@@ -61,6 +61,13 @@ export interface ShareTextOptions {
   includeSplits: boolean;
 }
 
+/** Options for the individual stat toggles used by the new paceprint share. */
+export interface PaceprintShareOptions {
+  includeTime: boolean;
+  includeDistance: boolean;
+  includePace: boolean;
+}
+
 // ── Workouts ─────────────────────────────────────────────────────────
 
 function describeBlock(block: WorkoutBlock, unit: PaceUnit): string {
@@ -279,7 +286,7 @@ export function defaultCaption(subject: ShareSubject, options: ShareTextOptions,
 export function composeShareBody(subject: ShareSubject, options: ShareTextOptions, unit: PaceUnit): string {
   const sections: string[] = [];
 
-  // Emoji paceprint: a compact row of colored squares encoding the run.
+  // Emoji paceprint: a compact row of colored tiles encoding the run.
   if (options.includeResult && subject.run && subject.run.totalDurationMs > 0) {
     const category = subject.workout ? categorizeWorkout(subject.workout) : 'other';
     const data = generatePaceprint(subject.run, category);
@@ -301,4 +308,72 @@ export function composeShareBody(subject: ShareSubject, options: ShareTextOption
 /** Full message text. The link is appended separately, per platform. */
 export function composeShareMessage(caption: string, body: string): string {
   return [caption.trim(), body].filter(Boolean).join('\n\n');
+}
+
+// ── Paceprint text share ─────────────────────────────────────────────
+
+/**
+ * Compose the compact text for paceprint sharing: a header line with
+ * stats (controlled by toggles) and a row of colored emoji tiles.
+ *
+ *   SplitCue · 5K · 24:18
+ *   🟦🟪🟪🟪🟦🟪🟪🩷🩷🟪🟪🟪🟦🟪🟪🟪🟪🟪🟪🟦
+ */
+export function composePaceprintText(
+  subject: ShareSubject,
+  options: PaceprintShareOptions,
+  paceUnit: PaceUnit,
+): string {
+  const run = subject.run;
+  const lines: string[] = [];
+
+  // Header: "SplitCue · 5K · 24:18"
+  const headerParts: string[] = ['SplitCue'];
+
+  const statParts: string[] = [];
+  if (run && run.totalDistanceMeters && run.totalDistanceMeters > 0 && options.includeDistance) {
+    statParts.push(formatDistance(run.totalDistanceMeters, paceUnit));
+  }
+  if (run && run.totalDurationMs > 0 && options.includeTime) {
+    statParts.push(formatTime(Math.floor(run.totalDurationMs / 1000)));
+  }
+  if (run && options.includePace) {
+    const result = resultOf(run);
+    const pace = resultPaceMinPerMile(result);
+    if (pace != null) statParts.push(formatPace(pace, paceUnit));
+  }
+
+  const topLine = [...headerParts, ...statParts].join(' · ');
+  if (topLine) lines.push(topLine);
+
+  // Emoji paceprint row
+  if (run && run.totalDurationMs > 0) {
+    const category = subject.workout ? categorizeWorkout(subject.workout) : 'other';
+    const data = generatePaceprint(run, category);
+    if (data.cells.length > 1) {
+      lines.push(paceprintToEmoji(data));
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Compose a plain-text version of an achievement for text sharing.
+ */
+export function composeAchievementText(subject: ShareSubject): string {
+  const ach = subject.achievement;
+  if (!ach) return subject.workoutName;
+
+  const lines: string[] = [];
+  if (ach.kicker === 'New PR') {
+    lines.push(`${ach.label}: ${ach.value} 🏆`);
+  } else {
+    lines.push(`${ach.label}: ${ach.value}`);
+  }
+  if (ach.totals?.length) {
+    lines.push(ach.totals.map((t) => `${t.value} ${t.label.toLowerCase()}`).join(' · '));
+  }
+  lines.push('SplitCue');
+  return lines.join('\n');
 }

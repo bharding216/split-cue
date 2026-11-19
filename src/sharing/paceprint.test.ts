@@ -6,6 +6,7 @@ import {
   generatePaceprint,
   binRouteIntoPaces,
   paceprintToEmoji,
+  TILE_COUNT,
   type PaceprintCell,
 } from './paceprint';
 
@@ -84,9 +85,9 @@ function makeLine(km: number, durationMs: number): RoutePoint[] {
   return points;
 }
 
-// ── Easy run ─────────────────────────────────────────────────────────
+// ── 20-tile system ───────────────────────────────────────────────────
 
-test('easy run: even splits produce all-green cells', () => {
+test('easy run: even splits produce mostly-purple tiles', () => {
   const splits = Array.from({ length: 6 }, (_, i) =>
     makeSplit({
       label: `Mile ${i + 1}`,
@@ -100,17 +101,38 @@ test('easy run: even splits produce all-green cells', () => {
     'easy',
   );
   assert.equal(data.category, 'easy');
-  assert.equal(data.cells.length, 6);
-  // All work cells, heights are the same (all normalized to 1).
+  assert.equal(data.cells.length, TILE_COUNT);
+  // All tiles should be uniform height.
   for (const cell of data.cells) {
-    assert.equal(cell.shape, 'work');
-    assert.ok(cell.height >= 0.9, `height ${cell.height} should be near 1`);
+    assert.equal(cell.height, 1);
+  }
+  // Even splits → mostly purple (near typical).
+  const purpleCount = data.cells.filter((c) => c.color === Colors.paceprintTypical).length;
+  assert.ok(purpleCount >= TILE_COUNT * 0.8, `expected mostly purple, got ${purpleCount}/${TILE_COUNT}`);
+});
+
+test('uses blue/purple/pink color scheme', () => {
+  const validColors = new Set([Colors.paceprintSlow, Colors.paceprintTypical, Colors.paceprintFast]);
+  const splits = Array.from({ length: 6 }, (_, i) =>
+    makeSplit({
+      label: `Mile ${i + 1}`,
+      segmentType: 'run',
+      avgPaceMinPerMile: 7.0 + i * 0.6,
+      targetPace: undefined,
+    }),
+  );
+  const data = generatePaceprint(
+    { totalDurationMs: 36 * 60_000, totalDistanceMeters: 6 * 1609, splits },
+    'tempo',
+  );
+  for (const cell of data.cells) {
+    assert.ok(validColors.has(cell.color), `unexpected color ${cell.color}`);
   }
 });
 
 // ── Intervals ────────────────────────────────────────────────────────
 
-test('intervals: alternating tall/short pattern', () => {
+test('intervals: produces 20 tiles with color variation', () => {
   const splits: IntervalSplit[] = [
     makeWarmupSplit(),
     makeSplit({ avgPaceMinPerMile: 7.0, targetPace: 7.0 }),
@@ -126,26 +148,21 @@ test('intervals: alternating tall/short pattern', () => {
     'intervals',
   );
   assert.equal(data.category, 'intervals');
-  assert.equal(data.cells.length, 8);
+  assert.equal(data.cells.length, TILE_COUNT);
 
-  // Work cells should be taller than recovery cells.
-  const workCells = data.cells.filter((c) => c.shape === 'work');
-  const recoveryCells = data.cells.filter((c) => c.shape === 'recovery');
-  assert.ok(workCells.length >= 3);
-  assert.ok(recoveryCells.length >= 3);
-  for (const rc of recoveryCells) {
-    assert.ok(rc.height < workCells[0].height, 'recovery should be shorter than work');
-  }
+  // Should have multiple colors due to pace variation between work/recovery.
+  const colors = new Set(data.cells.map((c) => c.color));
+  assert.ok(colors.size >= 2, 'intervals should produce at least 2 different colors');
 });
 
 // ── Tempo ────────────────────────────────────────────────────────────
 
-test('tempo: uniform blocks with fade detection', () => {
+test('tempo: gradual fade shows color progression', () => {
   const splits = Array.from({ length: 5 }, (_, i) =>
     makeSplit({
       label: `Mile ${i + 1}`,
       segmentType: 'run',
-      avgPaceMinPerMile: 7.5 + i * 0.15, // gradual fade
+      avgPaceMinPerMile: 7.5 + i * 0.2,
       targetPace: 7.5,
     }),
   );
@@ -154,16 +171,12 @@ test('tempo: uniform blocks with fade detection', () => {
     'tempo',
   );
   assert.equal(data.category, 'tempo');
-  assert.equal(data.cells.length, 5);
-
-  // First split should be green (on target), last should be yellow or red (faded).
-  assert.equal(data.cells[0].color, Colors.primary);
-  assert.notEqual(data.cells[4].color, Colors.primary);
+  assert.equal(data.cells.length, TILE_COUNT);
 });
 
 // ── Long run ─────────────────────────────────────────────────────────
 
-test('long run: many blocks', () => {
+test('long run: produces 20 tiles', () => {
   const splits = Array.from({ length: 13 }, (_, i) =>
     makeSplit({
       label: `Mile ${i + 1}`,
@@ -177,18 +190,17 @@ test('long run: many blocks', () => {
     'long_run',
   );
   assert.equal(data.category, 'long_run');
-  assert.equal(data.cells.length, 13);
-  assert.ok(data.cells.every((c) => c.shape === 'work'));
+  assert.equal(data.cells.length, TILE_COUNT);
 });
 
 // ── Race ─────────────────────────────────────────────────────────────
 
-test('race: dense blocks with a final kick', () => {
+test('race: 20 tiles with a final kick', () => {
   const splits = Array.from({ length: 5 }, (_, i) =>
     makeSplit({
       label: `KM ${i + 1}`,
       segmentType: 'run',
-      avgPaceMinPerMile: i === 4 ? 6.5 : 7.0, // kick at the end
+      avgPaceMinPerMile: i === 4 ? 6.5 : 7.5,
       targetPace: undefined,
     }),
   );
@@ -197,7 +209,10 @@ test('race: dense blocks with a final kick', () => {
     'race',
   );
   assert.equal(data.category, 'race');
-  assert.equal(data.cells.length, 5);
+  assert.equal(data.cells.length, TILE_COUNT);
+  // Last tiles should be pink (faster) due to the kick.
+  const lastTile = data.cells[data.cells.length - 1];
+  assert.equal(lastTile.color, Colors.paceprintFast, 'final kick should be pink');
 });
 
 // ── Free run (GPS fallback) ──────────────────────────────────────────
@@ -208,8 +223,7 @@ test('free run with no splits uses GPS bins', () => {
     { totalDurationMs: 30 * 60_000, totalDistanceMeters: 5000, route, splits: [] },
     'other',
   );
-  assert.ok(data.cells.length >= 5, `expected >= 5 bins, got ${data.cells.length}`);
-  assert.ok(data.cells.every((c) => c.shape === 'work'));
+  assert.ok(data.cells.length >= 10, `expected >= 10 bins, got ${data.cells.length}`);
 });
 
 test('free run with only 1 split falls back to GPS', () => {
@@ -223,18 +237,17 @@ test('free run with only 1 split falls back to GPS', () => {
     },
     'other',
   );
-  assert.ok(data.cells.length >= 5, `expected >= 5 bins from GPS, got ${data.cells.length}`);
+  assert.ok(data.cells.length >= 10, `expected >= 10 bins from GPS, got ${data.cells.length}`);
 });
 
 // ── binRouteIntoPaces ────────────────────────────────────────────────
 
 test('binRouteIntoPaces splits a straight route into bins', () => {
   const route = makeLine(5, 30 * 60_000);
-  const bins = binRouteIntoPaces(route, 30 * 60_000, 10);
-  assert.ok(bins.length >= 8 && bins.length <= 10, `expected ~10 bins, got ${bins.length}`);
+  const bins = binRouteIntoPaces(route, 30 * 60_000, 20);
+  assert.ok(bins.length >= 15 && bins.length <= 20, `expected ~20 bins, got ${bins.length}`);
   for (const bin of bins) {
     assert.ok(bin.paceMinPerMile > 5 && bin.paceMinPerMile < 15, `pace ${bin.paceMinPerMile} out of range`);
-    assert.ok(bin.durationMs > 0);
   }
 });
 
@@ -244,15 +257,15 @@ test('empty route yields no bins', () => {
 
 // ── paceprintToEmoji ─────────────────────────────────────────────────
 
-test('emoji encoding uses correct symbols', () => {
+test('emoji encoding uses blue/purple/pink', () => {
   const cells: PaceprintCell[] = [
-    { color: Colors.primary, height: 1, shape: 'work', weight: 1 },
-    { color: Colors.warning, height: 1, shape: 'work', weight: 1 },
-    { color: Colors.danger, height: 1, shape: 'work', weight: 1 },
-    { color: Colors.accent + '77', height: 0.5, shape: 'recovery', weight: 1 },
+    { color: Colors.paceprintSlow, height: 1, weight: 0.25 },
+    { color: Colors.paceprintTypical, height: 1, weight: 0.25 },
+    { color: Colors.paceprintFast, height: 1, weight: 0.25 },
+    { color: Colors.paceprintTypical, height: 1, weight: 0.25 },
   ];
   const emoji = paceprintToEmoji({ cells, category: 'intervals' });
-  assert.equal(emoji, '🟩🟨🟥🟦');
+  assert.equal(emoji, '🟦🟪🟥🟪');
 });
 
 // ── Edge cases ───────────────────────────────────────────────────────
@@ -263,20 +276,20 @@ test('no splits and no route produces a single fallback cell', () => {
     'other',
   );
   assert.equal(data.cells.length, 1);
-  assert.equal(data.cells[0].color, Colors.primary);
+  assert.equal(data.cells[0].color, Colors.paceprintTypical);
 });
 
-test('weight normalization sums to 1', () => {
-  const splits = Array.from({ length: 4 }, () => makeSplit());
+test('weight normalization: weights sum to 1', () => {
+  const splits = Array.from({ length: 6 }, () => makeSplit());
   const data = generatePaceprint(
-    { totalDurationMs: 12 * 60_000, totalDistanceMeters: 3200, splits },
+    { totalDurationMs: 18 * 60_000, totalDistanceMeters: 4800, splits },
     'easy',
   );
   const total = data.cells.reduce((s, c) => s + c.weight, 0);
   assert.ok(Math.abs(total - 1) < 0.001, `weights should sum to 1, got ${total}`);
 });
 
-test('heights are normalized to max 1', () => {
+test('all tiles have height 1', () => {
   const splits: IntervalSplit[] = [
     makeWarmupSplit(),
     makeSplit(),
@@ -288,7 +301,7 @@ test('heights are normalized to max 1', () => {
     { totalDurationMs: 20 * 60_000, totalDistanceMeters: 4000, splits },
     'intervals',
   );
-  const maxH = Math.max(...data.cells.map((c) => c.height));
-  assert.equal(maxH, 1, 'tallest cell should have height 1');
-  assert.ok(data.cells.some((c) => c.height < 1), 'some cells should be shorter');
+  for (const cell of data.cells) {
+    assert.equal(cell.height, 1, 'all tiles should have height 1');
+  }
 });

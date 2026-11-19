@@ -16,6 +16,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Share,
   UIManager,
   useWindowDimensions,
 } from 'react-native';
@@ -28,6 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter, useFocusEffect, useLocalSearchParams, type ErrorBoundaryProps } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { TrainingCalendar, CalendarViewMode } from '../../../src/components/TrainingCalendar';
@@ -36,7 +38,7 @@ import { DayDetail } from '../../../src/components/DayDetail';
 import { NewlyPlannedHint } from '../../../src/components/NewlyPlannedHint';
 import { resolvePhases } from '../../../src/components/TrainingPhases';
 import { WorkoutDefinition, generateId } from '../../../src/workout/workoutTypes';
-import { loadHistory } from '../../../src/workout/workoutStorage';
+import { loadHistory, loadSettings } from '../../../src/workout/workoutStorage';
 import { setTempWorkout } from '../../../src/workout/tempWorkoutCache';
 import { planWorkoutSource } from '../../../src/analytics/workoutContext';
 import { track } from '../../../src/analytics/track';
@@ -299,6 +301,25 @@ export default function TrainingScreen() {
     router.push(`/workout/${workout.id}`);
   }, [router, selectedDate]);
 
+  const handleShareWorkout = useCallback(async (workoutData: WorkoutDefinition, plannedDate: string) => {
+    const { describeWorkoutBlocks, formatWorkoutSummary, formatPlannedDate } = await import('../../../src/sharing/shareText');
+    const settings = await loadSettings().catch(() => ({ paceUnit: 'minPerMile' as const }));
+    const name = workoutData.name;
+    const lines = [
+      `${name} — ${formatPlannedDate(plannedDate)}`,
+      formatWorkoutSummary(workoutData),
+      ...describeWorkoutBlocks(workoutData, settings.paceUnit),
+      '',
+      'SplitCue',
+    ];
+    track('training_workout_shared', { workout_name: name, date: plannedDate });
+    Share.share(
+      Platform.OS === 'ios'
+        ? { message: lines.join('\n') }
+        : { message: lines.join('\n'), title: `Share ${name}` },
+    );
+  }, []);
+
   const handleViewRun = useCallback((historyEntryId: string) => {
     track('training_run_viewed', { entry_id: historyEntryId, date: selectedDate });
     router.push(`/run/${historyEntryId}` as any);
@@ -461,7 +482,7 @@ export default function TrainingScreen() {
               accessibilityRole="button"
               accessibilityLabel="History"
             >
-              <Ionicons name="time" size={18} color={Colors.primary} />
+              <MaterialIcons name="history" size={20} color={Colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.statsBtn, large && styles.statsBtnLarge]}
@@ -512,6 +533,7 @@ export default function TrainingScreen() {
                   onRemoveWorkout={handleRemoveWorkout}
                   onMoveWorkout={handleMoveWorkoutFromDay}
                   onEditWorkout={handleEditWorkout}
+                  onShareWorkout={handleShareWorkout}
                   onViewRun={handleViewRun}
                   onRunAgain={handleRunAgain}
                   onAddWorkout={handleAddWorkout}

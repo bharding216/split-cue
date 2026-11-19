@@ -29,6 +29,7 @@ import type {
 } from '../types/database';
 import { normalizeDayPreferences } from '../types/database';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
+import { SheetContainer } from './SheetContainer';
 import { hapticTap } from '../audio/haptics';
 import { useLargeText } from '../hooks/useLargeText';
 
@@ -328,13 +329,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
-        <View style={[styles.sheet, large && styles.sheetLarge]}>
-          {/* Drag handle */}
-          <View style={styles.handleRow}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
+        <SheetContainer style={[styles.sheet, large && styles.sheetLarge]} onDismiss={onClose}>
           <View style={styles.header}>
             <Text style={styles.headerTitle} maxFontSizeMultiplier={MaxFontScale.display}>Running Profile</Text>
             <TouchableOpacity
@@ -701,7 +696,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
               )}
             </ScrollView>
           )}
-        </View>
+        </SheetContainer>
       </View>
     </Modal>
   );
@@ -729,16 +724,6 @@ const styles = StyleSheet.create({
   },
   sheetLarge: {
     height: '92%',
-  },
-  handleRow: {
-    alignItems: 'center',
-    paddingTop: Spacing.sm,
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.textMuted,
   },
   header: {
     flexDirection: 'row',

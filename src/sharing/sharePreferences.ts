@@ -11,18 +11,17 @@ export interface SharePreferences {
   /** First name shown on links and cards; empty until set. */
   senderName: string;
   includeName: boolean;
-  includeResult: boolean;
-  includeSplits: boolean;
-  /** Off by default: a route's ends can reveal where the runner lives. */
-  includeRoute: boolean;
+  includeTime: boolean;
+  includeDistance: boolean;
+  includePace: boolean;
 }
 
 export const DEFAULT_SHARE_PREFERENCES: SharePreferences = {
   senderName: '',
   includeName: true,
-  includeResult: true,
-  includeSplits: false,
-  includeRoute: false,
+  includeTime: true,
+  includeDistance: true,
+  includePace: true,
 };
 
 const STORAGE_KEY = '@pacecue/share_preferences';
@@ -30,7 +29,17 @@ const STORAGE_KEY = '@pacecue/share_preferences';
 export async function loadSharePreferences(): Promise<SharePreferences> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULT_SHARE_PREFERENCES, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate from old includeResult boolean to individual toggles.
+      if ('includeResult' in parsed && !('includeTime' in parsed)) {
+        const on = parsed.includeResult !== false;
+        parsed.includeTime = on;
+        parsed.includeDistance = on;
+        parsed.includePace = on;
+      }
+      return { ...DEFAULT_SHARE_PREFERENCES, ...parsed };
+    }
   } catch {}
   return DEFAULT_SHARE_PREFERENCES;
 }

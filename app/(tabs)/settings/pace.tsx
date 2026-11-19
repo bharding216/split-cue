@@ -1,6 +1,7 @@
 /**
- * Pace tracking settings — GPS pace, cue frequency, window size.
- * Units (miles / kilometers) live on the settings hub.
+ * Pace tracking settings — simplified with collapsible sections.
+ * GPS toggle is always visible; cue frequency, target filtering,
+ * and pace window collapse with summaries.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -38,6 +39,7 @@ import {
   AUTO_TIME_STEP_LABEL,
   AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
+import CollapsibleSection from '../../../src/components/CollapsibleSection';
 
 const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
   { value: 0, label: 'Off' },
@@ -50,10 +52,31 @@ const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
 ];
 
 const WINDOW_OPTIONS: { value: PaceWindowSize; label: string; desc: string }[] = [
-  { value: 10, label: '10s', desc: 'Responsive but noisy — best for track sprints' },
+  { value: 10, label: '10s', desc: 'Responsive — best for track sprints' },
   { value: 30, label: '30s', desc: 'Balanced — good for most runs' },
-  { value: 60, label: '60s', desc: 'Smooth and stable — best for tempo & long runs' },
+  { value: 60, label: '60s', desc: 'Smooth — best for tempo & long runs' },
 ];
+
+function cueFrequencySummary(settings: AppSettings): string {
+  const basis =
+    settings.paceCueBasis === 'auto'
+      ? 'Match interval'
+      : settings.paceCueBasis === 'time'
+        ? 'By time'
+        : 'By distance';
+
+  if (settings.paceCueBasis !== 'distance') {
+    const freq = CUE_FREQUENCY_OPTIONS.find((o) => o.value === settings.paceCueFrequency);
+    if (freq && freq.value > 0) return `${basis} · ${freq.label}`;
+    if (freq?.value === 0) return `${basis} · Off`;
+  }
+  return basis;
+}
+
+function windowSummary(settings: AppSettings): string {
+  const opt = WINDOW_OPTIONS.find((o) => o.value === settings.paceWindow);
+  return opt ? `${opt.label} — ${opt.desc.split('—')[0].trim()}` : `${settings.paceWindow}s`;
+}
 
 export default function PaceSettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -72,11 +95,11 @@ export default function PaceSettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Enable/Disable */}
-      <View style={styles.settingRow}>
+      {/* GPS Pace Tracking — always visible */}
+      <View style={styles.toggleCard}>
         <View style={{ flex: 1, marginRight: Spacing.md }}>
-          <Text style={styles.settingLabel}>GPS Pace Tracking</Text>
-          <Text style={styles.settingHint}>
+          <Text style={styles.toggleLabel}>GPS Pace Tracking</Text>
+          <Text style={styles.toggleHint}>
             Track your running pace using GPS during workouts
           </Text>
         </View>
@@ -94,130 +117,140 @@ export default function PaceSettingsScreen() {
 
       {settings.paceTrackingEnabled && (
         <>
-          {/* Cue Frequency */}
-          <Text style={styles.sectionTitle}>Pace Cue Frequency</Text>
-          <Text style={styles.sectionSub}>
-            {settings.paceCueBasis === 'auto'
-              ? 'Announce pace by time in timed intervals and Free Runs, and by distance in distance intervals. To hear pace every distance on every run, choose By distance.'
-              : settings.paceCueBasis === 'distance'
-                ? 'Announce your pace each time you cover this distance, on every run'
-                : 'How often to announce your current pace, on every run'}
-          </Text>
-          <CueBasisToggle
-            value={settings.paceCueBasis}
-            options={PROGRESS_CUE_BASES}
-            onChange={(paceCueBasis) => update({ paceCueBasis })}
-          />
-          {settings.paceCueBasis === 'auto' && (
-            <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
-          )}
-          {settings.paceCueBasis !== 'distance' && (
-            <View style={styles.row}>
-              {CUE_FREQUENCY_OPTIONS.map((opt) => (
+          {/* Pace Cue Frequency — collapsible */}
+          <CollapsibleSection
+            title="Pace Cue Frequency"
+            icon="megaphone-outline"
+            summary={cueFrequencySummary(settings)}
+          >
+            <Text style={styles.sectionSub}>
+              {settings.paceCueBasis === 'auto'
+                ? 'Announces pace by time in timed intervals, by distance in distance intervals.'
+                : settings.paceCueBasis === 'distance'
+                  ? 'Announce your pace each time you cover this distance.'
+                  : 'How often to announce your current pace.'}
+            </Text>
+            <CueBasisToggle
+              value={settings.paceCueBasis}
+              options={PROGRESS_CUE_BASES}
+              onChange={(paceCueBasis) => update({ paceCueBasis })}
+            />
+            {settings.paceCueBasis === 'auto' && (
+              <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
+            )}
+            {settings.paceCueBasis !== 'distance' && (
+              <View style={styles.row}>
+                {CUE_FREQUENCY_OPTIONS.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.chip,
+                      settings.paceCueFrequency === opt.value && styles.chipActive,
+                    ]}
+                    onPress={() => {
+                      hapticTap();
+                      update({ paceCueFrequency: opt.value });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.chipLabel,
+                        settings.paceCueFrequency === opt.value &&
+                          styles.chipLabelActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {settings.paceCueBasis === 'auto' && (
+              <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
+            )}
+            {settings.paceCueBasis !== 'time' && (
+              <CueDistanceChips
+                value={settings.paceCueDistance}
+                unit={settings.paceUnit}
+                onChange={(paceCueDistance) => update({ paceCueDistance })}
+              />
+            )}
+
+            {/* Only With Target Pace — nested inside cue frequency */}
+            {paceCuesEnabled(settings) && (
+              <View style={styles.nestedToggle}>
+                <View style={{ flex: 1, marginRight: Spacing.md }}>
+                  <Text style={styles.nestedToggleLabel}>Only With Target Pace</Text>
+                  <Text style={styles.nestedToggleHint}>
+                    Skip pace cues on intervals without a target
+                  </Text>
+                </View>
+                <Switch
+                  value={settings.paceCueOnlyWithTarget}
+                  onValueChange={(v) => {
+                    hapticTap();
+                    update({ paceCueOnlyWithTarget: v });
+                  }}
+                  trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+                  thumbColor={Colors.white}
+                  accessibilityLabel="Only With Target Pace"
+                />
+              </View>
+            )}
+          </CollapsibleSection>
+
+          {/* Pace Window — collapsible */}
+          <CollapsibleSection
+            title="Pace Window"
+            icon="options-outline"
+            summary={windowSummary(settings)}
+          >
+            <Text style={styles.sectionSub}>
+              Time window used to calculate your rolling pace
+            </Text>
+            {WINDOW_OPTIONS.map((opt) => {
+              const isActive = settings.paceWindow === opt.value;
+              return (
                 <TouchableOpacity
                   key={opt.value}
                   style={[
-                    styles.chip,
-                    settings.paceCueFrequency === opt.value && styles.chipActive,
+                    styles.windowOption,
+                    isActive && styles.windowOptionActive,
                   ]}
                   onPress={() => {
                     hapticTap();
-                    update({ paceCueFrequency: opt.value });
+                    update({ paceWindow: opt.value });
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: isActive }}
                 >
-                  <Text
-                    style={[
-                      styles.chipLabel,
-                      settings.paceCueFrequency === opt.value &&
-                        styles.chipLabelActive,
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          {settings.paceCueBasis === 'auto' && (
-            <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
-          )}
-          {settings.paceCueBasis !== 'time' && (
-            <CueDistanceChips
-              value={settings.paceCueDistance}
-              unit={settings.paceUnit}
-              onChange={(paceCueDistance) => update({ paceCueDistance })}
-            />
-          )}
-
-          {/* Only cue on intervals with target pace */}
-          {paceCuesEnabled(settings) && (
-            <View style={[styles.settingRow, { marginTop: Spacing.md }]}>
-              <View style={{ flex: 1, marginRight: Spacing.md }}>
-                <Text style={styles.settingLabel}>Only With Target Pace</Text>
-                <Text style={styles.settingHint}>
-                  Only announce pace cues on intervals that have a target pace set
-                </Text>
-              </View>
-              <Switch
-                value={settings.paceCueOnlyWithTarget}
-                onValueChange={(v) => {
-                  hapticTap();
-                  update({ paceCueOnlyWithTarget: v });
-                }}
-                trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                thumbColor={Colors.white}
-                accessibilityLabel="Only With Target Pace"
-              />
-            </View>
-          )}
-
-          {/* Pace Window */}
-          <Text style={styles.sectionTitle}>Pace Window</Text>
-          <Text style={styles.sectionSub}>
-            Time window used to calculate your rolling pace
-          </Text>
-          {WINDOW_OPTIONS.map((opt) => {
-            const isActive = settings.paceWindow === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[
-                  styles.windowOption,
-                  isActive && styles.windowOptionActive,
-                ]}
-                onPress={() => {
-                  hapticTap();
-                  update({ paceWindow: opt.value });
-                }}
-                activeOpacity={0.7}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: isActive }}
-              >
-                <View style={styles.windowOptionHeader}>
-                  <View
-                    style={[
-                      styles.windowRadio,
-                      isActive && styles.windowRadioActive,
-                    ]}
-                  >
-                    {isActive && <View style={styles.windowRadioDot} />}
+                  <View style={styles.windowOptionHeader}>
+                    <View
+                      style={[
+                        styles.windowRadio,
+                        isActive && styles.windowRadioActive,
+                      ]}
+                    >
+                      {isActive && <View style={styles.windowRadioDot} />}
+                    </View>
+                    <Text
+                      style={[
+                        styles.windowLabel,
+                        isActive && styles.windowLabelActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
                   </View>
-                  <Text
-                    style={[
-                      styles.windowLabel,
-                      isActive && styles.windowLabelActive,
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </View>
-                <Text style={styles.windowDesc}>{opt.desc}</Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Text style={styles.windowDesc}>{opt.desc}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </CollapsibleSection>
 
-          {/* Info */}
+          {/* Info — always visible */}
           <View style={styles.infoBox}>
             <Ionicons
               name="information-circle-outline"
@@ -239,12 +272,25 @@ export default function PaceSettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl * 2 },
-  sectionTitle: {
+  toggleCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
+  },
+  toggleLabel: {
     fontSize: FontSize.lg,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.xs,
+  },
+  toggleHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginTop: 2,
   },
   sectionSub: {
     fontSize: FontSize.sm,
@@ -266,7 +312,7 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
@@ -284,27 +330,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chipLabelActive: { color: Colors.primary },
-  settingRow: {
+  nestedToggle: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
   },
-  settingLabel: {
+  nestedToggleLabel: {
     fontSize: FontSize.md,
     color: Colors.textPrimary,
     fontWeight: '600',
   },
-  settingHint: {
+  nestedToggleHint: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginTop: 2,
   },
   windowOption: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.sm,

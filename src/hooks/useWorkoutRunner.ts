@@ -591,12 +591,16 @@ export function useWorkoutRunner(
     if (s.phase === 'running') {
       paceTrackerRef.current.sync();
 
-      // One-time GPS-off voice cue: spoken on the first tick when GPS is needed
-      // but permission was denied, so users with locked phones hear the warning.
+      // One-time GPS-off voice cue: spoken when GPS is needed but permission
+      // was denied, so users with locked phones hear the warning.
+      // Delayed so the interval-start announcement finishes first — without
+      // the delay, playCue's async ducking setup and the immediate speak()
+      // call race, causing both voices to play on top of each other.
       if (
         !gpsOffCueFired.current &&
         usesGpsRef.current &&
-        paceTrackerRef.current.permissionStatus === 'denied'
+        paceTrackerRef.current.permissionStatus === 'denied' &&
+        Date.now() - s.startedAt >= 5000
       ) {
         gpsOffCueFired.current = true;
         const mode = settingsRef.current.audioCueMode;
