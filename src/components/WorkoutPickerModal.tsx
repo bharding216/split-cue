@@ -5,7 +5,7 @@
  * the user's recently completed workouts. Also offers voice and manual creation.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,7 @@ import { createPresets } from '../workout/presets';
 import { loadHistory, loadWorkouts } from '../workout/workoutStorage';
 import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../constants/theme';
 import { useLargeText } from '../hooks/useLargeText';
+import { track } from '../analytics/track';
 
 const MAX_RECENT = 8;
 
@@ -121,6 +122,8 @@ export function WorkoutPickerModal({
   const [activeCategory, setActiveCategory] = useState<WorkoutCategory | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const large = useLargeText();
+  const openedAtRef = useRef(0);
+  const didSelectRef = useRef(false);
 
   const dateObj = useMemo(() => new Date(date + 'T12:00:00'), [date]);
 
@@ -139,6 +142,8 @@ export function WorkoutPickerModal({
     setLoading(true);
     setActiveCategory(null);
     setShowDatePicker(false);
+    openedAtRef.current = Date.now();
+    didSelectRef.current = false;
     Promise.all([
       loadWorkouts().catch(() => [] as WorkoutDefinition[]),
       loadRecentWorkouts().catch(() => [] as RecentWorkout[]),
@@ -146,10 +151,16 @@ export function WorkoutPickerModal({
       .then(([workouts, recentRuns]) => {
         setSavedWorkouts(workouts);
         setRecent(recentRuns);
-        setTab(workouts.length > 0 ? 'my_workouts' : 'templates');
+        const initialTab = workouts.length > 0 ? 'my_workouts' : 'templates';
+        setTab(initialTab);
+        track('workout_picker_opened', {
+          tab: initialTab,
+          workout_count: workouts.length,
+          template_count: templates.length,
+        });
       })
       .finally(() => setLoading(false));
-  }, [visible]);
+  }, [visible, templates.length]);
 
   const filteredTemplates = useMemo(
     () => (activeCategory ? templates.filter((w) => categorizeWorkout(w) === activeCategory) : templates),
@@ -172,15 +183,41 @@ export function WorkoutPickerModal({
     setActiveCategory((prev) => (prev === cat ? null : cat));
   };
 
+  const handleDismiss = useCallback(() => {
+    if (!didSelectRef.current && openedAtRef.current > 0) {
+      track('workout_picker_dismissed', {
+        tab,
+        dwell_ms: Date.now() - openedAtRef.current,
+        selected: null,
+      });
+    }
+    onClose();
+  }, [onClose, tab]);
+
+  const handleSelect = useCallback((workout: WorkoutDefinition) => {
+    didSelectRef.current = true;
+    onSelect(workout);
+  }, [onSelect]);
+
+  const handleCreateNew = useCallback(() => {
+    didSelectRef.current = true;
+    onCreateNew();
+  }, [onCreateNew]);
+
+  const handleVoiceBuilder = useCallback(() => {
+    didSelectRef.current = true;
+    onVoiceBuilder?.();
+  }, [onVoiceBuilder]);
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent
-      onRequestClose={onClose}
+      onRequestClose={handleDismiss}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} accessibilityLabel="Close" />
+        <TouchableOpacity style={styles.backdrop} onPress={handleDismiss} activeOpacity={1} accessibilityLabel="Close" />
         <View style={[styles.sheet, large && styles.sheetLarge]}>
           <View style={styles.handleRow}>
             <View style={styles.handle} />
@@ -202,7 +239,7 @@ export function WorkoutPickerModal({
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleDismiss}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
               accessibilityLabel="Close"
@@ -311,7 +348,7 @@ export function WorkoutPickerModal({
                       {onVoiceBuilder && (
                         <TouchableOpacity
                           style={styles.voiceBuilderRow}
-                          onPress={onVoiceBuilder}
+                          onPress={handleVoiceBuilder}
                           activeOpacity={0.7}
                         >
                           <View style={[styles.workoutIcon, { backgroundColor: Colors.accent + '22' }]}>
@@ -331,7 +368,7 @@ export function WorkoutPickerModal({
                       {/* Create new manually */}
                       <TouchableOpacity
                         style={styles.createNewRow}
-                        onPress={onCreateNew}
+                        onPress={handleCreateNew}
                         activeOpacity={0.7}
                       >
                         <View style={[styles.workoutIcon, { backgroundColor: Colors.primary + '22' }]}>
@@ -366,7 +403,7 @@ export function WorkoutPickerModal({
                   return (
                     <TouchableOpacity
                       style={styles.workoutRow}
-                      onPress={() => onSelect(workout)}
+                      onPress={() => handleSelect(workout)}
                       activeOpacity={0.7}
                     >
                       <View style={[styles.workoutIcon, { backgroundColor: categoryColor(cat) + '22' }]}>

@@ -159,6 +159,29 @@ export const NOT_FOUND_TIPS: string[] = [
   'Still nothing? Replace the strap’s battery, or turn broadcasting off and on again.',
 ];
 
+/** Kind-specific tips shown after a failed scan when a device guide is selected. */
+export const NOT_FOUND_TIPS_BY_KIND: Record<DeviceGuideKind, string[]> = {
+  strap: [
+    'Disconnect other apps that use your strap (Pulsoid, Zwift, Peloton, etc.). Most straps connect to only one app at a time.',
+    'Make sure the strap is on with damp electrodes \u2014 it won\u2019t broadcast until it senses a heartbeat.',
+    'Keep it within a few feet of your phone while searching.',
+    'If you paired it in your phone\u2019s Bluetooth settings, forget it there. SplitCue connects directly.',
+    'Still nothing? Try replacing the battery, or remove and re-wet the strap.',
+  ],
+  watch: [
+    'Turn on heart rate broadcasting in your watch settings. Some watches only broadcast during an active workout.',
+    'Disconnect other apps that receive heart rate from this watch. Most watches send to only one app at a time.',
+    'Keep the watch close to your phone while searching.',
+    'If you paired it in your phone\u2019s Bluetooth settings, forget it there. SplitCue connects directly.',
+    'Try turning broadcasting off and on again, or restart the watch.',
+  ],
+  limited: [
+    'This device doesn\u2019t broadcast heart rate over standard Bluetooth, so SplitCue can\u2019t detect it directly.',
+    'Some third-party broadcasting apps can bridge the connection \u2014 check your watch\u2019s app store.',
+    'For reliable heart rate during runs, a Bluetooth chest strap like the Polar H10 works with any running app including SplitCue.',
+  ],
+};
+
 /** Shown when the monitor is connected but no readings arrive. */
 export const NO_READINGS_TIP =
   'Connected, but no heart rate yet. Make sure the strap is snug and its electrodes are damp, or that heart rate broadcasting is still on.';

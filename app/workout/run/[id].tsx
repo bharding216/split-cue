@@ -16,6 +16,7 @@ import {
   Modal,
   ScrollView,
   Switch,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -887,6 +888,15 @@ function ActiveWorkoutInner({
             </View>
           )}
 
+        {/* GPS context note when distance wasn't recorded */}
+        {needsGps &&
+          runner.paceState.totalDistanceMeters === 0 &&
+          locationAccess === 'blocked' && (
+          <Text style={styles.doneGpsNote}>
+            Distance wasn't recorded because location access was off during this run.
+          </Text>
+        )}
+
         <View style={styles.feelSection}>
           <Text style={styles.feelTitle}>How did it feel?</Text>
           <View style={styles.feelRow}>
@@ -1095,6 +1105,18 @@ function ActiveWorkoutInner({
           </View>
         )}
 
+        {/* Status indicators */}
+        <RunStatusStrip
+          gps={
+            !needsGps ? null
+              : runner.isPaceTracking
+                ? runner.paceState.currentPaceMinPerMile != null ? 'tracking' : 'acquiring'
+                : 'denied'
+          }
+          hr={runner.heartRate ? (runner.heartRate.bpm != null ? 'connected' : 'waiting') : null}
+          voice={settings.audioCueMode === 'voice' || settings.audioCueMode === 'both'}
+        />
+
         {/* Workout distance target progress */}
         {runner.workoutDistanceTarget != null && (
           <View style={styles.distTargetBar}>
@@ -1136,6 +1158,13 @@ function ActiveWorkoutInner({
             paceUnit={settings.paceUnit}
             targetPace={getCurrentInterval(state)?.targetPace}
           />
+        )}
+
+        {/* GPS-off banner: shown when GPS is needed but location is denied */}
+        {needsGps &&
+          !runner.isPaceTracking &&
+          locationAccess === 'blocked' && (
+          <GpsOffBanner />
         )}
 
         {runner.heartRate && (
@@ -1744,6 +1773,146 @@ const sheetStyles = StyleSheet.create({
     color: Colors.textPrimary,
     flex: 1,
     marginRight: Spacing.md,
+  },
+});
+
+// ── Run Status Strip ─────────────────────────────────────────────────
+
+type GpsStatus = 'tracking' | 'acquiring' | 'denied';
+type HrStatus = 'connected' | 'waiting';
+
+function RunStatusStrip({
+  gps,
+  hr,
+  voice,
+}: {
+  gps: GpsStatus | null;
+  hr: HrStatus | null;
+  voice: boolean;
+}) {
+  const dots: { label: string; color: string }[] = [];
+
+  if (gps != null) {
+    dots.push({
+      label: 'GPS',
+      color:
+        gps === 'tracking' ? Colors.primary
+          : gps === 'acquiring' ? Colors.warning
+          : '#F87171',
+    });
+  }
+  if (hr != null) {
+    dots.push({
+      label: 'HR',
+      color: hr === 'connected' ? Colors.primary : Colors.warning,
+    });
+  }
+  if (voice) {
+    dots.push({ label: 'Voice', color: Colors.primary });
+  }
+
+  if (dots.length === 0) return null;
+
+  return (
+    <View style={statusStripStyles.container}>
+      {dots.map(({ label, color }) => (
+        <View key={label} style={statusStripStyles.dot}>
+          <View style={[statusStripStyles.circle, { backgroundColor: color }]} />
+          <Text style={statusStripStyles.label}>{label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const statusStripStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  dot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  circle: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  label: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+});
+
+// ── GPS Off Banner ───────────────────────────────────────────────────
+
+function GpsOffBanner() {
+  return (
+    <View style={gpsOffStyles.container}>
+      <View style={gpsOffStyles.row}>
+        <Ionicons name="navigate-outline" size={16} color={Colors.warning} />
+        <Text style={gpsOffStyles.title}>GPS is off</Text>
+      </View>
+      <Text style={gpsOffStyles.body}>
+        Interval timers and audio coaching are still active. Distance and pace aren't being recorded.
+      </Text>
+      <TouchableOpacity
+        style={gpsOffStyles.fixBtn}
+        onPress={() => Linking.openSettings()}
+        activeOpacity={0.7}
+        hitSlop={8}
+      >
+        <Text style={gpsOffStyles.fixBtnText}>Fix in Settings</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const gpsOffStyles = StyleSheet.create({
+  container: {
+    backgroundColor: Colors.warning + '14',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.warning + '30',
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  title: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.warning,
+  },
+  body: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  fixBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: Spacing.sm + 2,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.warning + '20',
+    marginTop: Spacing.xs,
+  },
+  fixBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.warning,
   },
 });
 
@@ -2477,6 +2646,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.accent,
     fontVariant: ['tabular-nums'],
+  },
+  doneGpsNote: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    fontStyle: 'italic',
   },
   doneBtn: {
     width: '100%',

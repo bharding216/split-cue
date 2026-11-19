@@ -68,6 +68,7 @@ export const WORKOUT_COMPLETE_TEXT = 'Workout complete. Great job.';
 export const PACE_UNAVAILABLE_TEXT = 'Pace unavailable';
 export const ACQUIRING_GPS_TEXT = 'Acquiring GPS';
 export const VOICE_PREVIEW_TEXT = 'Starting warmup.';
+export const GPS_OFF_CUE_TEXT = "Location access is off. Your interval timers will still work, but pace and distance won't be tracked.";
 
 /** Upper bound for untimed intervals when listing time-progress phrases ahead of a run. */
 const UNTIMED_PROGRESS_LIMIT_SECONDS = 30 * 60;
@@ -478,6 +479,7 @@ export function globalPackClips(unit: PaceUnit): Clip[] {
     PACE_UNAVAILABLE_TEXT,
     ACQUIRING_GPS_TEXT,
     VOICE_PREVIEW_TEXT,
+    GPS_OFF_CUE_TEXT,
   ];
 
   clips.push(currentPacePrefix(unit).clip, paceSuffixSegment(unit).clip);

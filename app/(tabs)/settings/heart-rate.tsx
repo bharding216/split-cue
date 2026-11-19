@@ -29,6 +29,7 @@ import {
 import {
   DEVICE_GUIDES,
   NOT_FOUND_TIPS,
+  NOT_FOUND_TIPS_BY_KIND,
   NO_READINGS_TIP,
   type DeviceGuide,
 } from '../../../src/heartRate/deviceGuides';
@@ -37,6 +38,7 @@ import type { DiscoveredHrDevice } from '../../../src/heartRate/hrTypes';
 import { useHeartRateMonitor } from '../../../src/hooks/useHeartRateMonitor';
 import { hrConnectionLabel } from '../../../src/components/HeartRateBadge';
 import { openSupportEmail } from '../../../src/support/supportEmail';
+import { trackHr } from '../../../src/analytics/hrEvents';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import {
   PRIVACY_POLICY_URL,
@@ -286,6 +288,14 @@ export default function HeartRateSettingsScreen() {
 
           {guide && (
             <View style={styles.guideCard}>
+              {guide.kind === 'limited' && (
+                <View style={styles.limitedWarning}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.warning} />
+                  <Text style={styles.limitedWarningText}>
+                    Most {guide.name} models don{'\u2019'}t broadcast heart rate over Bluetooth to other apps. A chest strap like the Polar H10 works with any running app including SplitCue.
+                  </Text>
+                </View>
+              )}
               {guide.steps.map((step, i) => (
                 <View key={i} style={styles.guideStep}>
                   <Text style={styles.guideStepNum}>{i + 1}</Text>
@@ -356,7 +366,26 @@ export default function HeartRateSettingsScreen() {
       {scanEmpty && !scanning && (
         <View style={styles.issueBox}>
           <Text style={styles.issueTitle}>Didn’t find your monitor?</Text>
-          {NOT_FOUND_TIPS.map((tip, i) => (
+          {!guide && (
+            <View style={styles.guidePrompt}>
+              <Text style={styles.guidePromptText}>Which device are you trying to connect?</Text>
+              <View style={styles.tileGrid}>
+                {DEVICE_GUIDES.map((g) => (
+                  <TouchableOpacity
+                    key={g.id}
+                    style={styles.tile}
+                    onPress={() => selectGuide(g)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.tileName} numberOfLines={1}>{g.name}</Text>
+                    <Text style={styles.tileExamples} numberOfLines={1}>{g.examples}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+          {(guide ? NOT_FOUND_TIPS_BY_KIND[guide.kind] : NOT_FOUND_TIPS).map((tip, i) => (
             <View key={i} style={styles.tipRow}>
               <Text style={styles.tipBullet}>•</Text>
               <Text style={styles.tipText}>{tip}</Text>
@@ -376,6 +405,36 @@ export default function HeartRateSettingsScreen() {
               <Text style={styles.linkText}>Email Support</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={styles.notListedBtn}
+            onPress={() => {
+              hapticTap();
+              Alert.prompt(
+                'What device do you have?',
+                'We\u2019ll use this to improve compatibility.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Send',
+                    onPress: (deviceName) => {
+                      if (!deviceName?.trim()) return;
+                      trackHr('hr_device_not_listed', {
+                        device_name: deviceName.trim(),
+                        device_type: guide?.kind === 'strap' ? 'strap' : guide?.kind === 'watch' ? 'watch' : 'unknown',
+                        guide: guide?.id ?? null,
+                      });
+                    },
+                  },
+                ],
+                'plain-text',
+                '',
+                'default',
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.notListedText}>Don't see your device? Tell us what you use</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -570,6 +629,21 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     lineHeight: 18,
   },
+  limitedWarning: {
+    flexDirection: 'row',
+    backgroundColor: Colors.warning + '14',
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+    alignItems: 'flex-start',
+  },
+  limitedWarningText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
   scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -634,6 +708,24 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.accent,
+  },
+  notListedBtn: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  notListedText: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    textDecorationLine: 'underline',
+  },
+  guidePrompt: {
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  guidePromptText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
   foundRow: {
     flexDirection: 'row',

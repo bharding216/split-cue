@@ -30,6 +30,8 @@ interface HrEventProps {
   hr_consent_granted: { source: HrConsentSource };
   hr_consent_declined: { source: HrConsentSource };
   hr_consent_revoked: { deleted_cloud_copies: boolean };
+  /** User reported their device isn't listed in the scan-empty state. */
+  hr_device_not_listed: { device_name: string; device_type: 'strap' | 'watch' | 'unknown'; guide: string | null };
 }
 
 export type HrEventName = keyof HrEventProps;

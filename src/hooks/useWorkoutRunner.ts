@@ -46,6 +46,7 @@ import {
 import {
   playCue,
   configureAudio,
+  speak,
   speakCuePhrases,
   startBackgroundLoop,
   stopBackgroundLoop,
@@ -59,6 +60,7 @@ import {
   distanceProgressPhrase,
   distanceSplitCue,
   paceCue,
+  GPS_OFF_CUE_TEXT,
   type CueContext,
   type CuePhrase,
 } from '../audio/cuePhrases';
@@ -286,6 +288,8 @@ export function useWorkoutRunner(
   // Track which warnings we've already fired to avoid duplicates
   const firedWarnings = useRef(new Set<number>());
   const firedCountdowns = useRef(new Set<number>());
+  /** Whether the one-time GPS-off voice cue has been spoken this run. */
+  const gpsOffCueFired = useRef(false);
   /** Last announced step for interval progress (time or distance). */
   const lastProgressMark = useRef(0);
   /** Last announced step for pace cues (time or distance). */
@@ -586,6 +590,21 @@ export function useWorkoutRunner(
 
     if (s.phase === 'running') {
       paceTrackerRef.current.sync();
+
+      // One-time GPS-off voice cue: spoken on the first tick when GPS is needed
+      // but permission was denied, so users with locked phones hear the warning.
+      if (
+        !gpsOffCueFired.current &&
+        usesGpsRef.current &&
+        paceTrackerRef.current.permissionStatus === 'denied'
+      ) {
+        gpsOffCueFired.current = true;
+        const mode = settingsRef.current.audioCueMode;
+        if (mode === 'voice' || mode === 'both') {
+          speak(GPS_OFF_CUE_TEXT);
+        }
+      }
+
       const nowMs = Date.now();
       if (lastRunningTickAtRef.current > 0) {
         intervalElapsedMsRef.current += nowMs - lastRunningTickAtRef.current;
@@ -951,6 +970,7 @@ export function useWorkoutRunner(
     skipCountRef.current = 0;
     settingsOpenedCountRef.current = 0;
     midRunSettingsChangedRef.current = new Set();
+    gpsOffCueFired.current = false;
     const startCueCtx = buildVerboseCueContext(next, 'intervalStart', settingsRef.current);
     playCue('intervalStart', settingsRef.current.audioCueMode, startCueCtx);
     if (settingsRef.current.hapticEnabled) hapticIntervalChange();
