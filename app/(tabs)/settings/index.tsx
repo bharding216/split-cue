@@ -58,12 +58,6 @@ const CARDS: SettingsCard[] = [
     route: '/(tabs)/settings/sharing',
   },
   {
-    icon: 'fitness-outline',
-    title: 'Training Plans',
-    description: 'Create or manage AI training plans',
-    route: '/(tabs)/training/overview',
-  },
-  {
     icon: 'options-outline',
     title: 'General',
     description: 'Haptic feedback, screen behavior, backup & restore',
