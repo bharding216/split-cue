@@ -28,12 +28,6 @@ interface SettingsCard {
 
 const CARDS: SettingsCard[] = [
   {
-    icon: 'body-outline',
-    title: 'Running Profile',
-    description: 'Goals, paces, limits & preferences',
-    route: '/(tabs)/settings/profile',
-  },
-  {
     icon: 'person-outline',
     title: 'Account',
     description: 'Sign in, subscription, cloud sync',
