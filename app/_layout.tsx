@@ -1,9 +1,11 @@
+import * as Sentry from '@sentry/react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import { Observe, ObserveRoot, useObserve } from 'expo-observe';
+import * as Updates from 'expo-updates';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Colors } from '../src/constants/theme';
 import { cleanupStaleLiveActivities } from '../src/hooks/useLiveActivity';
@@ -45,6 +47,41 @@ import { RequiredUpdateScreen } from '../src/components/RequiredUpdateScreen';
 import { OptionalUpdateBanner } from '../src/components/OptionalUpdateBanner';
 
 Observe.configure({ environment: appInfo().environment });
+
+// ---------------------------------------------------------------------------
+// Sentry — initialise as early as possible
+// ---------------------------------------------------------------------------
+const manifest = Updates.manifest;
+const sentryMetadata = manifest && 'metadata' in manifest ? (manifest as any).metadata : undefined;
+const sentryExtra = manifest && 'extra' in manifest ? (manifest as any).extra : undefined;
+const sentryUpdateGroup =
+  sentryMetadata && 'updateGroup' in sentryMetadata ? sentryMetadata.updateGroup : undefined;
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: __DEV__ ? 1.0 : 0.2,
+  profilesSampleRate: __DEV__ ? 1.0 : 0.1,
+  enabled: !__DEV__,
+  debug: false,
+  enableAutoSessionTracking: true,
+  attachScreenshot: true,
+});
+
+const sentryScope = Sentry.getGlobalScope();
+sentryScope.setTag('expo-update-id', Updates.updateId);
+sentryScope.setTag('expo-is-embedded-update', Updates.isEmbeddedLaunch);
+
+if (typeof sentryUpdateGroup === 'string') {
+  sentryScope.setTag('expo-update-group-id', sentryUpdateGroup);
+  const owner = sentryExtra?.expoClient?.owner ?? '[account]';
+  const slug = sentryExtra?.expoClient?.slug ?? '[project]';
+  sentryScope.setTag(
+    'expo-update-debug-url',
+    `https://expo.dev/accounts/${owner}/projects/${slug}/updates/${sentryUpdateGroup}`,
+  );
+} else if (Updates.isEmbeddedLaunch) {
+  sentryScope.setTag('expo-update-debug-url', 'not applicable for embedded updates');
+}
 
 function todayKey(): string {
   const d = new Date();
@@ -96,6 +133,16 @@ function RootLayoutInner() {
   useEffect(() => {
     if (!authLoading) markInteractive();
   }, [authLoading, markInteractive]);
+
+  // Keep Sentry user context in sync with auth state.
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) {
+      Sentry.setUser({ id: user.id, email: user.email });
+    } else {
+      Sentry.setUser(null);
+    }
+  }, [authLoading, user?.id, user?.email]);
 
   // End any Live Activities orphaned by a force-kill during a workout.
   useEffect(() => {
@@ -504,4 +551,4 @@ function RootLayout() {
   );
 }
 
-export default ObserveRoot.wrap(RootLayout);
+export default Sentry.wrap(ObserveRoot.wrap(RootLayout));

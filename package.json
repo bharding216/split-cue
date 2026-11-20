@@ -1,12 +1,13 @@
 {
   "name": "split-cue",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~57.0.17",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
+    "@sentry/react-native": "~7.11.0",
     "@supabase/supabase-js": "^2.117.2",
     "expo": "~57.0.21",
     "expo-apple-authentication": "^57.0.2",
@@ -90,7 +91,9 @@
     "submit:ios": "eas submit --platform ios",
     "submit:android": "eas submit --platform android",
     "update:preview": "npx cross-env APP_VARIANT=preview eas update --branch preview --environment preview --upload-source-maps --message",
+    "update:preview:sentry": "npx sentry-expo-upload-sourcemaps dist",
     "update:prod": "eas update --branch production --environment production --upload-source-maps --message",
+    "update:prod:sentry": "npx sentry-expo-upload-sourcemaps dist",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "private": true

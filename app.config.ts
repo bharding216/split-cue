@@ -1,6 +1,8 @@
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 import { withAndroidManifest, type ConfigPlugin } from 'expo/config-plugins';
 
+const SENTRY_DSN = process.env.SENTRY_DSN ?? '';
+
 /**
  * Heart rate straps are never used to derive location, so BLE scans don't need location access on Android 12+.
  * Set here rather than with the BLE plugin's `neverForLocation`, which also caps the location permissions GPS
@@ -76,7 +78,7 @@ export default (context: ConfigContext): ExpoConfig =>
 const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   name: APP_NAME,
   slug: 'pace-cue',
-  version: '1.10.0',
+  version: '1.11.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'dark',
@@ -157,6 +159,13 @@ const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     'expo-router',
     'expo-status-bar',
+    [
+      '@sentry/react-native/expo',
+      {
+        organization: 'surmount',
+        project: 'splitcue',
+      },
+    ],
     [
       'expo-location',
       {
