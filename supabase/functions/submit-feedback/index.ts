@@ -122,7 +122,8 @@ Deno.serve(async (req: Request) => {
   if (RESEND_API_KEY) {
     try {
       const categoryLabel = CATEGORIES[category] ?? category;
-      const replyTo = email && openToFollowup ? email : undefined;
+      const isValidEmail = email ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) : false;
+      const replyTo = isValidEmail && openToFollowup ? email : undefined;
       const deviceInfo = [
         appVersion ? `App: SplitCue v${appVersion}` : null,
         platform ? `Platform: ${platform}` : null,
@@ -137,7 +138,7 @@ Deno.serve(async (req: Request) => {
         "",
         message,
         "",
-        openToFollowup && email ? `✅ Open to follow-up: ${email}` : "❌ Not open to follow-up",
+        openToFollowup && email ? `✅ Open to follow-up: ${email}${!isValidEmail ? " (invalid email)" : ""}` : "❌ Not open to follow-up",
         "",
         "— Device Info —",
         deviceInfo || "(none)",
@@ -151,7 +152,9 @@ Deno.serve(async (req: Request) => {
     <p style="margin: 0; white-space: pre-wrap;">${message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
   </div>
   ${openToFollowup && email
-    ? `<p style="color: #22C55E;">✅ Open to follow-up — <strong>${email.replace(/</g, "&lt;")}</strong></p>
+    ? `<p style="color: #22C55E;">✅ Open to follow-up — <strong>${email.replace(/</g, "&lt;")}</strong></p>${
+        !isValidEmail ? `\n       <p style="font-size: 13px; color: #E57373;">⚠️ Email looks invalid — can't reply directly.</p>` : ""
+      }
        <p style="font-size: 13px; color: #888;">Just reply to this email to respond.</p>`
     : `<p style="color: #888;">❌ Not open to follow-up</p>`
   }
@@ -159,21 +162,38 @@ Deno.serve(async (req: Request) => {
   <p style="font-size: 12px; color: #999; white-space: pre-line;">${deviceInfo.replace(/</g, "&lt;") || "(no device info)"}</p>
 </div>`;
 
-      const res = await fetch("https://api.resend.com/emails", {
+      const emailPayload = {
+        from: FEEDBACK_FROM,
+        to: [FEEDBACK_TO],
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        subject: `${categoryLabel} — SplitCue Feedback`,
+        text: textBody,
+        html: htmlBody,
+      };
+
+      let res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          from: FEEDBACK_FROM,
-          to: [FEEDBACK_TO],
-          ...(replyTo ? { reply_to: replyTo } : {}),
-          subject: `${categoryLabel} — SplitCue Feedback`,
-          text: textBody,
-          html: htmlBody,
-        }),
+        body: JSON.stringify(emailPayload),
       });
+
+      // If Resend rejected due to reply_to, retry without it.
+      if (!res.ok && replyTo) {
+        const errText = await res.text();
+        console.warn("Resend error (retrying without reply_to):", res.status, errText);
+        const { reply_to: _, ...payloadWithoutReply } = emailPayload;
+        res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payloadWithoutReply),
+        });
+      }
 
       if (!res.ok) {
         const errText = await res.text();
