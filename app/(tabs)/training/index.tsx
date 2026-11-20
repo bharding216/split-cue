@@ -27,7 +27,7 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import { useRouter, useFocusEffect, useLocalSearchParams, type ErrorBoundaryProps } from 'expo-router';
+import { Stack, useRouter, useFocusEffect, useLocalSearchParams, type ErrorBoundaryProps } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useTrainingPlan } from '../../../src/contexts/TrainingPlanContext';
@@ -51,6 +51,7 @@ import { buildHistorySummary } from '../../../src/ai/historySummary';
 import type { AIContext } from '../../../src/ai/aiWorkoutService';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { useLargeText } from '../../../src/hooks/useLargeText';
+import { useFeedbackButton } from '../../../src/components/FeedbackHeaderButton';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -106,6 +107,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 export default function TrainingScreen() {
   const router = useRouter();
   const large = useLargeText();
+  const feedback = useFeedbackButton('training');
   const { user } = useAuth();
   const { plans, archivedPlans, plan, planWorkouts, dayEntries, loading, refreshing, refresh, ensurePlan, removeWorkout, moveWorkout } = useTrainingPlan();
 
@@ -438,6 +440,7 @@ export default function TrainingScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerRight: () => feedback.button }} />
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.scrollContent}
@@ -594,6 +597,7 @@ export default function TrainingScreen() {
           onClose={() => setMoveTarget(null)}
         />
       )}
+      {feedback.sheet}
     </View>
   );
 }

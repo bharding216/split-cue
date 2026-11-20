@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors } from '../../src/constants/theme';
+import { FeedbackHeaderButton } from '../../src/components/FeedbackHeaderButton';
 
 export default function TabLayout() {
   return (
@@ -29,6 +30,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Run',
+          headerRight: () => <FeedbackHeaderButton screen="home" />,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'play-circle' : 'play-circle-outline'}

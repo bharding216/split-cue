@@ -2,7 +2,7 @@
  * Share & Feedback — rate, share, send feedback, version info.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
-import { openSupportEmail } from '../../../src/support/supportEmail';
 import { shareSplitCue } from '../../../src/sharing/shareApp';
+import { FeedbackSheet } from '../../../src/components/FeedbackSheet';
 
 const APP_STORE_URL =
   'https://apps.apple.com/us/app/pacecue-interval-timer/id6809834816';
@@ -25,6 +25,8 @@ const PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.surmount.pacecue';
 
 export default function AboutSettingsScreen() {
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+
   const handleShare = () => {
     hapticTap();
     shareSplitCue('settings_about');
@@ -46,12 +48,11 @@ export default function AboutSettingsScreen() {
         style={styles.actionBtn}
         onPress={() => {
           hapticTap();
-          const version = Constants.expoConfig?.version ?? '?';
-          openSupportEmail({ subject: `SplitCue Feedback (v${version})` });
+          setFeedbackVisible(true);
         }}
         activeOpacity={0.7}
       >
-        <Ionicons name="mail-outline" size={20} color={Colors.textPrimary} />
+        <Ionicons name="chatbubble-ellipses-outline" size={20} color={Colors.textPrimary} />
         <Text style={styles.actionBtnLabel}>Send Feedback</Text>
       </TouchableOpacity>
 
@@ -59,8 +60,6 @@ export default function AboutSettingsScreen() {
         style={[styles.actionBtn, { marginTop: Spacing.sm }]}
         onPress={() => {
           hapticTap();
-          // A button goes straight to the store: the in-app prompt is rate-limited
-          // and may not appear, which would make the tap look broken.
           Linking.openURL(
             Platform.OS === 'android'
               ? `${PLAY_STORE_URL}&showAllReviews=true`
@@ -87,6 +86,12 @@ export default function AboutSettingsScreen() {
           SplitCue v{Constants.expoConfig?.version ?? '?'}
         </Text>
       </View>
+
+      <FeedbackSheet
+        visible={feedbackVisible}
+        onDismiss={() => setFeedbackVisible(false)}
+        screen="settings/about"
+      />
     </ScrollView>
   );
 }

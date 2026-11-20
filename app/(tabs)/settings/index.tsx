@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
@@ -13,6 +13,7 @@ import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import { useUnits } from '../../../src/hooks/useUnits';
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import type { PaceUnit } from '../../../src/pace/paceTypes';
+import { useFeedbackButton } from '../../../src/components/FeedbackHeaderButton';
 
 const UNIT_OPTIONS: { value: PaceUnit; label: string; short: string }[] = [
   { value: 'minPerMile', label: 'Miles', short: 'mi' },
@@ -67,6 +68,7 @@ const CARDS: SettingsCard[] = [
 
 export default function SettingsHubScreen() {
   const router = useRouter();
+  const feedback = useFeedbackButton('settings');
   const { tier, devOverrideTier, setDevOverrideTier } = useSubscription();
   const unit = useUnits();
 
@@ -77,6 +79,8 @@ export default function SettingsHubScreen() {
   };
 
   return (
+    <>
+    <Stack.Screen options={{ headerRight: () => feedback.button }} />
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.unitCard}>
         <Text style={styles.unitTitle}>Units</Text>
@@ -150,6 +154,8 @@ export default function SettingsHubScreen() {
         </Text>
       </View>
     </ScrollView>
+    {feedback.sheet}
+    </>
   );
 }
 

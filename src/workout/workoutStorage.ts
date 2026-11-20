@@ -357,6 +357,9 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
   if (!PREMIUM_VOICES.some((v) => v.id === parsed.premiumVoiceId)) {
     parsed.premiumVoiceId = DEFAULT_PREMIUM_VOICE_ID;
   }
+  if (!raw?.paceUnit) {
+    parsed.paceUnit = localeDefaultPaceUnit();
+  }
   return parsed;
 }
 

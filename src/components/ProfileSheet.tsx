@@ -32,6 +32,9 @@ import { Colors, Spacing, FontSize, BorderRadius, MaxFontScale } from '../consta
 import { SheetContainer } from './SheetContainer';
 import { hapticTap } from '../audio/haptics';
 import { useLargeText } from '../hooks/useLargeText';
+import { useUnits } from '../hooks/useUnits';
+import { paceToUnit } from '../units/format';
+import { paceFromUnit } from '../workout/goalPaceSuggestions';
 
 // ── Props ────────────────────────────────────────────────────
 
@@ -255,6 +258,7 @@ function PreferenceSection({
 
 export function ProfileSheet({ visible, userId, onClose }: Props) {
   const large = useLargeText();
+  const paceUnit = useUnits();
   const [activeTab, setActiveTab] = useState<TabKey>('basics');
   const [profile, setProfile] = useState<RunningProfile | null>(null);
   const [preferences, setPreferences] = useState<RunningPreference[]>([]);
@@ -271,13 +275,13 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
       supabase.from('running_preferences').select('*').eq('user_id', userId).order('created_at'),
     ]);
     setProfile(profileData);
-    setEasyPaceText(profileData?.easy_pace != null ? paceToMMSS(profileData.easy_pace) : '');
-    setFastPaceText(profileData?.fast_pace != null ? paceToMMSS(profileData.fast_pace) : '');
+    setEasyPaceText(profileData?.easy_pace != null ? paceToMMSS(paceToUnit(profileData.easy_pace, paceUnit)) : '');
+    setFastPaceText(profileData?.fast_pace != null ? paceToMMSS(paceToUnit(profileData.fast_pace, paceUnit)) : '');
     setWeeklyMileageText(profileData?.weekly_mileage != null ? String(profileData.weekly_mileage) : '');
     setLongestRunText(profileData?.longest_recent_run_minutes != null ? String(profileData.longest_recent_run_minutes) : '');
     setPreferences(prefData ?? []);
     setLoading(false);
-  }, [userId]);
+  }, [userId, paceUnit]);
 
   useEffect(() => {
     if (visible) {
@@ -316,9 +320,9 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
     const trimmed = text.trim();
     if (trimmed === '') { updateProfile({ [field]: null }); return; }
     const decimal = mmSSToPace(trimmed);
-    if (decimal != null) updateProfile({ [field]: decimal });
+    if (decimal != null) updateProfile({ [field]: paceFromUnit(decimal, paceUnit) });
     else Alert.alert('Invalid pace', 'Enter pace as M:SS or MM:SS (e.g. 8:30)');
-  }, [updateProfile]);
+  }, [updateProfile, paceUnit]);
 
 
   const goals = preferences.filter((p) => p.category === 'goal');
@@ -496,7 +500,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
               {activeTab === 'paces' && (
                 <View>
                   <View style={styles.tabSection}>
-                    <Text style={styles.tabSectionTitle}>Your Paces (min/mile)</Text>
+                    <Text style={styles.tabSectionTitle}>Your Paces ({paceUnit === 'minPerKm' ? 'min/km' : 'min/mile'})</Text>
                     <Text style={styles.tabSectionSub}>
                       Enter as minutes:seconds — e.g. 9:30
                     </Text>
@@ -509,7 +513,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                           onChangeText={setEasyPaceText}
                           onBlur={() => savePace('easy_pace', easyPaceText)}
                           onSubmitEditing={() => savePace('easy_pace', easyPaceText)}
-                          placeholder="e.g. 10:00"
+                          placeholder={paceUnit === 'minPerKm' ? 'e.g. 6:00' : 'e.g. 10:00'}
                           placeholderTextColor={Colors.textMuted}
                           keyboardType="numbers-and-punctuation"
                           returnKeyType="done"
@@ -523,7 +527,7 @@ export function ProfileSheet({ visible, userId, onClose }: Props) {
                           onChangeText={setFastPaceText}
                           onBlur={() => savePace('fast_pace', fastPaceText)}
                           onSubmitEditing={() => savePace('fast_pace', fastPaceText)}
-                          placeholder="e.g. 7:30"
+                          placeholder={paceUnit === 'minPerKm' ? 'e.g. 4:30' : 'e.g. 7:30'}
                           placeholderTextColor={Colors.textMuted}
                           keyboardType="numbers-and-punctuation"
                           returnKeyType="done"
