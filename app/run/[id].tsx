@@ -4,7 +4,7 @@
  * tags and notes), achievements, and sharing (Strava, Challenge a Friend).
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -135,7 +135,14 @@ export default function RunDetailsScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const large = useLargeText();
-  const { tier, loading: subscriptionLoading } = useSubscription();
+  const {
+    tier,
+    hasAdvancedAccess,
+    isInTrial,
+    weeklyAnalysisAvailable,
+    recordWeeklyAnalysisUsed,
+    loading: subscriptionLoading,
+  } = useSubscription();
   const [run, setRun] = useState<CompletedWorkout | null>(null);
   const [paceUnit, setPaceUnit] = useState<PaceUnit>(DEFAULT_SETTINGS.paceUnit);
   const [splitDistance, setSplitDistance] = useState<SplitDistancePreset>(DEFAULT_SETTINGS.splitDistance);
@@ -148,15 +155,25 @@ export default function RunDetailsScreen() {
   const [runAwards, setRunAwards] = useState<AwardBadge[]>([]);
   const [annotations, setAnnotations] = useState<Annotations>({ tags: [], notes: '' });
   const hrSamples = useHeartRateSamples(run?.heartRate ? run.id : null);
-  const isPro = tier === 'pro';
+  // Weekly analysis: free post-trial users can unlock once per week
+  const [weeklyUnlocked, setWeeklyUnlocked] = useState(false);
+  const canUseWeeklyAnalysis = !hasAdvancedAccess && weeklyAnalysisAvailable && !weeklyUnlocked;
+  const analysisAccess = hasAdvancedAccess || weeklyUnlocked;
+
+  const handleUnlockWeeklyAnalysis = useCallback(async () => {
+    if (!id) return;
+    await recordWeeklyAnalysisUsed(id);
+    setWeeklyUnlocked(true);
+  }, [id, recordWeeklyAnalysisUsed]);
+
   const { openShare, shareSheet } = useShareSheet();
 
   const hrViewedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!run?.heartRate || subscriptionLoading || hrViewedRef.current === run.id) return;
     hrViewedRef.current = run.id;
-    trackHr('hr_analysis_viewed', { is_pro: isPro, has_graph: !!hrSamples });
-  }, [run, hrSamples, isPro, subscriptionLoading]);
+    trackHr('hr_analysis_viewed', { is_pro: analysisAccess, has_graph: !!hrSamples });
+  }, [run, hrSamples, analysisAccess, subscriptionLoading]);
 
   useEffect(() => {
     // The lock waits for any write still in flight, such as the feeling
@@ -345,6 +362,24 @@ export default function RunDetailsScreen() {
           </View>
         )}
 
+        {/* Weekly analysis unlock banner */}
+        {run.heartRate && canUseWeeklyAnalysis && (
+          <TouchableOpacity
+            style={styles.weeklyAnalysisBanner}
+            onPress={handleUnlockWeeklyAnalysis}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="analytics-outline" size={20} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.weeklyBannerTitle}>Free weekly analysis available</Text>
+              <Text style={styles.weeklyBannerText}>
+                Tap to see detailed heart rate and interval analysis for this run.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         {run.heartRate && (
           <View style={styles.section}>
             <HeartRateSection
@@ -352,7 +387,7 @@ export default function RunDetailsScreen() {
               samples={hrSamples}
               splits={run.splits}
               width={chartWidth}
-              isPro={isPro}
+              hasAccess={analysisAccess}
               onUpgrade={() => {
                 trackHr('hr_pro_upgrade_clicked', { source: 'run_details' });
                 router.push('/paywall');
@@ -622,5 +657,26 @@ const styles = StyleSheet.create({
   headerShareBtn: {
     padding: Spacing.xs,
     marginRight: -Spacing.xs,
+  },
+  weeklyAnalysisBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary + '12',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  weeklyBannerTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  weeklyBannerText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
 });

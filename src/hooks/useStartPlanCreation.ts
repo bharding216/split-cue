@@ -23,10 +23,10 @@ export function useStartPlanCreation() {
     track('plan_limit_prompt_shown');
     Alert.alert(
       'Free Plan Already Used',
-      "You've already created your free training plan. Upgrade to Pro for unlimited plans.",
+      "You've already created your free training plan. Unlock Pro to build a plan for every goal ahead.",
       [
         { text: 'Not Now', style: 'cancel' },
-        { text: 'See Pro', onPress: () => router.push('/paywall' as any) },
+        { text: 'Unlock Pro', onPress: () => router.push('/paywall' as any) },
       ],
     );
   }, [loading, canGeneratePlan, router]);

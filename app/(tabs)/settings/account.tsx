@@ -35,7 +35,13 @@ export default function AccountScreen() {
   const large = useLargeText();
   const { user, signOut, deleteAccount } = useAuth();
   const [deleting, setDeleting] = useState(false);
-  const { tier, manageSubscription } = useSubscription();
+  const {
+    tier,
+    isGrandfathered,
+    isInTrial,
+    trialRunsRemaining,
+    weeklyAnalysisAvailable,
+  } = useSubscription();
 
   const strava = useStrava();
   const [autoUpload, setAutoUpload] = useState(false);
@@ -273,7 +279,49 @@ export default function AccountScreen() {
         </View>
       </View>
 
-      {/* Upgrade to Pro */}
+      {/* Pro status or upgrade */}
+      {tier === 'pro' && (
+        <View style={styles.proBadgeRow}>
+          <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.proBadgeTitle}>SplitCue Pro</Text>
+            <Text style={styles.proBadgeSubtitle}>
+              {isGrandfathered
+                ? 'Early supporter — Pro forever'
+                : 'Lifetime access'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {tier === 'free' && isInTrial && (
+        <View style={styles.trialStatusRow}>
+          <Ionicons name="gift-outline" size={20} color={Colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.trialStatusTitle}>
+              {trialRunsRemaining} premium run{trialRunsRemaining !== 1 ? 's' : ''} remaining
+            </Text>
+            <Text style={styles.trialStatusSubtitle}>
+              Full Pro features for your first 5 completed workouts
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {tier === 'free' && !isInTrial && (
+        <View style={styles.trialStatusRow}>
+          <Ionicons name="analytics-outline" size={20} color={Colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.trialStatusTitle}>
+              {weeklyAnalysisAvailable ? '1 free analysis available this week' : 'Free analysis used this week'}
+            </Text>
+            <Text style={styles.trialStatusSubtitle}>
+              Advanced analysis refreshes weekly
+            </Text>
+          </View>
+        </View>
+      )}
+
       {tier === 'free' && (
         <TouchableOpacity
           style={styles.upgradeBtn}
@@ -284,23 +332,7 @@ export default function AccountScreen() {
           activeOpacity={0.8}
         >
           <Ionicons name="sparkles" size={18} color={Colors.black} />
-          <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Manage subscription */}
-      {tier === 'pro' && (
-        <TouchableOpacity
-          style={[styles.actionRow, { marginTop: Spacing.md }]}
-          onPress={() => {
-            hapticTap();
-            manageSubscription();
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="card-outline" size={20} color={Colors.textSecondary} />
-          <Text style={styles.actionRowText}>Manage Subscription</Text>
-          <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+          <Text style={styles.upgradeBtnText}>Unlock Pro</Text>
         </TouchableOpacity>
       )}
 
@@ -447,6 +479,44 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontSize: FontSize.md,
     fontWeight: '700',
+  },
+  proBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary + '12',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  proBadgeTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  proBadgeSubtitle: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  trialStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  trialStatusTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  trialStatusSubtitle: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
   actionRow: {
     flexDirection: 'row',

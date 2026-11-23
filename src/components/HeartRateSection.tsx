@@ -21,14 +21,15 @@ interface Props {
   samples: HrSample[] | null;
   splits: IntervalSplit[] | undefined;
   width: number;
-  isPro: boolean;
+  /** Whether advanced interval analysis is unlocked (Pro, trial, or weekly allowance). */
+  hasAccess: boolean;
   onUpgrade: () => void;
 }
 
 const HIDDEN = '•••';
 const CELL_FONT_SCALE = MaxFontScale.display;
 
-export function HeartRateSection({ heartRate, samples, splits, width, isPro, onUpgrade }: Props) {
+export function HeartRateSection({ heartRate, samples, splits, width, hasAccess, onUpgrade }: Props) {
   const intervalRows = (splits ?? []).filter((s) => s.avgHr != null);
   const showIntervals = intervalRows.length > 1;
   const [dropInfoVisible, setDropInfoVisible] = useState(false);
@@ -55,7 +56,7 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
         <View style={styles.tableCard}>
           <View style={styles.tableTitleRow}>
             <Text style={styles.tableTitle}>By Interval</Text>
-            {!isPro && (
+            {!hasAccess && (
               <View style={styles.proBadge}>
                 <Text style={styles.proBadgeText}>PRO</Text>
               </View>
@@ -76,8 +77,8 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
               <Ionicons name="information-circle-outline" size={13} color={Colors.textMuted} />
             </TouchableOpacity>
           </View>
-          <View style={!isPro && styles.lockedRows}>
-            {(isPro ? intervalRows : intervalRows.slice(0, 4)).map((s, i) => (
+          <View style={!hasAccess && styles.lockedRows}>
+            {(hasAccess ? intervalRows : intervalRows.slice(0, 4)).map((s, i) => (
               <View key={i} style={styles.row}>
                 <View style={[styles.segmentCell, styles.segmentLabel]}>
                   <View style={[styles.dot, { backgroundColor: intervalColor(s.type) }]} />
@@ -86,22 +87,22 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
                   </Text>
                 </View>
                 <Text style={styles.valueCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>
-                  {isPro ? s.avgHr : HIDDEN}
+                  {hasAccess ? s.avgHr : HIDDEN}
                 </Text>
                 <Text style={styles.valueCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>
-                  {isPro ? s.maxHr : HIDDEN}
+                  {hasAccess ? s.maxHr : HIDDEN}
                 </Text>
                 <Text style={styles.valueCell} maxFontSizeMultiplier={CELL_FONT_SCALE}>
-                  {s.hrRecoveryDrop == null ? '' : isPro ? `−${s.hrRecoveryDrop}` : HIDDEN}
+                  {s.hrRecoveryDrop == null ? '' : hasAccess ? `−${s.hrRecoveryDrop}` : HIDDEN}
                 </Text>
               </View>
             ))}
           </View>
-          {isPro ? null : (
+          {hasAccess ? null : (
             <View style={styles.upsell}>
-              <Text style={styles.upsellTitle}>Unlock detailed interval analysis with SplitCue Pro</Text>
+              <Text style={styles.upsellTitle}>See how your heart rate responded to each interval</Text>
               <Text style={styles.upsellText}>
-                See how your heart rate responds to each effort and recovery across your{' '}
+                Know exactly how your body handled each effort and recovery across your{' '}
                 {intervalRows.length} intervals.
               </Text>
               <TouchableOpacity
@@ -111,7 +112,7 @@ export function HeartRateSection({ heartRate, samples, splits, width, isPro, onU
                 accessibilityRole="button"
               >
                 <Ionicons name="lock-open-outline" size={16} color={Colors.background} />
-                <Text style={styles.upsellButtonText}>See Interval Heart Rate</Text>
+                <Text style={styles.upsellButtonText}>Unlock Pro</Text>
               </TouchableOpacity>
             </View>
           )}

@@ -36,8 +36,8 @@ interface Props {
   historicalPredictions?: PredictionDataPoint[];
   /** The race the user is training for */
   targetRace?: string;
-  /** Whether user has Pro access */
-  isPro: boolean;
+  /** Whether advanced analysis is unlocked (Pro, trial, or weekly allowance). */
+  hasAccess: boolean;
   /** Callback when tapped while locked */
   onUpgrade?: () => void;
 }
@@ -56,7 +56,7 @@ export function RacePredictionCard({
   currentPredictions,
   historicalPredictions,
   targetRace,
-  isPro,
+  hasAccess,
   onUpgrade,
 }: Props) {
   const unit = useUnits();
@@ -118,7 +118,7 @@ export function RacePredictionCard({
           <Ionicons name="trophy-outline" size={20} color={Colors.warning} />
           <Text style={styles.headerTitle}>Race Predictions</Text>
         </View>
-        {!isPro && (
+        {!hasAccess && (
           <View style={styles.proBadge}>
             <Ionicons name="lock-closed" size={10} color={Colors.accent} />
             <Text style={styles.proBadgeText}>PRO</Text>
@@ -131,14 +131,14 @@ export function RacePredictionCard({
         <View style={styles.heroPrediction}>
           <Text style={styles.heroLabel}>{targetPrediction.raceLabel}</Text>
           <Text
-            style={[styles.heroTime, !isPro && styles.blurred]}
+            style={[styles.heroTime, !hasAccess && styles.blurred]}
             maxFontSizeMultiplier={MaxFontScale.display}
           >
-            {isPro ? targetPrediction.predictedTimeFormatted : '??:??:??'}
+            {hasAccess ? targetPrediction.predictedTimeFormatted : '??:??:??'}
           </Text>
           <View style={styles.heroMeta}>
-            <Text style={[styles.heroPace, !isPro && styles.blurred]}>
-              {isPro ? formatPace(targetPrediction.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
+            <Text style={[styles.heroPace, !hasAccess && styles.blurred]}>
+              {hasAccess ? formatPace(targetPrediction.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
             </Text>
             <View
               style={[
@@ -160,7 +160,7 @@ export function RacePredictionCard({
       )}
 
       {/* Trend graph */}
-      {isPro && graphPath && (
+      {hasAccess && graphPath && (
         <View style={styles.graphContainer}>
           <Text style={styles.graphLabel}>Predicted Time Trend</Text>
           <Svg width={graphWidth} height={graphHeight}>
@@ -240,21 +240,21 @@ export function RacePredictionCard({
             ]}
           >
             <Text style={styles.predictionLabel}>{pred.raceLabel}</Text>
-            <Text style={[styles.predictionTime, !isPro && styles.blurred]}>
-              {isPro ? pred.predictedTimeFormatted : '??:??'}
+            <Text style={[styles.predictionTime, !hasAccess && styles.blurred]}>
+              {hasAccess ? pred.predictedTimeFormatted : '??:??'}
             </Text>
-            <Text style={[styles.predictionPace, !isPro && styles.blurred]}>
-              {isPro ? formatPace(pred.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
+            <Text style={[styles.predictionPace, !hasAccess && styles.blurred]}>
+              {hasAccess ? formatPace(pred.pacePerMile, unit) : `??:??${paceSuffix(unit)}`}
             </Text>
           </View>
         ))}
       </View>
 
       {/* Pro upgrade CTA */}
-      {!isPro && onUpgrade && (
+      {!hasAccess && onUpgrade && (
         <TouchableOpacity style={styles.upgradeBtn} onPress={onUpgrade} activeOpacity={0.8}>
           <Ionicons name="sparkles" size={16} color={Colors.black} />
-          <Text style={styles.upgradeBtnText}>Unlock Race Predictions</Text>
+          <Text style={styles.upgradeBtnText}>See how fast you're getting</Text>
         </TouchableOpacity>
       )}
     </View>

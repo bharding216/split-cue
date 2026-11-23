@@ -46,6 +46,7 @@ import { suggestNextRun, suggestNextPlannedRun, getLastWorkoutForRepeat } from '
 import { NextRunSuggestionCard, type SuggestionStatus } from '../../../src/components/NextRunSuggestionCard';
 import { addWorkoutToCalendar } from '../../../src/ai/planService';
 import { useAuth } from '../../../src/contexts/AuthContext';
+import { useSubscription } from '../../../src/contexts/SubscriptionContext';
 import type { PaceCueFrequency } from '../../../src/pace/paceTypes';
 import { paceCuesEnabled, distanceProgressCuesNeedGps, cueDistanceLabel } from '../../../src/audio/cueSchedule';
 import {
@@ -267,6 +268,7 @@ function ActiveWorkoutInner({
     refresh: refreshPlans,
   } = useTrainingPlan();
   const { user } = useAuth();
+  const { incrementTrialCount, isInTrial, trialRunsRemaining, tier } = useSubscription();
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [newRecords, setNewRecords] = useState<PersonalRecord[]>([]);
   const [newAwards, setNewAwards] = useState<AwardBadge[]>([]);
@@ -369,6 +371,19 @@ function ActiveWorkoutInner({
       console.warn('Failed to complete plan workout:', e),
     );
   }, [state.phase, runner.completedEntryId, sessionMeta?.planWorkoutId, completePlanWorkout]);
+
+  // Increment the trial run counter when a completed run is saved
+  const trialIncrementedRef = useRef(false);
+  useEffect(() => {
+    if (
+      state.phase !== 'finished' ||
+      !runner.completedEntryId ||
+      !runner.runCompleted ||
+      trialIncrementedRef.current
+    ) return;
+    trialIncrementedRef.current = true;
+    incrementTrialCount();
+  }, [state.phase, runner.completedEntryId, runner.runCompleted, incrementTrialCount]);
 
   const finishedAtRef = useRef<number | null>(null);
   useEffect(() => {
@@ -903,6 +918,26 @@ function ActiveWorkoutInner({
           <Text style={styles.doneGpsNote}>
             Distance wasn't recorded because location access was off during this run.
           </Text>
+        )}
+
+        {/* Trial progress — only for free users in their trial */}
+        {tier !== 'pro' && runner.runCompleted && isInTrial && trialRunsRemaining > 0 && (
+          <View style={styles.trialNotice}>
+            <Ionicons name="gift-outline" size={18} color={Colors.primary} />
+            <Text style={styles.trialNoticeText}>
+              {trialRunsRemaining === 1
+                ? 'Last premium run — enjoy the full experience!'
+                : `${trialRunsRemaining} premium runs remaining`}
+            </Text>
+          </View>
+        )}
+        {tier !== 'pro' && runner.runCompleted && !isInTrial && trialRunsRemaining === 0 && (
+          <View style={styles.trialNotice}>
+            <Ionicons name="sparkles-outline" size={18} color={Colors.primary} />
+            <Text style={styles.trialNoticeText}>
+              Your 5 premium runs are complete. You still get 1 free advanced analysis each week.
+            </Text>
+          </View>
         )}
 
         <View style={styles.feelSection}>
@@ -2688,6 +2723,21 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     fontStyle: 'italic',
+  },
+  trialNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    marginHorizontal: Spacing.md,
+  },
+  trialNoticeText: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
   },
   doneBtn: {
     width: '100%',

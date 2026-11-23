@@ -1,19 +1,14 @@
 /**
- * Subscription context for SplitCue Pro.
+ * Subscription context for SplitCue Pro — lifetime purchase model.
  *
  * Uses RevenueCat for IAP management and Supabase for server-side
- * subscription state + training plan counts.
- *
- * RevenueCat is the primary source of truth for purchase state: when the
- * RC SDK says the entitlement is active, the user is treated as Pro even
- * if the Supabase row hasn't caught up (webhook delay/failure).  A
- * background reconciliation call keeps Supabase in sync.
+ * subscription state, trial tracking, weekly analysis, and grandfathering.
  *
  * ┌─────────────────────────────────────────────────────────┐
  * │  EXTERNAL SETUP REQUIRED — see SETUP.md                │
  * │                                                        │
  * │  1. Create RevenueCat project + iOS/Android apps       │
- * │  2. Create subscription products in App Store Connect   │
+ * │  2. Create lifetime IAP product in App Store Connect   │
  * │  3. Set EXPO_PUBLIC_REVENUE_CAT_KEY in .env            │
  * │  4. Create "pacecue_pro" entitlement in RevenueCat     │
  * │  5. Set up RevenueCat webhook → Supabase edge function │
@@ -28,11 +23,11 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
-import { Platform, Alert, Linking } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import Purchases, {
   PurchasesPackage,
   PurchasesOfferings,
-  CustomerInfo,
+  PACKAGE_TYPE,
 } from 'react-native-purchases';
 import { useAuth } from './AuthContext';
 import { supabase } from '../analytics/supabaseClient';
@@ -41,30 +36,49 @@ import {
   SubscriptionTier,
 } from '../types/database';
 
-// ┌─────────────────────────────────────────────────────────┐
-// │  PLACEHOLDER: Set your RevenueCat public API key in     │
-// │  .env as EXPO_PUBLIC_REVENUE_CAT_KEY                    │
-// └─────────────────────────────────────────────────────────┘
 const REVENUE_CAT_KEY = process.env.EXPO_PUBLIC_REVENUE_CAT_KEY ?? '';
 
 const ENTITLEMENT_ID = 'pacecue_pro';
 
-/** Delays (ms) for background Supabase retries after a purchase/restore. */
-const RECONCILE_DELAYS = [1500, 4000, 10000];
+/** Number of fully completed runs with Pro features before the trial ends. */
+const TRIAL_RUN_LIMIT = 5;
 
 type SubscriptionContextType = {
   subscription: Subscription | null;
   tier: SubscriptionTier;
+
+  // Plan generation gating (kept for backward compat)
   canGeneratePlan: boolean;
-  /** Number of AI-generated training plans the user has ever created, including deleted ones. */
   planCount: number;
+
+  // Trial state
+  isInTrial: boolean;
+  trialRunsRemaining: number;
+  completedRunCount: number;
+  incrementTrialCount: () => Promise<void>;
+
+  // Weekly analysis allowance (post-trial free users)
+  weeklyAnalysisAvailable: boolean;
+  weeklyAnalysisUsedThisWeek: number;
+  recordWeeklyAnalysisUsed: (runId: string) => Promise<void>;
+
+  // Convenience: true if Pro OR in trial OR weekly analysis available
+  hasAdvancedAccess: boolean;
+  // Execution-only: true if Pro OR in trial (no weekly allowance)
+  hasAdvancedExecution: boolean;
+
+  // Grandfathering
+  isGrandfathered: boolean;
+
+  // RevenueCat offerings
   loading: boolean;
   offerings: PurchasesOfferings | null;
   offeringsLoading: boolean;
+  lifetimePackage: PurchasesPackage | null;
   purchasePackage: (pkg: PurchasesPackage) => Promise<{ error: Error | null }>;
   restorePurchases: () => Promise<{ error: Error | null }>;
   refreshSubscription: () => Promise<void>;
-  manageSubscription: () => void;
+
   /** DEV ONLY: override the effective tier without a real subscription. */
   devOverrideTier: SubscriptionTier | null;
   setDevOverrideTier: (tier: SubscriptionTier | null) => void;
@@ -88,17 +102,17 @@ export function SubscriptionProvider({
   const [offeringsLoading, setOfferingsLoading] = useState(true);
   const [devOverrideTier, setDevOverrideTier] = useState<SubscriptionTier | null>(null);
 
-  // RevenueCat entitlement — secondary source of truth
-  const [rcEntitlementActive, setRcEntitlementActive] = useState(false);
+  // Trial tracking
+  const [completedRunCount, setCompletedRunCount] = useState(0);
 
-  // Track in-flight reconciliation to avoid duplicate calls
-  const reconcileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Weekly analysis
+  const [weeklyAnalysisUsedThisWeek, setWeeklyAnalysisUsedThisWeek] = useState(0);
+
+  // Grandfathering
+  const [grandfatherCutoffDate, setGrandfatherCutoffDate] = useState<string | null>(null);
+  const grandfatherCutoffFetched = useRef(false);
 
   // ─── Initialize RevenueCat ────────────────────────────────
-  // Skip entirely in dev — the native SDK auto-fetches offerings
-  // after configure/logIn and errors when no StoreKit products
-  // exist, which can't be silenced via setLogLevel.
-
   useEffect(() => {
     if (__DEV__ || !REVENUE_CAT_KEY || rcInitialized) return;
 
@@ -116,7 +130,6 @@ export function SubscriptionProvider({
   }, [rcInitialized]);
 
   // ─── Identify user in RevenueCat ──────────────────────────
-
   useEffect(() => {
     if (!user || !rcInitialized) return;
 
@@ -130,9 +143,7 @@ export function SubscriptionProvider({
   }, [user?.id, rcInitialized]);
 
   // ─── Load offerings ───────────────────────────────────────
-
   useEffect(() => {
-    // RevenueCat is never initialized in dev or without a key, so there's nothing to wait for
     if (__DEV__ || !REVENUE_CAT_KEY) {
       setOfferingsLoading(false);
       return;
@@ -154,90 +165,68 @@ export function SubscriptionProvider({
     loadOfferings();
   }, [rcInitialized]);
 
-  // ─── Check RevenueCat entitlement ───────────────────────
-  const checkRcEntitlement = useCallback(async (info?: CustomerInfo): Promise<boolean> => {
-    try {
-      const customerInfo = info ?? await Purchases.getCustomerInfo();
-      const active = !!customerInfo.entitlements.active[ENTITLEMENT_ID];
-      setRcEntitlementActive(active);
-      return active;
-    } catch (err) {
-      console.warn('[SubscriptionContext] RC getCustomerInfo failed:', err);
-      return false;
-    }
+  // ─── Fetch grandfather cutoff date (once) ──────────────────
+  useEffect(() => {
+    if (grandfatherCutoffFetched.current) return;
+    grandfatherCutoffFetched.current = true;
+
+    supabase
+      .from('app_config')
+      .select('value')
+      .eq('key', 'grandfather_cutoff_date')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.value && typeof data.value === 'string') {
+          setGrandfatherCutoffDate(data.value);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  // ─── Background reconciliation ─────────────────────────
-  // When RC says active but Supabase has no Pro row, call the
-  // reconcile-subscription edge function so server-side is in sync.
-  const triggerReconcile = useCallback(async () => {
-    if (!user) return;
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      await supabase.functions.invoke('reconcile-subscription', {
-        body: { user_id: user.id },
-      });
-    } catch (err) {
-      console.warn('[SubscriptionContext] reconcile-subscription failed:', err);
-    }
-  }, [user]);
-
-  // ─── Load subscription from Supabase ─────────────────────
-
+  // ─── Load subscription + trial + weekly from Supabase ─────
   const refreshSubscription = useCallback(async () => {
-    console.log('[SubscriptionContext] refreshSubscription called, user:', user?.id ?? 'null');
-
     if (!user) {
       setSubscription(null);
       setPlanCount(0);
-      setRcEntitlementActive(false);
+      setCompletedRunCount(0);
+      setWeeklyAnalysisUsedThisWeek(0);
       setLoading(false);
       return;
     }
 
     try {
-      // Fetch Supabase data and RC entitlement in parallel
-      const rcPromise = rcInitialized
-        ? checkRcEntitlement()
-        : Promise.resolve(false);
-
-      // .maybeSingle() because the subscription row may not exist yet
-      // (.single() throws on zero rows, which would fail the Promise.all).
-      const [subResult, planCountResult, rcActive] = await Promise.all([
+      const [subResult, planCountResult, trialResult, weeklyResult] = await Promise.all([
         supabase
           .from('subscriptions')
           .select('*')
           .eq('user_id', user.id)
           .maybeSingle(),
-        // Counted from the generation ledger, not training_plans, so deleting a plan can't reset the quota.
         supabase
           .from('plan_generations')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id),
-        rcPromise,
+        supabase
+          .from('trial_tracking')
+          .select('completed_run_count')
+          .eq('user_id', user.id)
+          .maybeSingle(),
+        supabase
+          .from('weekly_analysis_usage')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('used_at', getWeekStart()),
       ]);
-
-      console.log('[SubscriptionContext] subResult:', JSON.stringify({ data: subResult.data, error: subResult.error }));
-      console.log('[SubscriptionContext] planCountResult:', JSON.stringify({ count: planCountResult.count, error: planCountResult.error }));
 
       setSubscription(subResult.data);
       setPlanCount(planCountResult.count ?? 0);
-
-      // If RC says active but Supabase has no Pro row, trigger reconciliation
-      const supabasePro = subResult.data?.tier === 'pro' && subResult.data?.status === 'active';
-      if (rcActive && !supabasePro) {
-        console.warn(
-          '[SubscriptionContext] RC entitlement active but Supabase row missing/stale — reconciling',
-        );
-        triggerReconcile();
-      }
+      setCompletedRunCount(trialResult.data?.completed_run_count ?? 0);
+      setWeeklyAnalysisUsedThisWeek(weeklyResult.count ?? 0);
     } catch (err) {
       console.warn('[SubscriptionContext] refreshSubscription CRASHED:', err);
     } finally {
       setLoading(false);
     }
-  }, [user, rcInitialized, checkRcEntitlement, triggerReconcile]);
+  }, [user, rcInitialized]);
 
   useEffect(() => {
     refreshSubscription();
@@ -245,39 +234,33 @@ export function SubscriptionProvider({
 
   // ─── Derived state ────────────────────────────────────────
 
+  const isGrandfathered =
+    grandfatherCutoffDate != null &&
+    user?.created_at != null &&
+    new Date(user.created_at) < new Date(grandfatherCutoffDate);
+
   const tier: SubscriptionTier =
     __DEV__ && devOverrideTier != null
       ? devOverrideTier
-      : rcEntitlementActive
+      : isGrandfathered
         ? 'pro'
         : getEffectiveTier(subscription);
 
-  // First AI plan is free for all users; additional plans require Pro
+  const isInTrial = tier !== 'pro' && completedRunCount < TRIAL_RUN_LIMIT;
+  const trialRunsRemaining = Math.max(0, TRIAL_RUN_LIMIT - completedRunCount);
+
+  const weeklyAnalysisAvailable = tier !== 'pro' && !isInTrial && weeklyAnalysisUsedThisWeek < 1;
+
+  const hasAdvancedExecution = tier === 'pro' || isInTrial;
+  const hasAdvancedAccess = tier === 'pro' || isInTrial || weeklyAnalysisAvailable;
+
   const canGeneratePlan = tier === 'pro' || planCount === 0;
 
-  // ─── Background Supabase retries after purchase/restore ──
-  // Gives the webhook time to land, then reconciles if it hasn't.
-  const scheduleReconcileRetries = useCallback(() => {
-    if (reconcileTimer.current) clearTimeout(reconcileTimer.current);
+  // ─── Lifetime package ─────────────────────────────────────
 
-    let attempt = 0;
-    const retry = () => {
-      if (attempt >= RECONCILE_DELAYS.length) return;
-      reconcileTimer.current = setTimeout(async () => {
-        await refreshSubscription();
-        attempt++;
-        retry();
-      }, RECONCILE_DELAYS[attempt]);
-    };
-    retry();
-  }, [refreshSubscription]);
-
-  // Clean up reconcile timer on unmount
-  useEffect(() => {
-    return () => {
-      if (reconcileTimer.current) clearTimeout(reconcileTimer.current);
-    };
-  }, []);
+  const lifetimePackage = offerings?.current?.availablePackages?.find(
+    (p) => p.packageType === PACKAGE_TYPE.LIFETIME,
+  ) ?? null;
 
   // ─── Purchase ─────────────────────────────────────────────
 
@@ -288,16 +271,13 @@ export function SubscriptionProvider({
       const { customerInfo } = await Purchases.purchasePackage(pkg);
 
       if (customerInfo.entitlements.active[ENTITLEMENT_ID]) {
-        // Immediately mark as Pro from RC — don't wait for the webhook
-        setRcEntitlementActive(true);
-        // Kick off Supabase refresh + reconciliation in background
-        scheduleReconcileRetries();
+        await refreshSubscription();
         return { error: null };
       }
 
       return {
         error: new Error(
-          'Purchase completed but subscription wasn\'t activated. ' +
+          'Purchase completed but Pro wasn\'t activated. ' +
             'Please tap "Restore Purchases" or contact support.',
         ),
       };
@@ -315,54 +295,55 @@ export function SubscriptionProvider({
     try {
       const customerInfo = await Purchases.restorePurchases();
       if (customerInfo.entitlements.active[ENTITLEMENT_ID]) {
-        // Immediately mark as Pro from RC — don't wait for the webhook
-        setRcEntitlementActive(true);
-        // Kick off Supabase refresh + reconciliation in background
-        scheduleReconcileRetries();
+        await refreshSubscription();
         return { error: null };
       }
 
-      // RC didn't find the entitlement — the purchase may be under a
-      // different RC anonymous user ID.  Try server-side reconciliation
-      // which checks RevenueCat's REST API directly.
-      if (user) {
-        try {
-          const { data } = await supabase.functions.invoke('reconcile-subscription', {
-            body: { user_id: user.id },
-          });
-          if (data?.tier === 'pro') {
-            setRcEntitlementActive(true);
-            await refreshSubscription();
-            return { error: null };
-          }
-        } catch {
-          // Fall through to original error
-        }
-      }
-
       return {
-        error: new Error(
-          'No SplitCue Pro purchase found on this account. ' +
-            'If you purchased with a different Apple ID, sign in with that account ' +
-            'in Settings → Apple ID, then try again. Otherwise contact support.',
-        ),
+        error: new Error('No SplitCue Pro purchase found.'),
       };
     } catch (err: any) {
       return { error: err };
     }
   };
 
-  // ─── Manage subscription ──────────────────────────────────
+  // ─── Trial tracking ──────────────────────────────────────
 
-  const manageSubscription = () => {
-    if (Platform.OS === 'ios') {
-      Linking.openURL('https://apps.apple.com/account/subscriptions');
-    } else {
-      Linking.openURL(
-        'https://play.google.com/store/account/subscriptions',
-      );
+  const incrementTrialCount = useCallback(async () => {
+    if (!user) return;
+
+    const nextCount = completedRunCount + 1;
+
+    // Optimistic local update
+    setCompletedRunCount(nextCount);
+
+    try {
+      await supabase
+        .from('trial_tracking')
+        .upsert(
+          { user_id: user.id, completed_run_count: nextCount },
+          { onConflict: 'user_id' },
+        );
+    } catch (err) {
+      console.warn('Failed to increment trial count:', err);
     }
-  };
+  }, [user, completedRunCount]);
+
+  // ─── Weekly analysis ──────────────────────────────────────
+
+  const recordWeeklyAnalysisUsed = useCallback(async (runId: string) => {
+    if (!user) return;
+
+    try {
+      await supabase
+        .from('weekly_analysis_usage')
+        .insert({ user_id: user.id, run_id: runId });
+
+      setWeeklyAnalysisUsedThisWeek((prev) => prev + 1);
+    } catch (err) {
+      console.warn('Failed to record weekly analysis usage:', err);
+    }
+  }, [user]);
 
   return (
     <SubscriptionContext.Provider
@@ -371,13 +352,23 @@ export function SubscriptionProvider({
         tier,
         canGeneratePlan,
         planCount,
+        isInTrial,
+        trialRunsRemaining,
+        completedRunCount,
+        incrementTrialCount,
+        weeklyAnalysisAvailable,
+        weeklyAnalysisUsedThisWeek,
+        recordWeeklyAnalysisUsed,
+        hasAdvancedAccess,
+        hasAdvancedExecution,
+        isGrandfathered,
         loading,
         offerings,
         offeringsLoading,
+        lifetimePackage,
         purchasePackage,
         restorePurchases,
         refreshSubscription,
-        manageSubscription,
         devOverrideTier,
         setDevOverrideTier,
       }}
@@ -397,11 +388,15 @@ export function useSubscription() {
   return context;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────
+
 function getEffectiveTier(sub: Subscription | null): SubscriptionTier {
   if (!sub) return 'free';
 
+  // Lifetime or active subscription
   if (sub.tier === 'pro' && sub.status === 'active') return 'pro';
 
+  // Legacy subscription grace periods (backward compat for existing subscribers)
   if (
     sub.status === 'trialing' &&
     sub.trial_ends_at &&
@@ -419,4 +414,15 @@ function getEffectiveTier(sub: Subscription | null): SubscriptionTier {
   }
 
   return 'free';
+}
+
+/** ISO string for the start of the current week (Monday 00:00 UTC). */
+function getWeekStart(): string {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1; // Monday = 0
+  const monday = new Date(now);
+  monday.setUTCDate(now.getUTCDate() - diff);
+  monday.setUTCHours(0, 0, 0, 0);
+  return monday.toISOString();
 }

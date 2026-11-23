@@ -14,12 +14,14 @@ export type SubscriptionStatus =
   | 'expired'
   | 'past_due';
 export type SubscriptionProvider = 'apple' | 'google' | 'stripe' | 'manual';
+export type PurchaseType = 'subscription' | 'lifetime';
 
 export type Subscription = {
   id: string;
   user_id: string;
   tier: SubscriptionTier;
   status: SubscriptionStatus;
+  purchase_type: PurchaseType;
   provider: SubscriptionProvider | null;
   provider_subscription_id: string | null;
   trial_started_at: string | null;
@@ -28,6 +30,31 @@ export type Subscription = {
   current_period_end: string | null;
   canceled_at: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+// ── Trial Tracking ───────────────────────────────────────────
+
+export type TrialTracking = {
+  user_id: string;
+  completed_run_count: number;
+  created_at: string;
+};
+
+// ── Weekly Analysis Usage ────────────────────────────────────
+
+export type WeeklyAnalysisUsage = {
+  id: string;
+  user_id: string;
+  run_id: string | null;
+  used_at: string;
+};
+
+// ── App Config ───────────────────────────────────────────────
+
+export type AppConfig = {
+  key: string;
+  value: unknown;
   updated_at: string;
 };
 

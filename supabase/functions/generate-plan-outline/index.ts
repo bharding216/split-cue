@@ -126,11 +126,24 @@ function isPro(sub: SubscriptionRow | null): boolean {
   return false;
 }
 
+/** Check whether this user is grandfathered (account created before the cutoff). */
+async function isGrandfathered(userId: string): Promise<boolean> {
+  const [configResult, userResult] = await Promise.all([
+    adminClient.from("app_config").select("value").eq("key", "grandfather_cutoff_date").maybeSingle(),
+    adminClient.auth.admin.getUserById(userId),
+  ]);
+  const cutoff = configResult.data?.value;
+  if (!cutoff || typeof cutoff !== "string") return false;
+  const createdAt = userResult.data?.user?.created_at;
+  if (!createdAt) return false;
+  return new Date(createdAt) < new Date(cutoff);
+}
+
 /** First AI plan is free for everyone; additional plans require Pro. */
 async function canGeneratePlan(userId: string): Promise<boolean> {
   if (QUOTA_EXEMPT_USER_IDS.has(userId)) return true;
 
-  const [subResult, countResult] = await Promise.all([
+  const [subResult, countResult, grandfathered] = await Promise.all([
     adminClient
       .from("subscriptions")
       .select("tier, status, trial_ends_at, current_period_end")
@@ -140,11 +153,12 @@ async function canGeneratePlan(userId: string): Promise<boolean> {
       .from("plan_generations")
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId),
+    isGrandfathered(userId),
   ]);
   if (subResult.error) throw new Error(`Failed to load subscription: ${subResult.error.message}`);
   if (countResult.error) throw new Error(`Failed to load plan count: ${countResult.error.message}`);
 
-  return isPro(subResult.data as SubscriptionRow | null) || (countResult.count ?? 0) === 0;
+  return grandfathered || isPro(subResult.data as SubscriptionRow | null) || (countResult.count ?? 0) === 0;
 }
 
 // ── Handler ──────────────────────────────────────────────────
@@ -168,7 +182,7 @@ Deno.serve(async (req) => {
     }
     if (!(await canGeneratePlan(userId))) {
       return new Response(
-        JSON.stringify({ error: "You've used your free training plan. Upgrade to SplitCue Pro to create another." }),
+        JSON.stringify({ error: "You've used your free training plan. Unlock SplitCue Pro to create more." }),
         { status: 402, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }

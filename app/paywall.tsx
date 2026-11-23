@@ -1,8 +1,9 @@
 /**
- * Paywall screen — upgrade to SplitCue Pro.
+ * Paywall screen — unlock SplitCue Pro with a one-time lifetime purchase.
  *
- * Shows plan options (monthly / annual), feature comparison,
- * and purchase buttons. Presented as a modal.
+ * Sells the result, not the features:
+ *   "Hit your target pace. Nail every interval.
+ *    Know exactly how you performed."
  */
 
 import React, { useState } from 'react';
@@ -17,27 +18,39 @@ import {
   Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { PACKAGE_TYPE } from 'react-native-purchases';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSubscription } from '../src/contexts/SubscriptionContext';
 import { Colors, Spacing, FontSize, BorderRadius } from '../src/constants/theme';
 
-const FEATURES_FREE = [
-  'Unlimited workouts & intervals',
-  'Full pace tracking',
-  'Heart rate recording & graphs',
-  'Cloud sync',
-  '5 premium runs',
+// ── Feature comparison rows ─────────────────────────────────
+
+type FeatureRow = {
+  label: string;
+  free: string;  // checkmark, text, or dash
+  pro: string;
+};
+
+const FEATURE_ROWS: FeatureRow[] = [
+  { label: 'Unlimited runs', free: '✓', pro: '✓' },
+  { label: 'Build custom workouts', free: '✓', pro: '✓' },
+  { label: 'Audio interval announcements', free: '✓', pro: '✓' },
+  { label: 'GPS recording and route maps', free: '✓', pro: '✓' },
+  { label: 'Full workout history and calendar', free: '✓', pro: '✓' },
+  { label: 'Basic splits, pace and HR data', free: '✓', pro: '✓' },
+  { label: 'Advanced live pace guidance', free: 'Trial / limited', pro: 'Unlimited' },
+  { label: 'Personalized audio feedback', free: 'Trial / limited', pro: 'Unlimited' },
+  { label: 'Advanced HR and interval analysis', free: 'Trial / limited', pro: 'Unlimited' },
+  { label: 'Advanced workout comparisons', free: '—', pro: '✓' },
 ];
 
-const FEATURES_PRO = [
-  'Premium voice coach',
-  'Detailed interval HR analysis',
-  'Race time predictions',
-  'Unlimited cloud history',
-  'Post-run performance insights',
-  'Priority support',
+// ── Outcome-driven value props ──────────────────────────────
+
+const VALUE_PROPS = [
+  { icon: 'speedometer-outline' as const, text: 'Hit your target pace' },
+  { icon: 'pulse-outline' as const, text: 'Nail every interval' },
+  { icon: 'analytics-outline' as const, text: 'Know exactly how you performed' },
+  { icon: 'trending-up-outline' as const, text: 'See yourself getting faster' },
 ];
 
 export default function PaywallScreen() {
@@ -45,54 +58,35 @@ export default function PaywallScreen() {
   const insets = useSafeAreaInsets();
   const {
     tier,
-    planCount,
-    offerings,
+    isInTrial,
+    trialRunsRemaining,
+    completedRunCount,
+    isGrandfathered,
+    lifetimePackage,
     offeringsLoading,
     purchasePackage,
     restorePurchases,
   } = useSubscription();
 
   const [loading, setLoading] = useState<'purchase' | 'restore' | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
 
-  const monthlyPkg = offerings?.current?.availablePackages?.find(
-    (p) => p.packageType === PACKAGE_TYPE.MONTHLY,
-  );
-  const annualPkg = offerings?.current?.availablePackages?.find(
-    (p) => p.packageType === PACKAGE_TYPE.ANNUAL,
-  );
-
-  // Dev fallbacks when StoreKit isn't available
-  type PlanDisplay = { priceString: string; price: number } | null;
-  const devMonthly: PlanDisplay = __DEV__ && !monthlyPkg
-    ? { priceString: '$3.99', price: 3.99 }
-    : null;
-  const devAnnual: PlanDisplay = __DEV__ && !annualPkg
-    ? { priceString: '$29.99', price: 29.99 }
-    : null;
-
-  const showMonthly: PlanDisplay = monthlyPkg
-    ? { priceString: monthlyPkg.product.priceString, price: monthlyPkg.product.price }
-    : devMonthly;
-  const showAnnual: PlanDisplay = annualPkg
-    ? { priceString: annualPkg.product.priceString, price: annualPkg.product.price }
-    : devAnnual;
+  // Dev fallback price when StoreKit isn't available
+  const priceString = lifetimePackage?.product.priceString ?? (__DEV__ ? '$24.99' : null);
 
   const handlePurchase = async () => {
-    const pkg = selectedPlan === 'annual' ? annualPkg : monthlyPkg;
-    if (!pkg) {
+    if (!lifetimePackage) {
       if (__DEV__) {
         Alert.alert(
           'Dev Mode',
-          `Simulated ${selectedPlan} purchase. Use a production build to test real IAP.`,
+          'Simulated lifetime purchase. Use a production build to test real IAP.',
         );
         return;
       }
-      Alert.alert('Error', 'No subscription package available.');
+      Alert.alert('Error', 'No purchase option available.');
       return;
     }
     setLoading('purchase');
-    const { error } = await purchasePackage(pkg);
+    const { error } = await purchasePackage(lifetimePackage);
     setLoading(null);
     if (error) {
       Alert.alert('Purchase Failed', error.message);
@@ -108,12 +102,12 @@ export default function PaywallScreen() {
     if (error) {
       Alert.alert('Restore', error.message);
     } else {
-      Alert.alert('Restored', 'Your SplitCue Pro subscription has been restored.');
+      Alert.alert('Restored', 'SplitCue Pro has been restored. Enjoy!');
       router.back();
     }
   };
 
-  // Already subscribed
+  // Already Pro (purchased or grandfathered)
   if (tier === 'pro') {
     return (
       <View style={styles.container}>
@@ -121,7 +115,9 @@ export default function PaywallScreen() {
           <Ionicons name="checkmark-circle" size={48} color={Colors.primary} />
           <Text style={styles.activeTitle}>You're on SplitCue Pro</Text>
           <Text style={styles.activeSubtitle}>
-            Unlimited AI training plans and all premium features.
+            {isGrandfathered
+              ? 'Early supporter — Pro forever. Thank you!'
+              : 'Your best workout, every workout. Forever.'}
           </Text>
           <TouchableOpacity
             style={styles.doneButton}
@@ -152,80 +148,25 @@ export default function PaywallScreen() {
         <Ionicons name="close" size={28} color={Colors.textSecondary} />
       </TouchableOpacity>
 
-      {/* Header */}
+      {/* Header — sell the result */}
       <Text style={styles.header}>SplitCue Pro</Text>
-      <Text style={styles.headerSub}>AI training plans that adapt to you</Text>
+      <Text style={styles.tagline}>Your best workout, every workout.</Text>
 
-      {/* Plan selector */}
-      {!offeringsLoading && (showMonthly || showAnnual) && (
-        <View style={styles.planSelector}>
-          {showAnnual && (
-            <TouchableOpacity
-              style={[
-                styles.planCard,
-                selectedPlan === 'annual' && styles.planCardSelected,
-              ]}
-              onPress={() => setSelectedPlan('annual')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.planBadge}>
-                <Text style={styles.planBadgeText}>Best Value</Text>
-              </View>
-              <Text
-                style={[
-                  styles.planLabel,
-                  selectedPlan === 'annual' && styles.planLabelSelected,
-                ]}
-              >
-                Annual
-              </Text>
-              <Text
-                style={[
-                  styles.planPrice,
-                  selectedPlan === 'annual' && styles.planPriceSelected,
-                ]}
-              >
-                {showAnnual.priceString}/yr
-              </Text>
-              {showMonthly && (
-                <Text
-                  style={[
-                    styles.planSavings,
-                    selectedPlan === 'annual' && styles.planSavingsSelected,
-                  ]}
-                >
-                  {`$${(showAnnual.price / 12).toFixed(2)}/mo`}
-                </Text>
-              )}
-            </TouchableOpacity>
-          )}
-          {showMonthly && (
-            <TouchableOpacity
-              style={[
-                styles.planCard,
-                selectedPlan === 'monthly' && styles.planCardSelected,
-              ]}
-              onPress={() => setSelectedPlan('monthly')}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.planLabel,
-                  selectedPlan === 'monthly' && styles.planLabelSelected,
-                ]}
-              >
-                Monthly
-              </Text>
-              <Text
-                style={[
-                  styles.planPrice,
-                  selectedPlan === 'monthly' && styles.planPriceSelected,
-                ]}
-              >
-                {showMonthly.priceString}/mo
-              </Text>
-            </TouchableOpacity>
-          )}
+      {/* Outcome-driven value props */}
+      <View style={styles.valueProps}>
+        {VALUE_PROPS.map((vp) => (
+          <View key={vp.text} style={styles.valuePropRow}>
+            <Ionicons name={vp.icon} size={22} color={Colors.primary} />
+            <Text style={styles.valuePropText}>{vp.text}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Price card */}
+      {!offeringsLoading && priceString && (
+        <View style={styles.priceCard}>
+          <Text style={styles.priceAmount}>{priceString}</Text>
+          <Text style={styles.priceLabel}>One-time purchase</Text>
         </View>
       )}
       {offeringsLoading && (
@@ -234,74 +175,6 @@ export default function PaywallScreen() {
           style={{ marginVertical: Spacing.lg }}
         />
       )}
-
-      {/* Usage context */}
-      {tier === 'free' && (
-        <View style={styles.usageCard}>
-          <Ionicons
-            name={planCount >= 1 ? 'checkmark-circle' : 'gift-outline'}
-            size={22}
-            color={Colors.primary}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.usageTitle}>
-              {planCount >= 1
-                ? "You've used your free AI training plan"
-                : 'Your first AI training plan is on us'}
-            </Text>
-            <Text style={styles.usageText}>
-              {planCount >= 1
-                ? 'Go Pro to build a plan for every goal ahead, each one shaped around your schedule and adapting as you train.'
-                : 'Build it free. Go Pro whenever you want plans for every goal ahead.'}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Feature comparison */}
-      <View style={styles.comparisonContainer}>
-        <View style={styles.tierColumn}>
-          <Text style={styles.tierLabel}>Free</Text>
-          {FEATURES_FREE.map((f) => (
-            <View key={f} style={styles.featureRow}>
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={Colors.textMuted}
-              />
-              <Text style={styles.featureText}>{f}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={[styles.tierColumn, styles.tierColumnPro]}>
-          <Text style={styles.tierLabelPro}>Pro</Text>
-          {FEATURES_FREE.map((f) => (
-            <View key={f} style={styles.featureRow}>
-              <Ionicons
-                name="checkmark"
-                size={16}
-                color={Colors.primary}
-              />
-              <Text style={styles.featureTextPro}>
-                {f.replace('1 AI training plan', 'Unlimited AI plans')}
-              </Text>
-            </View>
-          ))}
-          {FEATURES_PRO.filter((f) => f !== 'Unlimited AI training plans').map(
-            (f) => (
-              <View key={f} style={styles.featureRow}>
-                <Ionicons
-                  name="checkmark"
-                  size={16}
-                  color={Colors.primary}
-                />
-                <Text style={styles.featureTextPro}>{f}</Text>
-              </View>
-            ),
-          )}
-        </View>
-      </View>
 
       {/* Purchase button */}
       <TouchableOpacity
@@ -316,11 +189,67 @@ export default function PaywallScreen() {
         {loading === 'purchase' ? (
           <ActivityIndicator color={Colors.black} />
         ) : (
-          <Text style={styles.purchaseButtonText}>Subscribe</Text>
+          <Text style={styles.purchaseButtonText}>
+            Unlock Pro{priceString ? ` — ${priceString}` : ''}
+          </Text>
         )}
       </TouchableOpacity>
 
-      {/* Restore + terms */}
+      {/* Trust line */}
+      <Text style={styles.trustLine}>
+        No subscription. No recurring charges. Yours forever.
+      </Text>
+
+      {/* Trial context */}
+      <View style={styles.trialCard}>
+        <Ionicons
+          name={isInTrial ? 'gift-outline' : 'checkmark-circle-outline'}
+          size={20}
+          color={Colors.primary}
+        />
+        <View style={{ flex: 1 }}>
+          {isInTrial ? (
+            <>
+              <Text style={styles.trialTitle}>
+                Try Pro for your first {trialRunsRemaining === 5 ? '5' : `remaining ${trialRunsRemaining}`} completed workouts
+              </Text>
+              <Text style={styles.trialText}>
+                No payment information required. Your workout history remains yours, even if you never upgrade.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.trialTitle}>
+                Your 5 premium runs are complete
+              </Text>
+              <Text style={styles.trialText}>
+                You still get 1 free advanced analysis each week. Your workout history remains yours, even if you never upgrade.
+              </Text>
+            </>
+          )}
+        </View>
+      </View>
+
+      {/* Feature comparison table */}
+      <Text style={styles.comparisonHeader}>SplitCue capability</Text>
+      <View style={styles.tableHeader}>
+        <Text style={[styles.tableHeaderLabel, { flex: 2 }]} />
+        <Text style={styles.tableHeaderLabel}>Free</Text>
+        <Text style={[styles.tableHeaderLabel, styles.tableHeaderPro]}>Pro</Text>
+      </View>
+      {FEATURE_ROWS.map((row) => (
+        <View key={row.label} style={styles.tableRow}>
+          <Text style={[styles.tableCell, { flex: 2 }]}>{row.label}</Text>
+          <Text style={[styles.tableCell, styles.tableCellCenter, row.free === '✓' && styles.checkmark]}>
+            {row.free === '✓' ? '✓' : row.free}
+          </Text>
+          <Text style={[styles.tableCell, styles.tableCellCenter, styles.tableCellPro, row.pro === '✓' && styles.checkmarkPro]}>
+            {row.pro === '✓' ? '✓' : row.pro}
+          </Text>
+        </View>
+      ))}
+
+      {/* Restore + legal */}
       <View style={styles.footer}>
         <TouchableOpacity
           onPress={handleRestore}
@@ -332,14 +261,8 @@ export default function PaywallScreen() {
           </Text>
         </TouchableOpacity>
 
-        <Text style={styles.termsText}>
-          Payment will be charged to your Apple ID at confirmation of purchase.
-          Subscription automatically renews unless canceled at least 24 hours
-          before the end of the current period.
-        </Text>
-
         <Text style={styles.legalText}>
-          By subscribing, you agree to our{' '}
+          By purchasing, you agree to our{' '}
           <Text
             style={styles.legalLink}
             onPress={() =>
@@ -385,6 +308,8 @@ const styles = StyleSheet.create({
     right: Spacing.lg,
     zIndex: 10,
   },
+
+  // ── Header ─────────────────────────────
   header: {
     fontSize: 32,
     fontWeight: '900',
@@ -392,144 +317,59 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.xl,
   },
-  headerSub: {
+  tagline: {
     fontSize: FontSize.md,
     color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: Spacing.xs,
     marginBottom: Spacing.lg,
   },
-  planSelector: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  planCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.surfaceLight,
-    position: 'relative',
-  },
-  planCardSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '10',
-  },
-  planBadge: {
-    position: 'absolute',
-    top: -10,
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  planBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.black,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  planLabel: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  planLabelSelected: {
-    color: Colors.textPrimary,
-  },
-  planPrice: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  planPriceSelected: {
-    color: Colors.primary,
-  },
-  planSavings: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  planSavingsSelected: {
-    color: Colors.textSecondary,
-  },
-  usageCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  usageTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    marginBottom: 2,
-  },
-  usageText: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-  },
-  comparisonContainer: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
+
+  // ── Value props ────────────────────────
+  valueProps: {
+    gap: Spacing.md,
     marginBottom: Spacing.xl,
   },
-  tierColumn: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-  },
-  tierColumnPro: {
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  tierLabel: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  tierLabelPro: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.primary,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  featureRow: {
+  valuePropRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
-  featureText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    flex: 1,
-  },
-  featureTextPro: {
-    fontSize: FontSize.xs,
+  valuePropText: {
+    fontSize: FontSize.md,
+    fontWeight: '600',
     color: Colors.textPrimary,
-    flex: 1,
   },
+
+  // ── Price card ─────────────────────────
+  priceCard: {
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    marginBottom: Spacing.lg,
+  },
+  priceAmount: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: Colors.primary,
+  },
+  priceLabel: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+
+  // ── Purchase button ────────────────────
   purchaseButton: {
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.6,
@@ -539,20 +379,93 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: '800',
   },
+  trustLine: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+
+  // ── Trial card ─────────────────────────
+  trialCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  trialTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  trialText: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+
+  // ── Feature comparison table ───────────
+  comparisonHeader: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    paddingBottom: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceLight,
+  },
+  tableHeaderLabel: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  tableHeaderPro: {
+    color: Colors.primary,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.surfaceLight,
+  },
+  tableCell: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+  },
+  tableCellCenter: {
+    textAlign: 'center',
+  },
+  tableCellPro: {
+    color: Colors.textPrimary,
+  },
+  checkmark: {
+    color: Colors.textMuted,
+  },
+  checkmarkPro: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+
+  // ── Footer ─────────────────────────────
   footer: {
     alignItems: 'center',
     gap: Spacing.md,
+    marginTop: Spacing.xl,
   },
   restoreText: {
     color: Colors.primary,
     fontSize: FontSize.sm,
     fontWeight: '600',
-  },
-  termsText: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 16,
   },
   legalText: {
     fontSize: FontSize.xs,
@@ -564,6 +477,8 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     textDecorationLine: 'underline',
   },
+
+  // ── Already Pro ────────────────────────
   activeTitle: {
     fontSize: FontSize.xl,
     fontWeight: '700',
