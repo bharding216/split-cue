@@ -4,6 +4,11 @@
  * Uses RevenueCat for IAP management and Supabase for server-side
  * subscription state + training plan counts.
  *
+ * RevenueCat is the primary source of truth for purchase state: when the
+ * RC SDK says the entitlement is active, the user is treated as Pro even
+ * if the Supabase row hasn't caught up (webhook delay/failure).  A
+ * background reconciliation call keeps Supabase in sync.
+ *
  * ┌─────────────────────────────────────────────────────────┐
  * │  EXTERNAL SETUP REQUIRED — see SETUP.md                │
  * │                                                        │
@@ -21,11 +26,13 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from 'react';
 import { Platform, Alert, Linking } from 'react-native';
 import Purchases, {
   PurchasesPackage,
   PurchasesOfferings,
+  CustomerInfo,
 } from 'react-native-purchases';
 import { useAuth } from './AuthContext';
 import { supabase } from '../analytics/supabaseClient';
@@ -41,6 +48,9 @@ import {
 const REVENUE_CAT_KEY = process.env.EXPO_PUBLIC_REVENUE_CAT_KEY ?? '';
 
 const ENTITLEMENT_ID = 'pacecue_pro';
+
+/** Delays (ms) for background Supabase retries after a purchase/restore. */
+const RECONCILE_DELAYS = [1500, 4000, 10000];
 
 type SubscriptionContextType = {
   subscription: Subscription | null;
@@ -77,6 +87,12 @@ export function SubscriptionProvider({
   const [offerings, setOfferings] = useState<PurchasesOfferings | null>(null);
   const [offeringsLoading, setOfferingsLoading] = useState(true);
   const [devOverrideTier, setDevOverrideTier] = useState<SubscriptionTier | null>(null);
+
+  // RevenueCat entitlement — secondary source of truth
+  const [rcEntitlementActive, setRcEntitlementActive] = useState(false);
+
+  // Track in-flight reconciliation to avoid duplicate calls
+  const reconcileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Initialize RevenueCat ────────────────────────────────
   // Skip entirely in dev — the native SDK auto-fetches offerings
@@ -138,6 +154,35 @@ export function SubscriptionProvider({
     loadOfferings();
   }, [rcInitialized]);
 
+  // ─── Check RevenueCat entitlement ───────────────────────
+  const checkRcEntitlement = useCallback(async (info?: CustomerInfo): Promise<boolean> => {
+    try {
+      const customerInfo = info ?? await Purchases.getCustomerInfo();
+      const active = !!customerInfo.entitlements.active[ENTITLEMENT_ID];
+      setRcEntitlementActive(active);
+      return active;
+    } catch (err) {
+      console.warn('[SubscriptionContext] RC getCustomerInfo failed:', err);
+      return false;
+    }
+  }, []);
+
+  // ─── Background reconciliation ─────────────────────────
+  // When RC says active but Supabase has no Pro row, call the
+  // reconcile-subscription edge function so server-side is in sync.
+  const triggerReconcile = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await supabase.functions.invoke('reconcile-subscription', {
+        body: { user_id: user.id },
+      });
+    } catch (err) {
+      console.warn('[SubscriptionContext] reconcile-subscription failed:', err);
+    }
+  }, [user]);
+
   // ─── Load subscription from Supabase ─────────────────────
 
   const refreshSubscription = useCallback(async () => {
@@ -146,14 +191,20 @@ export function SubscriptionProvider({
     if (!user) {
       setSubscription(null);
       setPlanCount(0);
+      setRcEntitlementActive(false);
       setLoading(false);
       return;
     }
 
     try {
+      // Fetch Supabase data and RC entitlement in parallel
+      const rcPromise = rcInitialized
+        ? checkRcEntitlement()
+        : Promise.resolve(false);
+
       // .maybeSingle() because the subscription row may not exist yet
       // (.single() throws on zero rows, which would fail the Promise.all).
-      const [subResult, planCountResult] = await Promise.all([
+      const [subResult, planCountResult, rcActive] = await Promise.all([
         supabase
           .from('subscriptions')
           .select('*')
@@ -164,6 +215,7 @@ export function SubscriptionProvider({
           .from('plan_generations')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id),
+        rcPromise,
       ]);
 
       console.log('[SubscriptionContext] subResult:', JSON.stringify({ data: subResult.data, error: subResult.error }));
@@ -171,12 +223,21 @@ export function SubscriptionProvider({
 
       setSubscription(subResult.data);
       setPlanCount(planCountResult.count ?? 0);
+
+      // If RC says active but Supabase has no Pro row, trigger reconciliation
+      const supabasePro = subResult.data?.tier === 'pro' && subResult.data?.status === 'active';
+      if (rcActive && !supabasePro) {
+        console.warn(
+          '[SubscriptionContext] RC entitlement active but Supabase row missing/stale — reconciling',
+        );
+        triggerReconcile();
+      }
     } catch (err) {
       console.warn('[SubscriptionContext] refreshSubscription CRASHED:', err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, rcInitialized, checkRcEntitlement, triggerReconcile]);
 
   useEffect(() => {
     refreshSubscription();
@@ -187,10 +248,36 @@ export function SubscriptionProvider({
   const tier: SubscriptionTier =
     __DEV__ && devOverrideTier != null
       ? devOverrideTier
-      : getEffectiveTier(subscription);
+      : rcEntitlementActive
+        ? 'pro'
+        : getEffectiveTier(subscription);
 
   // First AI plan is free for all users; additional plans require Pro
   const canGeneratePlan = tier === 'pro' || planCount === 0;
+
+  // ─── Background Supabase retries after purchase/restore ──
+  // Gives the webhook time to land, then reconciles if it hasn't.
+  const scheduleReconcileRetries = useCallback(() => {
+    if (reconcileTimer.current) clearTimeout(reconcileTimer.current);
+
+    let attempt = 0;
+    const retry = () => {
+      if (attempt >= RECONCILE_DELAYS.length) return;
+      reconcileTimer.current = setTimeout(async () => {
+        await refreshSubscription();
+        attempt++;
+        retry();
+      }, RECONCILE_DELAYS[attempt]);
+    };
+    retry();
+  }, [refreshSubscription]);
+
+  // Clean up reconcile timer on unmount
+  useEffect(() => {
+    return () => {
+      if (reconcileTimer.current) clearTimeout(reconcileTimer.current);
+    };
+  }, []);
 
   // ─── Purchase ─────────────────────────────────────────────
 
@@ -201,7 +288,10 @@ export function SubscriptionProvider({
       const { customerInfo } = await Purchases.purchasePackage(pkg);
 
       if (customerInfo.entitlements.active[ENTITLEMENT_ID]) {
-        await refreshSubscription();
+        // Immediately mark as Pro from RC — don't wait for the webhook
+        setRcEntitlementActive(true);
+        // Kick off Supabase refresh + reconciliation in background
+        scheduleReconcileRetries();
         return { error: null };
       }
 
@@ -225,11 +315,37 @@ export function SubscriptionProvider({
     try {
       const customerInfo = await Purchases.restorePurchases();
       if (customerInfo.entitlements.active[ENTITLEMENT_ID]) {
-        await refreshSubscription();
+        // Immediately mark as Pro from RC — don't wait for the webhook
+        setRcEntitlementActive(true);
+        // Kick off Supabase refresh + reconciliation in background
+        scheduleReconcileRetries();
         return { error: null };
       }
+
+      // RC didn't find the entitlement — the purchase may be under a
+      // different RC anonymous user ID.  Try server-side reconciliation
+      // which checks RevenueCat's REST API directly.
+      if (user) {
+        try {
+          const { data } = await supabase.functions.invoke('reconcile-subscription', {
+            body: { user_id: user.id },
+          });
+          if (data?.tier === 'pro') {
+            setRcEntitlementActive(true);
+            await refreshSubscription();
+            return { error: null };
+          }
+        } catch {
+          // Fall through to original error
+        }
+      }
+
       return {
-        error: new Error('No active SplitCue Pro subscription found.'),
+        error: new Error(
+          'No SplitCue Pro purchase found on this account. ' +
+            'If you purchased with a different Apple ID, sign in with that account ' +
+            'in Settings → Apple ID, then try again. Otherwise contact support.',
+        ),
       };
     } catch (err: any) {
       return { error: err };

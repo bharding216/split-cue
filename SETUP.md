@@ -349,6 +349,19 @@ Handle these event types:
 
 Use the RevenueCat webhook secret to verify authenticity.
 
+### `reconcile-subscription`
+Called by the client when RevenueCat's SDK says the entitlement is active but
+the Supabase `subscriptions` row is missing or stale (e.g. webhook failure).
+Verifies the purchase with RevenueCat's REST API, then upserts the row.
+
+**Secrets needed:**
+```bash
+supabase secrets set REVENUECAT_API_KEY=sk_...   # RevenueCat V1 secret API key
+```
+
+Get the key from RevenueCat → **API Keys** → copy the **secret** (V1) key
+(not the public key used in the app).
+
 ---
 
 ## 5. App Store Connect
@@ -398,6 +411,8 @@ The Supabase URL and anon key are already hardcoded in `supabaseClient.ts`.
 - [ ] Set `EXPO_PUBLIC_REVENUE_CAT_KEY` in `.env`
 - [ ] Deploy `generate-workout` edge function
 - [ ] Deploy `revenuecat-webhook` edge function
+- [ ] Deploy `reconcile-subscription` edge function
+- [ ] Set `REVENUECAT_API_KEY` Supabase secret (V1 secret key from RC dashboard)
 - [ ] Add LLM API key as Supabase secret
 - [ ] Create Terms of Use and Privacy Policy pages
 - [ ] Add Sign in with Apple capability in Xcode
