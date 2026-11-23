@@ -73,6 +73,14 @@ function adminClient() {
 /**
  * Whether this user may start a Strava connection. Users who are already
  * connected can always reconnect, since they don't take a new slot.
+ *
+ * When the row count is at or over the limit, we attempt a token-refresh
+ * probe for every stored connection. Any connection whose refresh token
+ * Strava rejects with 401 (revoked/deauthorised) is a "zombie" — still
+ * in our DB but no longer counted by Strava. Those rows are deleted so
+ * the count returns to reality. This handles the gap between our DB and
+ * Strava's dashboard that exists for users who deauthorise SplitCue
+ * directly on strava.com instead of through the app.
  */
 async function hasCapacityFor(userId: string): Promise<boolean> {
   if (!STRAVA_ATHLETE_CAPACITY) return true;
@@ -91,7 +99,84 @@ async function hasCapacityFor(userId: string): Promise<boolean> {
     .select("id", { count: "exact", head: true });
   if (error) throw error;
 
-  return (count ?? 0) < STRAVA_ATHLETE_CAPACITY;
+  if ((count ?? 0) < STRAVA_ATHLETE_CAPACITY) return true;
+
+  // At capacity — prune zombie connections, then re-check.
+  const pruned = await pruneStaleConnections(db);
+  if (pruned === 0) return false;
+
+  const { count: freshCount, error: freshError } = await db
+    .from("strava_connections")
+    .select("id", { count: "exact", head: true });
+  if (freshError) throw freshError;
+
+  return (freshCount ?? 0) < STRAVA_ATHLETE_CAPACITY;
+}
+
+/**
+ * Probe every stored connection by attempting a Strava token refresh.
+ * Connections whose refresh token is rejected (401) have been revoked
+ * on Strava's side — delete them. Returns the number of rows removed.
+ */
+async function pruneStaleConnections(
+  db: ReturnType<typeof adminClient>,
+): Promise<number> {
+  const { data: connections, error } = await db
+    .from("strava_connections")
+    .select("id, user_id, refresh_token");
+  if (error || !connections) return 0;
+
+  let pruned = 0;
+
+  // Probe in parallel (the list is small — capped at STRAVA_ATHLETE_CAPACITY).
+  await Promise.all(
+    connections.map(async (conn) => {
+      try {
+        const res = await fetch("https://www.strava.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: STRAVA_CLIENT_ID,
+            client_secret: STRAVA_CLIENT_SECRET,
+            grant_type: "refresh_token",
+            refresh_token: conn.refresh_token,
+          }),
+        });
+
+        if (res.status === 401) {
+          // Token revoked — delete the zombie row.
+          await db.from("strava_connections").delete().eq("id", conn.id);
+          console.log(
+            `Pruned stale Strava connection for user ${conn.user_id}`,
+          );
+          pruned++;
+        } else if (res.ok) {
+          // Token is still valid — persist the refreshed tokens while we're here.
+          const data = await res.json();
+          await db
+            .from("strava_connections")
+            .update({
+              access_token: data.access_token,
+              refresh_token: data.refresh_token,
+              token_expires_at: new Date(
+                data.expires_at * 1000,
+              ).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conn.id);
+        }
+      } catch (e) {
+        // Network error — don't prune, don't block. The connection may still be valid.
+        console.warn(`Failed to probe connection ${conn.id}:`, e);
+      }
+    }),
+  );
+
+  if (pruned > 0) {
+    console.log(`Pruned ${pruned} stale Strava connection(s)`);
+  }
+
+  return pruned;
 }
 
 function atCapacityResponse() {
