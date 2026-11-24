@@ -11,6 +11,18 @@
         "APP_VARIANT": "development"
       }
     },
+    "dev-a": {
+      "extends": "development",
+      "env": {
+        "APP_VARIANT": "dev-a"
+      }
+    },
+    "dev-b": {
+      "extends": "development",
+      "env": {
+        "APP_VARIANT": "dev-b"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
