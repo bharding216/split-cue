@@ -628,6 +628,10 @@ export function useWorkoutRunner(
           captureSplit(next);
           next = advanceInterval(next);
         }
+        // Correct totalElapsedMs to exclude paused time
+        if (next.phase === 'finished') {
+          next = { ...next, totalElapsedMs: workoutElapsedAt(Date.now()) };
+        }
         engineRef.current = next;
         setEngine(next);
 
@@ -669,6 +673,10 @@ export function useWorkoutRunner(
           if (intervalDist >= ci_dist.distanceMeters!) {
             captureSplit(s);
             let next = advanceInterval(s);
+            // Correct totalElapsedMs to exclude paused time
+            if (next.phase === 'finished') {
+              next = { ...next, totalElapsedMs: workoutElapsedAt(Date.now()) };
+            }
             engineRef.current = next;
             setEngine(next);
             if (next.phase === 'finished') {
@@ -705,7 +713,8 @@ export function useWorkoutRunner(
           s.phase === 'running'
         ) {
           captureSplit(s);
-          const finished = finishWorkout(s);
+          // Correct totalElapsedMs to exclude paused time
+          const finished = { ...finishWorkout(s), totalElapsedMs: workoutElapsedAt(Date.now()) };
           engineRef.current = finished;
           setEngine(finished);
           playCue('workoutComplete', settingsRef.current.audioCueMode, {});
@@ -841,7 +850,7 @@ export function useWorkoutRunner(
 
       setTick((t) => t + 1);
     }
-  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd, persistSession]);
+  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd, persistSession, workoutElapsedAt]);
 
   // Start/stop the tick loop based on engine phase.
   // Uses setInterval instead of requestAnimationFrame so ticks continue
@@ -894,21 +903,37 @@ export function useWorkoutRunner(
     setPremiumVoice(settings.voiceEngine === 'premium' ? settings.premiumVoiceId : null);
   }, [settings.voiceIdentifier, settings.duckOtherAudio, settings.voiceEngine, settings.premiumVoiceId]);
 
+  // Start or stop GPS when the user toggles pace tracking mid-run.
+  // The initial start happens inside `start()`, but if the user turns GPS
+  // on after the run began, nothing was calling paceTracker.start().
+  const needsGpsNow =
+    settings.paceTrackingEnabled ||
+    hasDistanceFeature(workout) ||
+    distanceProgressCuesNeedGps(settings);
+  useEffect(() => {
+    const phase = engineRef.current.phase;
+    if (phase !== 'running' && phase !== 'paused') return;
+    const tracker = paceTrackerRef.current;
+    if (needsGpsNow && !tracker.isTracking) {
+      usesGpsRef.current = true;
+      tracker.start();
+    }
+  }, [needsGpsNow]);
+
   // Keep the Android workout session (foreground service) up while the
   // workout is running or paused, so cues keep firing with the screen locked.
   const inWorkout = engine.phase === 'running' || engine.phase === 'paused';
   useEffect(() => {
     if (!inWorkout) return;
-    const usesLocation = usesGpsRef.current;
     startWorkoutSession({
       title: workout.name || 'Workout in progress',
-      body: usesLocation
+      body: needsGpsNow
         ? 'Tracking your running pace and playing audio cues'
         : 'Playing your workout audio cues',
-      usesLocation,
+      usesLocation: needsGpsNow,
     });
     return () => stopWorkoutSession(SESSION_END_GRACE_MS);
-  }, [inWorkout, workout.name]);
+  }, [inWorkout, workout.name, needsGpsNow]);
 
   // Pick a restored workout back up: GPS, background audio and the Live Activity.
   // Declared before the save effect so the restored track is in place before it's re-saved.
@@ -1075,7 +1100,11 @@ export function useWorkoutRunner(
     // Capture split for the interval being skipped
     captureSplit(engineRef.current);
 
-    const next = skipInterval(engineRef.current);
+    let next = skipInterval(engineRef.current);
+    // Correct totalElapsedMs to exclude paused time
+    if (next.phase === 'finished') {
+      next = { ...next, totalElapsedMs: workoutElapsedAt(Date.now()) };
+    }
     engineRef.current = next;
     setEngine(next);
     if (next.phase !== 'finished') {
@@ -1105,13 +1134,14 @@ export function useWorkoutRunner(
         total_duration_ms: next.totalElapsedMs,
       }, true);
     }
-  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd]);
+  }, [workout.id, workout.name, buildLAProps, captureSplit, markIntervalStart, saveHistoryEntry, trackRunEnd, workoutElapsedAt]);
 
   const stop_ = useCallback(() => {
     // Capture split for the interval in progress when stopped
     captureSplit(engineRef.current);
 
-    const next = stopWorkout(engineRef.current);
+    // Correct totalElapsedMs to exclude paused time
+    const next = { ...stopWorkout(engineRef.current), totalElapsedMs: workoutElapsedAt(Date.now()) };
     engineRef.current = next;
     setEngine(next);
     stopBackgroundLoop();
@@ -1146,7 +1176,7 @@ export function useWorkoutRunner(
     } else {
       clearActiveSession();
     }
-  }, [workout, captureSplit, saveHistoryEntry, trackRunEnd]);
+  }, [workout, captureSplit, saveHistoryEntry, trackRunEnd, workoutElapsedAt]);
 
   const discard = useCallback(() => {
     const s = engineRef.current;
