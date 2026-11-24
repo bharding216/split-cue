@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import NavLink from '@/components/NavLink';
 import { createServiceClient } from '@/lib/supabase-server';
 import { getUserTimeline, type TimelineEvent } from '@/lib/queries';
 import SignOutButton from '@/components/SignOutButton';
@@ -163,9 +163,9 @@ export default async function UserTimelinePage({ params }: { params: Promise<{ i
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <header className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <Link href="/retention" className="text-sm text-gray-400 hover:text-gray-200">
+          <NavLink href="/retention" className="text-sm text-gray-400 hover:text-gray-200">
             Retention
-          </Link>
+          </NavLink>
           <h1 className="mt-1 text-2xl font-bold">{accountLabel ?? 'Anonymous runner'}</h1>
           <p className="mt-1 font-mono text-xs text-gray-500">{anonymousUserId}</p>
         </div>

@@ -45,7 +45,7 @@ import TrainingPlansBreakdown from '@/components/TrainingPlansBreakdown';
 import TrainingCalendarSection from '@/components/TrainingCalendarSection';
 import StravaUsersBreakdown from '@/components/StravaUsersBreakdown';
 import SignOutButton from '@/components/SignOutButton';
-import Link from 'next/link';
+import NavLink from '@/components/NavLink';
 
 export const dynamic = 'force-dynamic';
 
@@ -121,24 +121,24 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Link
+          <NavLink
             href="/retention"
             className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
           >
             Retention
-          </Link>
-          <Link
+          </NavLink>
+          <NavLink
             href="/notifications"
             className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
           >
             Notifications
-          </Link>
-          <Link
+          </NavLink>
+          <NavLink
             href="/versions"
             className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
           >
             Versions
-          </Link>
+          </NavLink>
           <SignOutButton />
         </div>
       </header>

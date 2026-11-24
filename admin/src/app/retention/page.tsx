@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import NavLink from '@/components/NavLink';
 import { createAuthServerClient } from '@/lib/supabase-server-actions';
 import {
   getSecondRunRetention,
@@ -91,9 +91,9 @@ export default async function RetentionPage() {
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <Link href="/" className="text-sm text-gray-400 hover:text-gray-200">
+          <NavLink href="/" className="text-sm text-gray-400 hover:text-gray-200">
             Dashboard
-          </Link>
+          </NavLink>
           <h1 className="mt-1 text-2xl font-bold">Second-Run Retention</h1>
           <p className="mt-1 text-sm text-gray-400">Signed in as {user?.email}</p>
         </div>
