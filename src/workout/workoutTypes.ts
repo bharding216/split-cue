@@ -38,6 +38,7 @@ export interface Segment {
   intensity?: Intensity;
   effort?: number; // 1-10 numeric intensity
   targetPace?: number; // min/mile target pace
+  targetHeartRate?: number; // bpm heart rate target
 }
 
 /** A group of blocks repeated a number of times. */
@@ -129,6 +130,7 @@ export interface FlatInterval {
   label: string;
   effort?: number;
   targetPace?: number;
+  targetHeartRate?: number;
   index: number;
   blockName?: string;
   blockNumber: number;
@@ -179,6 +181,7 @@ export interface IntervalSplit {
   avgPaceMinPerMile: number | null;
   avgPaceMinPerKm: number | null;
   targetPace: number | undefined;
+  targetHeartRate?: number;
   effort: number | undefined;
   /** Segment type of the interval; absent on splits recorded before heart rate support. */
   segmentType?: SegmentType;
@@ -283,6 +286,8 @@ import type {
   PaceWindowSize,
   PaceUnit,
   SplitDistancePreset,
+  DataMode,
+  HrAnnouncementFrequency,
 } from '../pace/paceTypes';
 
 export interface AppSettings {
@@ -291,28 +296,32 @@ export interface AppSettings {
   countdownWarningSeconds: number[];
   keepScreenOn: boolean;
   timeRemainingInterval: TimeRemainingInterval;
-  /** Interval-progress cues: elapsed time, distance covered in the interval, or whichever matches the interval's goal. */
   progressCueBasis: ProgressCueBasis;
-  /** Distance step for interval-progress cues. Used when progressCueBasis is 'distance' or 'auto'. */
   progressCueDistance: CueDistancePreset;
   voiceIdentifier: string | null;
-  /** Speak cues with the device's TTS voice or the premium AI voice. */
   voiceEngine: VoiceEngine;
   premiumVoiceId: string;
   duckOtherAudio: boolean;
+  /** @deprecated Use paceMode instead. Kept for backward compat during migration. */
   paceTrackingEnabled: boolean;
   paceCueFrequency: PaceCueFrequency;
-  /** Pace cues: every N seconds, each time a distance is covered, or whichever matches the interval's goal. */
   paceCueBasis: ProgressCueBasis;
-  /** Distance step for pace cues. Used when paceCueBasis is 'distance' or 'auto'. */
   paceCueDistance: CueDistancePreset;
   paceWindow: PaceWindowSize;
   paceUnit: PaceUnit;
   paceCueOnlyWithTarget: boolean;
-  /** Upload every finished run to Strava when it's connected. */
   stravaAutoUpload: boolean;
-  /** Last split length picked on Run Details. */
   splitDistance: SplitDistancePreset;
+  /** Pace data stream: off, record only, or record and announce. */
+  paceMode: DataMode;
+  /** Heart rate data stream: off, record only, or record and announce. */
+  hrMode: DataMode;
+  /** How often to announce heart rate when hrMode is 'announce' (seconds). */
+  hrAnnouncementFrequency: HrAnnouncementFrequency;
+  /** Announce total distance covered at regular intervals during any run. */
+  distanceCalloutEnabled: boolean;
+  /** Distance step for total-distance callouts. */
+  distanceCalloutStep: CueDistancePreset;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -336,6 +345,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   paceCueOnlyWithTarget: false,
   stravaAutoUpload: false,
   splitDistance: 'full',
+  paceMode: 'announce',
+  hrMode: 'record',
+  hrAnnouncementFrequency: 60,
+  distanceCalloutEnabled: false,
+  distanceCalloutStep: 'full',
 };
 
 // ── Segment helpers ──────────────────────────────────────────────────
@@ -541,6 +555,7 @@ function flattenBlockTree(
         label: seg.label || defaultSegmentLabel(seg.segmentType),
         effort: seg.effort ?? (seg.intensity ? intensityToEffort(seg.intensity) : undefined),
         targetPace: seg.targetPace,
+        targetHeartRate: seg.targetHeartRate,
         index: idx++,
         blockName: undefined,
         blockNumber: blockNum,
@@ -572,6 +587,7 @@ function flattenBlockTree(
               label: seg.label || defaultSegmentLabel(seg.segmentType),
               effort: seg.effort ?? (seg.intensity ? intensityToEffort(seg.intensity) : undefined),
               targetPace: seg.targetPace,
+              targetHeartRate: seg.targetHeartRate,
               index: idx++,
               blockName: rg.name,
               blockNumber: blockNum,

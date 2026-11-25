@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type AudioCueMode } from '../workou
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
 import { CUE_DISTANCE_PRESETS, cueDistanceLabel, paceCuesEnabled } from '../audio/cueSchedule';
-import type { ProgressCueBasis } from '../pace/paceTypes';
+import type { DataMode, HrAnnouncementFrequency, ProgressCueBasis } from '../pace/paceTypes';
 import {
   CueBasisToggle,
   CueDistanceChips,
@@ -86,7 +86,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
   })();
 
   const paceChipLabel = (() => {
-    if (settings.audioCueMode === 'silent' || !settings.paceTrackingEnabled || !paceCuesOn) {
+    if (settings.audioCueMode === 'silent' || settings.paceMode !== 'announce' || !paceCuesOn) {
       return null;
     }
     const v = settings.paceCueFrequency;
@@ -127,12 +127,28 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             <Ionicons
               name="navigate"
               size={14}
-              color={settings.paceTrackingEnabled ? Colors.primary : Colors.textMuted}
+              color={settings.paceMode !== 'off' ? Colors.primary : Colors.textMuted}
             />
-            <Text style={[styles.summaryItemText, settings.paceTrackingEnabled && styles.summaryItemTextActive]}>
-              GPS {settings.paceTrackingEnabled ? 'On' : 'Off'}
+            <Text style={[styles.summaryItemText, settings.paceMode !== 'off' && styles.summaryItemTextActive]}>
+              GPS {settings.paceMode === 'off' ? 'Off' : settings.paceMode === 'record' ? 'Record' : 'On'}
             </Text>
           </View>
+          {settings.hrMode !== 'off' && (
+            <View style={styles.summaryItem}>
+              <Ionicons name="heart" size={14} color={Colors.danger} />
+              <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>
+                HR {settings.hrMode === 'record' ? 'Record' : 'Announce'}
+              </Text>
+            </View>
+          )}
+          {settings.distanceCalloutEnabled && settings.paceMode !== 'off' && (
+            <View style={styles.summaryItem}>
+              <Ionicons name="navigate-outline" size={14} color={Colors.primary} />
+              <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>
+                Distance Callouts
+              </Text>
+            </View>
+          )}
           <View style={styles.summaryItem}>
             <Ionicons
               name={settings.audioCueMode === 'silent' ? 'volume-mute' : 'volume-high'}
@@ -167,21 +183,31 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
       {/* Expanded settings */}
       {expanded && (
         <View style={styles.expandedContent}>
-          {/* GPS tracking */}
+          {/* GPS tracking — 3-way mode */}
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Ionicons name="navigate" size={18} color={Colors.textSecondary} />
               <Text style={styles.settingLabel}>GPS Pace Tracking</Text>
             </View>
-            <Switch
-              value={settings.paceTrackingEnabled}
-              onValueChange={(v) => {
-                hapticTap();
-                onUpdate({ paceTrackingEnabled: v });
-              }}
-              trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-              thumbColor={Colors.white}
-            />
+          </View>
+          <View style={styles.audioModeRow}>
+            {(['off', 'record', 'announce'] as DataMode[]).map((mode) => {
+              const isActive = settings.paceMode === mode;
+              const label = mode === 'off' ? 'Off' : mode === 'record' ? 'Record' : 'Announce';
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.audioChip, isActive && styles.audioChipActive]}
+                  onPress={() => {
+                    hapticTap();
+                    onUpdate({ paceMode: mode, paceTrackingEnabled: mode !== 'off' });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.audioChipText, isActive && styles.audioChipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Audio cues */}
@@ -245,8 +271,8 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             </View>
           )}
 
-          {/* Pace announcements (when GPS is on) */}
-          {settings.paceTrackingEnabled && (
+          {/* Pace announcements (when GPS announces) */}
+          {settings.paceMode === 'announce' && (
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Ionicons name="megaphone-outline" size={18} color={Colors.textSecondary} />
@@ -280,7 +306,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             </View>
           )}
 
-          {settings.paceTrackingEnabled && paceCuesOn && (
+          {settings.paceMode === 'announce' && paceCuesOn && (
             <View style={styles.paceScheduleControls}>
               <CueBasisToggle<ProgressCueBasis>
                 value={settings.paceCueBasis}
@@ -321,7 +347,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             </View>
           )}
 
-          {hasDistanceFeature && !settings.paceTrackingEnabled && (
+          {hasDistanceFeature && settings.paceMode === 'off' && (
             <View style={styles.hintRow}>
               <Ionicons name="information-circle-outline" size={16} color={Colors.accent} />
               <Text style={styles.hintText}>

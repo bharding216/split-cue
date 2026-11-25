@@ -22,7 +22,10 @@ import {
 import type {
   PaceCueFrequency,
   PaceWindowSize,
+  DataMode,
+  CueDistancePreset,
 } from '../../../src/pace/paceTypes';
+import { cueDistanceLabel } from '../../../src/audio/cueSchedule';
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import {
   Colors,
@@ -40,6 +43,14 @@ import {
   AUTO_DISTANCE_STEP_LABEL,
 } from '../../../src/components/CueScheduleControls';
 import CollapsibleSection from '../../../src/components/CollapsibleSection';
+
+const DATA_MODE_OPTIONS: { value: DataMode; label: string; desc: string }[] = [
+  { value: 'off', label: 'Off', desc: 'No GPS tracking' },
+  { value: 'record', label: 'Record Only', desc: 'Track pace for post-run analysis' },
+  { value: 'announce', label: 'Record + Announce', desc: 'Track pace and hear updates during your run' },
+];
+
+const DISTANCE_CALLOUT_STEPS: CueDistancePreset[] = ['quarter', 'half', 'full'];
 
 const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
   { value: 0, label: 'Off' },
@@ -95,27 +106,34 @@ export default function PaceSettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* GPS Pace Tracking — always visible */}
-      <View style={styles.toggleCard}>
-        <View style={{ flex: 1, marginRight: Spacing.md }}>
-          <Text style={styles.toggleLabel}>GPS Pace Tracking</Text>
-          <Text style={styles.toggleHint}>
-            Track your running pace using GPS during workouts
-          </Text>
-        </View>
-        <Switch
-          value={settings.paceTrackingEnabled}
-          onValueChange={(v) => {
-            hapticTap();
-            update({ paceTrackingEnabled: v });
-          }}
-          trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-          thumbColor={Colors.white}
-          accessibilityLabel="GPS Pace Tracking"
-        />
-      </View>
+      {/* GPS Pace Tracking — 3-way mode */}
+      <Text style={styles.sectionTitle}>GPS Pace Tracking</Text>
+      {DATA_MODE_OPTIONS.map((opt) => {
+        const isActive = settings.paceMode === opt.value;
+        return (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.windowOption, isActive && styles.windowOptionActive, { marginTop: Spacing.xs }]}
+            onPress={() => {
+              hapticTap();
+              update({ paceMode: opt.value, paceTrackingEnabled: opt.value !== 'off' });
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: isActive }}
+          >
+            <View style={styles.windowOptionHeader}>
+              <View style={[styles.windowRadio, isActive && styles.windowRadioActive]}>
+                {isActive && <View style={styles.windowRadioDot} />}
+              </View>
+              <Text style={[styles.windowLabel, isActive && styles.windowLabelActive]}>{opt.label}</Text>
+            </View>
+            <Text style={styles.windowDesc}>{opt.desc}</Text>
+          </TouchableOpacity>
+        );
+      })}
 
-      {settings.paceTrackingEnabled && (
+      {settings.paceMode === 'announce' && (
         <>
           {/* Pace Cue Frequency — collapsible */}
           <CollapsibleSection
@@ -265,6 +283,64 @@ export default function PaceSettingsScreen() {
           </View>
         </>
       )}
+
+      {/* Distance Callouts — available when GPS is on (record or announce) */}
+      {settings.paceMode !== 'off' && (
+        <CollapsibleSection
+          title="Distance Callouts"
+          icon="navigate-outline"
+          summary={settings.distanceCalloutEnabled ? cueDistanceLabel(settings.distanceCalloutStep, settings.paceUnit) : 'Off'}
+        >
+          <Text style={styles.sectionSub}>
+            Hear your total distance called out at regular intervals during the run.
+          </Text>
+          <View style={[styles.nestedToggle, { marginTop: 0 }]}>
+            <View style={{ flex: 1, marginRight: Spacing.md }}>
+              <Text style={styles.nestedToggleLabel}>Enable Callouts</Text>
+            </View>
+            <Switch
+              value={settings.distanceCalloutEnabled}
+              onValueChange={(v) => {
+                hapticTap();
+                update({ distanceCalloutEnabled: v });
+              }}
+              trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
+              thumbColor={Colors.white}
+            />
+          </View>
+          {settings.distanceCalloutEnabled && (
+            <View style={[styles.row, { marginTop: Spacing.sm }]}>
+              {DISTANCE_CALLOUT_STEPS.map((preset) => {
+                const isActive = settings.distanceCalloutStep === preset;
+                return (
+                  <TouchableOpacity
+                    key={preset}
+                    style={[styles.chip, isActive && styles.chipActive]}
+                    onPress={() => {
+                      hapticTap();
+                      update({ distanceCalloutStep: preset });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>
+                      {cueDistanceLabel(preset, settings.paceUnit)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </CollapsibleSection>
+      )}
+
+      {settings.paceMode === 'off' && (
+        <View style={[styles.infoBox, { marginTop: Spacing.md }]}>
+          <Ionicons name="information-circle-outline" size={18} color={Colors.accent} />
+          <Text style={styles.infoText}>
+            GPS is off. Turn on recording or announcing to track pace and distance.
+          </Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -272,6 +348,12 @@ export default function PaceSettingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl * 2 },
+  sectionTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
   toggleCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',

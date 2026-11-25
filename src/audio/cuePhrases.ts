@@ -25,6 +25,7 @@ import {
   defaultSegmentLabel,
   formatDistanceForSpeech,
   formatCueDistanceForSpeech,
+  estimatedPlannedSeconds,
   METERS_PER_KM,
   METERS_PER_MILE,
 } from '../workout/workoutTypes';
@@ -56,6 +57,8 @@ export interface CueContext {
   warningSeconds?: number;
   targetPace?: number; // target pace in min/unit for current interval
   paceUnit?: PaceUnit; // unit for target pace announcement
+  targetHeartRate?: number; // target heart rate in bpm for current interval
+  nextTargetHeartRate?: number; // target heart rate in bpm for next interval
 }
 
 /** A spoken phrase: the clips that play it in the premium voice, and the text device TTS speaks. */
@@ -118,6 +121,8 @@ export function buildCueContext(
     nextTargetPace: ni?.targetPace != null ? paceToUnit(ni.targetPace, paceUnit ?? 'minPerMile') : undefined,
     targetPace: ci.targetPace != null ? paceToUnit(ci.targetPace, paceUnit ?? 'minPerMile') : undefined,
     paceUnit,
+    targetHeartRate: ci.targetHeartRate,
+    nextTargetHeartRate: ni?.targetHeartRate,
   };
 }
 
@@ -279,6 +284,9 @@ export function intervalStartCue(ctx: CueContext): CuePhrase | null {
   if (ctx.targetPace != null && isFinite(ctx.targetPace)) {
     pieces.push(...targetPacePieces(ctx.targetPace, ctx.paceUnit));
   }
+  if (ctx.targetHeartRate != null) {
+    pieces.push(targetHrPiece(ctx.targetHeartRate));
+  }
   return toPhrase(pieces);
 }
 
@@ -293,6 +301,9 @@ export function warningCue(ctx: CueContext): CuePhrase | null {
     if (ctx.nextEffort) pieces.push(nextEffortPiece(ctx.nextEffort));
     if (ctx.nextTargetPace != null && isFinite(ctx.nextTargetPace)) {
       pieces.push(...targetPacePieces(ctx.nextTargetPace, ctx.paceUnit));
+    }
+    if (ctx.nextTargetHeartRate != null) {
+      pieces.push(targetHrPiece(ctx.nextTargetHeartRate));
     }
   } else if (!ctx.nextLabel) {
     pieces.push(almostDonePiece());
@@ -428,6 +439,16 @@ function targetPacePieces(paceMinutes: number, unit: PaceUnit = 'minPerMile'): P
   );
 }
 
+function targetHrPiece(bpm: number): Piece {
+  return piece(`Target heart rate: ${bpm} beats per minute.`);
+}
+
+/** Standalone heart-rate announcement (periodic during run). */
+export function heartRateCue(bpm: number): CuePhrase {
+  const text = `Heart rate: ${bpm} beats per minute.`;
+  return { clips: ['Heart rate:', String(bpm), 'beats per minute.'], text };
+}
+
 /** Pace cue as stitched clips: [Current pace] [7 minutes] [39 seconds] [per mile]. */
 export function paceCue(
   currentPaceMinutes: number | null,
@@ -491,6 +512,12 @@ export function globalPackClips(unit: PaceUnit): Clip[] {
   for (let d = step; d <= DISTANCE_PROGRESS_LIMIT[unit] + 1; d += step) {
     clips.push(distanceProgressPhrase(d, unit));
   }
+
+  clips.push('Heart rate:', 'beats per minute.');
+  for (let bpm = 40; bpm <= 220; bpm++) {
+    clips.push(String(bpm));
+  }
+
   return clips;
 }
 
@@ -533,6 +560,23 @@ export function enumerateWorkoutClips(workout: WorkoutDefinition, settings: AppS
       }
     }
   });
+
+  if (settings.distanceCalloutEnabled) {
+    const calloutStep = cueDistanceMeters(settings.distanceCalloutStep, settings.paceUnit);
+    if (calloutStep > 0) {
+      const totalSec = estimatedPlannedSeconds(intervals);
+      const maxDist = totalSec * (5 / METERS_PER_MILE) * 60;
+      for (let d = calloutStep; d <= maxDist + calloutStep; d += calloutStep) {
+        add(distanceSplitCue(d, 0, settings.paceUnit));
+      }
+    }
+  }
+
+  if (settings.hrMode === 'announce') {
+    for (let bpm = 40; bpm <= 220; bpm++) {
+      add(heartRateCue(bpm));
+    }
+  }
 
   return [...clips.values()];
 }

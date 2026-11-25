@@ -91,6 +91,15 @@ export type PaceWindowSize = 10 | 30 | 60;
 /** User preference for pace display units. */
 export type PaceUnit = 'minPerMile' | 'minPerKm';
 
+/**
+ * Whether a data stream is off, recorded silently, or recorded and announced.
+ * Used for pace tracking and heart rate during runs.
+ */
+export type DataMode = 'off' | 'record' | 'announce';
+
+/** How often to announce heart rate (seconds). */
+export type HrAnnouncementFrequency = 60 | 120 | 180 | 300;
+
 /** Maximum GPS accuracy (meters) to accept a sample. */
 export const MAX_ACCURACY_METERS = 20;
 

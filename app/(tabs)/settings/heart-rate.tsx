@@ -15,10 +15,14 @@ import {
   Switch,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
 import { track } from '../../../src/analytics/track';
+import { AppSettings, DEFAULT_SETTINGS } from '../../../src/workout/workoutTypes';
+import type { DataMode, HrAnnouncementFrequency } from '../../../src/pace/paceTypes';
+import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import {
   requestBluetoothAccess,
   retryHeartRateConnection,
@@ -57,10 +61,36 @@ const ACCESS_MESSAGES: Record<Exclude<BluetoothStatus, 'ready'>, string> = {
   unsupported: 'Bluetooth isn’t available on this device.',
 };
 
+const HR_MODE_OPTIONS: { value: DataMode; label: string; desc: string }[] = [
+  { value: 'off', label: 'Off', desc: 'Heart rate monitor will not be used' },
+  { value: 'record', label: 'Record Only', desc: 'Record for post-run analysis, no announcements' },
+  { value: 'announce', label: 'Record + Announce', desc: 'Record and hear your heart rate during the run' },
+];
+
+const HR_FREQ_OPTIONS: { value: HrAnnouncementFrequency; label: string }[] = [
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+];
+
 export default function HeartRateSettingsScreen() {
   const { device, connection, bpm, noReadings } = useHeartRateMonitor();
   const { user } = useAuth();
   const consent = useHrCloudConsent();
+  const [hrSettings, setHrSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSettings().then(setHrSettings);
+    }, []),
+  );
+
+  const updateSettings = async (partial: Partial<AppSettings>) => {
+    const next = { ...hrSettings, ...partial };
+    setHrSettings(next);
+    await saveSettings(next);
+  };
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<DiscoveredHrDevice[]>([]);
   const [accessIssue, setAccessIssue] = useState<Exclude<BluetoothStatus, 'ready'> | null>(null);
@@ -136,7 +166,7 @@ export default function HeartRateSettingsScreen() {
     await setPairedHrDevice({ id: d.id, name: d.name });
     setFound([]);
     setScanEmpty(false);
-    setGuidesOpen(false);
+    setHelpOpen(false);
     track('hr_device_paired', {
       device_name: d.name,
       replaced_device: !!device,
@@ -200,6 +230,58 @@ export default function HeartRateSettingsScreen() {
         Record your heart rate during workouts with a Bluetooth heart rate monitor. You’ll see
         your average, max, and a heart rate graph on each run’s details.
       </Text>
+
+      {/* During Runs — HR mode and announcement frequency */}
+      <Text style={styles.sectionTitle}>During Runs</Text>
+      {HR_MODE_OPTIONS.map((opt) => {
+        const isActive = hrSettings.hrMode === opt.value;
+        return (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.hrModeOption, isActive && styles.hrModeOptionActive]}
+            onPress={() => {
+              hapticTap();
+              updateSettings({ hrMode: opt.value });
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: isActive }}
+          >
+            <View style={styles.hrModeHeader}>
+              <View style={[styles.hrModeRadio, isActive && styles.hrModeRadioActive]}>
+                {isActive && <View style={styles.hrModeRadioDot} />}
+              </View>
+              <Text style={[styles.hrModeLabel, isActive && styles.hrModeLabelActive]}>{opt.label}</Text>
+            </View>
+            <Text style={styles.hrModeDesc}>{opt.desc}</Text>
+          </TouchableOpacity>
+        );
+      })}
+      {hrSettings.hrMode === 'announce' && (
+        <View style={styles.hrFreqSection}>
+          <Text style={styles.hrFreqLabel}>Announce every</Text>
+          <View style={styles.hrFreqRow}>
+            {HR_FREQ_OPTIONS.map((opt) => {
+              const isActive = hrSettings.hrAnnouncementFrequency === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.hrFreqChip, isActive && styles.hrFreqChipActive]}
+                  onPress={() => {
+                    hapticTap();
+                    updateSettings({ hrAnnouncementFrequency: opt.value });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.hrFreqChipText, isActive && styles.hrFreqChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {device && (
         <>
@@ -783,4 +865,86 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 20,
   },
+  hrModeOption: {
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.xs,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
+  },
+  hrModeOptionActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '12',
+  },
+  hrModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: 4,
+  },
+  hrModeRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.textMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hrModeRadioActive: {
+    borderColor: Colors.primary,
+  },
+  hrModeRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.primary,
+  },
+  hrModeLabel: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  hrModeLabelActive: { color: Colors.primary },
+  hrModeDesc: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    marginLeft: 28,
+  },
+  hrFreqSection: {
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.sm,
+  },
+  hrFreqLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  hrFreqRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  hrFreqChip: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.background,
+  },
+  hrFreqChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '18',
+  },
+  hrFreqChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  hrFreqChipTextActive: { color: Colors.primary },
 });

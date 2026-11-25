@@ -60,6 +60,7 @@ import {
   distanceProgressPhrase,
   distanceSplitCue,
   paceCue,
+  heartRateCue,
   GPS_OFF_CUE_TEXT,
   type CueContext,
   type CuePhrase,
@@ -238,7 +239,7 @@ export function useWorkoutRunner(
 
   // Pace tracking
   const paceTracker = usePaceTracker(
-    settings.paceTrackingEnabled,
+    settings.paceMode !== 'off',
     settings.paceWindow,
   );
   const paceTrackerRef = useRef(paceTracker);
@@ -294,6 +295,10 @@ export function useWorkoutRunner(
   const lastProgressMark = useRef(0);
   /** Last announced step for pace cues (time or distance). */
   const lastPaceMark = useRef(0);
+  /** Last announced step for heart-rate cues (workout-level elapsed seconds). */
+  const lastHrAnnounceMark = useRef(0);
+  /** Last announced step for total-distance callouts (meters). */
+  const lastDistanceCalloutMark = useRef(0);
   /** Running time in the current interval, excluding pauses. Used when the interval has no duration. */
   const intervalElapsedMsRef = useRef(resumeFrom?.intervalElapsedMs ?? 0);
   const lastRunningTickAtRef = useRef(0);
@@ -307,12 +312,17 @@ export function useWorkoutRunner(
     settings.paceCueDistance,
     settings.paceCueFrequency,
     settings.paceUnit,
+    settings.hrMode,
+    settings.hrAnnouncementFrequency,
+    settings.distanceCalloutEnabled,
+    settings.distanceCalloutStep,
   ].join(':');
   const cueScheduleKeyRef = useRef(cueScheduleKey);
   if (cueScheduleKeyRef.current !== cueScheduleKey) {
     cueScheduleKeyRef.current = cueScheduleKey;
     lastProgressMark.current = 0;
     lastPaceMark.current = 0;
+    lastHrAnnounceMark.current = 0;
   }
 
   // Force re-render while running so the timer updates smoothly
@@ -472,6 +482,7 @@ export function useWorkoutRunner(
       avgPaceMinPerMile: mps && mps > 0.3 ? METERS_PER_MILE / mps / 60 : null,
       avgPaceMinPerKm: mps && mps > 0.3 ? METERS_PER_KM / mps / 60 : null,
       targetPace: ci.targetPace,
+      targetHeartRate: ci.targetHeartRate,
       effort: ci.effort,
       segmentType: ci.segmentType,
       startElapsedMs,
@@ -489,6 +500,7 @@ export function useWorkoutRunner(
     lastRunningTickAtRef.current = 0;
     lastProgressMark.current = 0;
     lastPaceMark.current = 0;
+    lastHrAnnounceMark.current = 0;
   }, []);
 
   /** Save a completed workout to history and expose its ID for tag editing. */
@@ -777,7 +789,7 @@ export function useWorkoutRunner(
           }
 
           const wantPace =
-            settingsNow.paceTrackingEnabled &&
+            settingsNow.paceMode === 'announce' &&
             (!settingsNow.paceCueOnlyWithTarget || ci.targetPace != null);
           const currentPaceCue = () => {
             const tracker = paceTrackerRef.current;
@@ -806,6 +818,36 @@ export function useWorkoutRunner(
               if (mark != null) {
                 lastPaceMark.current = mark;
                 phrases.push(currentPaceCue());
+              }
+            }
+          }
+
+          // Heart-rate announcements (workout-level elapsed time, not interval time)
+          if (settingsNow.hrMode === 'announce') {
+            const hrBpm = heartRateRef.current.currentBpm;
+            if (hrBpm != null) {
+              const workoutSec = Math.floor(workoutElapsedAt(Date.now()) / 1000);
+              const hrStep = settingsNow.hrAnnouncementFrequency;
+              const hrMark = nextCueMark(workoutSec, hrStep, lastHrAnnounceMark.current);
+              if (hrMark != null) {
+                lastHrAnnounceMark.current = hrMark;
+                phrases.push(heartRateCue(hrBpm));
+              }
+            }
+          }
+
+          // Total-distance callouts (workout-level, skip during distance intervals with active progress cues)
+          if (settingsNow.distanceCalloutEnabled) {
+            const totalDist = paceTrackerRef.current.getPaceState().totalDistanceMeters;
+            const calloutStep = cueDistanceMeters(settingsNow.distanceCalloutStep, settingsNow.paceUnit);
+            const skipForDistInterval =
+              isDistanceInterval(ci) && settingsNow.progressCueBasis !== 'time';
+            if (calloutStep > 0 && !skipForDistInterval) {
+              const distMark = nextCueMark(totalDist, calloutStep, lastDistanceCalloutMark.current);
+              if (distMark != null) {
+                lastDistanceCalloutMark.current = distMark;
+                const workoutSec = Math.floor(workoutElapsedAt(Date.now()) / 1000);
+                phrases.push(distanceSplitCue(distMark * calloutStep, workoutSec, settingsNow.paceUnit));
               }
             }
           }
@@ -907,9 +949,10 @@ export function useWorkoutRunner(
   // The initial start happens inside `start()`, but if the user turns GPS
   // on after the run began, nothing was calling paceTracker.start().
   const needsGpsNow =
-    settings.paceTrackingEnabled ||
+    settings.paceMode !== 'off' ||
     hasDistanceFeature(workout) ||
-    distanceProgressCuesNeedGps(settings);
+    distanceProgressCuesNeedGps(settings) ||
+    settings.distanceCalloutEnabled;
   useEffect(() => {
     const phase = engineRef.current.phase;
     if (phase !== 'running' && phase !== 'paused') return;
@@ -1006,16 +1049,19 @@ export function useWorkoutRunner(
 
     // Start pace tracking if enabled, for distance workouts, or when cues are by distance
     const needsGps =
-      settingsRef.current.paceTrackingEnabled ||
+      settingsRef.current.paceMode !== 'off' ||
       hasDistanceFeature(workout) ||
-      distanceProgressCuesNeedGps(settingsRef.current);
+      distanceProgressCuesNeedGps(settingsRef.current) ||
+      settingsRef.current.distanceCalloutEnabled;
     usesGpsRef.current = needsGps;
     if (needsGps) {
       paceTrackerRef.current.reset();
       paceTrackerRef.current.start();
     }
+    lastHrAnnounceMark.current = 0;
+    lastDistanceCalloutMark.current = 0;
     heartRateRef.current.reset();
-    heartRateRef.current.start().then(() => {
+    if (settingsRef.current.hrMode !== 'off') heartRateRef.current.start().then(() => {
       if (heartRateRef.current.getDeviceName() == null) return;
       trackHr('hr_workout_started', { connected_at_start: getHrConnection() === 'connected' });
     });

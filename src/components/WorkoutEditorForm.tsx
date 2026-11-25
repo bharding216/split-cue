@@ -653,8 +653,11 @@ function summarizeSegment(seg: Segment, paceUnit: PaceUnit): string {
   const parts = [targetSummary(seg, paceUnit)];
   if (seg.targetPace != null) {
     parts.push(formatPace(seg.targetPace, paceUnit));
-    return parts.join(' · ');
   }
+  if (seg.targetHeartRate != null) {
+    parts.push(`${seg.targetHeartRate} bpm`);
+  }
+  if (seg.targetPace != null || seg.targetHeartRate != null) return parts.join(' · ');
   if (seg.intensity) parts.push(intensityLabel(seg.intensity));
   if (seg.effort != null && seg.effort !== intensityToEffort(seg.intensity)) parts.push(`Effort ${seg.effort}/10`);
   return parts.join(' · ');
@@ -774,6 +777,81 @@ function SegmentTypePicker({ onPick, onCancel }: { onPick: (t: SegmentType) => v
   );
 }
 
+function HeartRateTargetPicker({
+  targetHeartRate,
+  onChange,
+}: {
+  targetHeartRate?: number;
+  onChange: (hr: number | undefined) => void;
+}) {
+  const enabled = targetHeartRate != null;
+  return (
+    <View style={{ marginTop: Spacing.sm }}>
+      <TouchableOpacity
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          paddingVertical: Spacing.xs,
+        }}
+        onPress={() => {
+          hapticTap();
+          onChange(enabled ? undefined : 140);
+        }}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="heart" size={16} color={enabled ? Colors.danger : Colors.textMuted} />
+        <Text style={{ color: enabled ? Colors.danger : Colors.textMuted, fontSize: FontSize.sm }}>
+          {enabled ? `Target HR: ${targetHeartRate} bpm` : 'Set heart rate target'}
+        </Text>
+      </TouchableOpacity>
+      {enabled && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 4 }}>
+          <TouchableOpacity
+            onPress={() => {
+              hapticTap();
+              onChange(Math.max(40, (targetHeartRate ?? 140) - 5));
+            }}
+            hitSlop={8}
+          >
+            <Ionicons name="remove-circle-outline" size={28} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <TextInput
+            style={{
+              color: Colors.textPrimary,
+              fontSize: FontSize.lg,
+              fontWeight: '700',
+              textAlign: 'center',
+              minWidth: 56,
+              borderBottomWidth: 1,
+              borderBottomColor: Colors.danger + '44',
+              paddingVertical: 2,
+            }}
+            keyboardType="number-pad"
+            value={String(targetHeartRate ?? 140)}
+            onChangeText={(text) => {
+              const n = parseInt(text, 10);
+              if (!isNaN(n) && n >= 40 && n <= 220) onChange(n);
+            }}
+            maxLength={3}
+            returnKeyType="done"
+          />
+          <TouchableOpacity
+            onPress={() => {
+              hapticTap();
+              onChange(Math.min(220, (targetHeartRate ?? 140) + 5));
+            }}
+            hitSlop={8}
+          >
+            <Ionicons name="add-circle-outline" size={28} color={Colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={{ color: Colors.textMuted, fontSize: FontSize.sm }}>bpm</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function SegmentEditor({
   segment,
   onChange,
@@ -787,7 +865,7 @@ function SegmentEditor({
   const autoEffort = intensityToEffort(segment.intensity);
   const hasCustomEffort = segment.effort != null && segment.effort !== autoEffort;
   const [showMore, setShowMore] = useState(
-    segment.targetPace != null || !!segment.label || hasCustomEffort,
+    segment.targetPace != null || !!segment.label || hasCustomEffort || segment.targetHeartRate != null,
   );
   const [showLabel, setShowLabel] = useState(!!segment.label);
   const large = useLargeText();
@@ -936,6 +1014,12 @@ function SegmentEditor({
               <Ionicons name="chevron-forward" size={14} color={Colors.accent} />
             </TouchableOpacity>
           )}
+
+          {/* Heart Rate Target */}
+          <HeartRateTargetPicker
+            targetHeartRate={segment.targetHeartRate}
+            onChange={(hr) => update({ targetHeartRate: hr })}
+          />
 
           {showLabel ? (
             <View style={segStyles.labelRow}>

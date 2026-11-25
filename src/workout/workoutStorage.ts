@@ -340,6 +340,8 @@ const PROGRESS_CUE_BASES = new Set(['time', 'distance', 'auto']);
 const CUE_DISTANCE_PRESETS = new Set(['off', 'quarter', 'half', 'full']);
 const SPLIT_DISTANCE_PRESETS = new Set(['quarter', 'half', 'full']);
 const AUDIO_CUE_MODES = new Set(['voice', 'beeps', 'both', 'silent']);
+const DATA_MODES = new Set(['off', 'record', 'announce']);
+const HR_ANNOUNCEMENT_FREQUENCIES = new Set([60, 120, 180, 300]);
 
 /** Fill defaults and drop unknown cue-schedule values from older saves. */
 export function normalizeSettings(raw: Partial<AppSettings> | null | undefined): AppSettings {
@@ -360,6 +362,30 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
   if (!raw?.paceUnit) {
     parsed.paceUnit = localeDefaultPaceUnit();
   }
+
+  // Migrate paceTrackingEnabled -> paceMode for older saves
+  if (raw && !('paceMode' in raw) && 'paceTrackingEnabled' in raw) {
+    if (!raw.paceTrackingEnabled) {
+      parsed.paceMode = 'off';
+    } else {
+      const hasCues = (parsed.paceCueFrequency > 0 || parsed.paceCueDistance !== 'off');
+      parsed.paceMode = hasCues ? 'announce' : 'record';
+    }
+  }
+  if (!DATA_MODES.has(parsed.paceMode)) parsed.paceMode = DEFAULT_SETTINGS.paceMode;
+  parsed.paceTrackingEnabled = parsed.paceMode !== 'off';
+
+  if (!DATA_MODES.has(parsed.hrMode)) parsed.hrMode = DEFAULT_SETTINGS.hrMode;
+  if (!HR_ANNOUNCEMENT_FREQUENCIES.has(parsed.hrAnnouncementFrequency)) {
+    parsed.hrAnnouncementFrequency = DEFAULT_SETTINGS.hrAnnouncementFrequency;
+  }
+  if (typeof parsed.distanceCalloutEnabled !== 'boolean') {
+    parsed.distanceCalloutEnabled = DEFAULT_SETTINGS.distanceCalloutEnabled;
+  }
+  if (!CUE_DISTANCE_PRESETS.has(parsed.distanceCalloutStep) || parsed.distanceCalloutStep === 'off') {
+    parsed.distanceCalloutStep = DEFAULT_SETTINGS.distanceCalloutStep;
+  }
+
   return parsed;
 }
 
