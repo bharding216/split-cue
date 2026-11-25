@@ -21,43 +21,52 @@ const withBluetoothScanNeverForLocation: ConfigPlugin = (config) =>
     return cfg;
   });
 
-const VARIANT = process.env.APP_VARIANT; // 'development' | 'dev-a' | 'dev-b' | 'preview' | undefined (production)
+const VARIANT = process.env.APP_VARIANT;
 const IS_DEV = VARIANT === 'development';
 const IS_DEV_A = VARIANT === 'dev-a';
 const IS_DEV_B = VARIANT === 'dev-b';
 const IS_ANY_DEV = IS_DEV || IS_DEV_A || IS_DEV_B;
 const IS_PREVIEW = VARIANT === 'preview';
+const IS_PREVIEW_A = VARIANT === 'preview-a';
+const IS_PREVIEW_B = VARIANT === 'preview-b';
+const IS_ANY_PREVIEW = IS_PREVIEW || IS_PREVIEW_A || IS_PREVIEW_B;
 
-// Each development slot gets a unique bundle ID so all three can coexist on-device
+// Each slot gets a unique bundle ID so they can all coexist on-device
 const BUNDLE_ID =
-  IS_DEV   ? 'com.toddly.runningintervals.dev' :
-  IS_DEV_A ? 'com.toddly.runningintervals.deva' :
-  IS_DEV_B ? 'com.toddly.runningintervals.devb' :
-  IS_PREVIEW ? 'com.toddly.runningintervals.preview' :
+  IS_DEV       ? 'com.toddly.runningintervals.dev' :
+  IS_DEV_A     ? 'com.toddly.runningintervals.deva' :
+  IS_DEV_B     ? 'com.toddly.runningintervals.devb' :
+  IS_PREVIEW   ? 'com.toddly.runningintervals.preview' :
+  IS_PREVIEW_A ? 'com.toddly.runningintervals.previewa' :
+  IS_PREVIEW_B ? 'com.toddly.runningintervals.previewb' :
   'com.toddly.runningintervals';
 // Production Android package must match the Google Play Console listing
-const ANDROID_PACKAGE = IS_ANY_DEV || IS_PREVIEW ? BUNDLE_ID : 'com.surmount.pacecue';
+const ANDROID_PACKAGE = IS_ANY_DEV || IS_ANY_PREVIEW ? BUNDLE_ID : 'com.surmount.pacecue';
 // Dev/preview are signed by the Toddly team and production by the Surmount team; App Groups are
 // team-owned, so preview keeps Toddly's group (a preview-specific one can't be created in Apple)
 const APP_GROUP =
-  IS_DEV   ? 'group.com.toddly.runningintervals.dev' :
-  IS_DEV_A ? 'group.com.toddly.runningintervals.deva' :
-  IS_DEV_B ? 'group.com.toddly.runningintervals.devb' :
-  IS_PREVIEW ? 'group.com.toddly.runningintervals' :
+  IS_DEV       ? 'group.com.toddly.runningintervals.dev' :
+  IS_DEV_A     ? 'group.com.toddly.runningintervals.deva' :
+  IS_DEV_B     ? 'group.com.toddly.runningintervals.devb' :
+  IS_PREVIEW_A ? 'group.com.toddly.runningintervals.previewa' :
+  IS_PREVIEW_B ? 'group.com.toddly.runningintervals.previewb' :
+  IS_PREVIEW   ? 'group.com.toddly.runningintervals' :
   'group.com.surmount.pacecue';
 // Toddly still owns the production `.widgets` App ID, so the Surmount-signed production widget uses `.widget`
-const WIDGET_BUNDLE_ID = IS_ANY_DEV || IS_PREVIEW ? `${BUNDLE_ID}.widgets` : `${BUNDLE_ID}.widget`;
+const WIDGET_BUNDLE_ID = IS_ANY_DEV || IS_ANY_PREVIEW ? `${BUNDLE_ID}.widgets` : `${BUNDLE_ID}.widget`;
 
 const APP_NAME =
-  IS_DEV   ? 'SplitCue Dev Build' :
-  IS_DEV_A ? 'SplitCue Dev A' :
-  IS_DEV_B ? 'SplitCue Dev B' :
-  IS_PREVIEW ? 'SplitCue Preview Build' :
+  IS_DEV       ? 'SplitCue Dev Build' :
+  IS_DEV_A     ? 'SplitCue Dev A' :
+  IS_DEV_B     ? 'SplitCue Dev B' :
+  IS_PREVIEW   ? 'SplitCue Preview Build' :
+  IS_PREVIEW_A ? 'SplitCue Preview A' :
+  IS_PREVIEW_B ? 'SplitCue Preview B' :
   'SplitCue';
 
 const GOOGLE_SERVICES_FILE = IS_ANY_DEV
   ? './google-services.development.json'
-  : IS_PREVIEW
+  : IS_ANY_PREVIEW
     ? './google-services.preview.json'
     : './google-services.production.json';
 
@@ -73,10 +82,12 @@ const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   userInterfaceStyle: 'dark',
   backgroundColor: '#0A0A0F',
   scheme:
-    IS_DEV   ? 'pacecue-dev' :
-    IS_DEV_A ? 'pacecue-deva' :
-    IS_DEV_B ? 'pacecue-devb' :
-    IS_PREVIEW ? 'pacecue-preview' :
+    IS_DEV       ? 'pacecue-dev' :
+    IS_DEV_A     ? 'pacecue-deva' :
+    IS_DEV_B     ? 'pacecue-devb' :
+    IS_PREVIEW   ? 'pacecue-preview' :
+    IS_PREVIEW_A ? 'pacecue-previewa' :
+    IS_PREVIEW_B ? 'pacecue-previewb' :
     'pacecue',
   ios: {
     supportsTablet: false,

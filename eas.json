@@ -31,6 +31,18 @@
         "APP_VARIANT": "preview"
       }
     },
+    "preview-a": {
+      "extends": "preview",
+      "env": {
+        "APP_VARIANT": "preview-a"
+      }
+    },
+    "preview-b": {
+      "extends": "preview",
+      "env": {
+        "APP_VARIANT": "preview-b"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production",
