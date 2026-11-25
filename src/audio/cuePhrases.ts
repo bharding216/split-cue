@@ -10,7 +10,7 @@
  * real neighbors, which keeps its cache key independent of the workout.
  */
 
-import type { PaceUnit } from '../pace/paceTypes';
+import type { PaceUnit, HrAnnouncementFormat } from '../pace/paceTypes';
 import { formatPaceForSpeech } from '../pace/paceTracker';
 import { paceToUnit } from '../workout/goalPaceSuggestions';
 import {
@@ -444,7 +444,11 @@ function targetHrPiece(bpm: number): Piece {
 }
 
 /** Standalone heart-rate announcement (periodic during run). */
-export function heartRateCue(bpm: number): CuePhrase {
+export function heartRateCue(bpm: number, format: HrAnnouncementFormat = 'long'): CuePhrase {
+  if (format === 'short') {
+    const text = `Heart rate: ${bpm}.`;
+    return { clips: ['Heart rate:', String(bpm)], text };
+  }
   const text = `Heart rate: ${bpm} beats per minute.`;
   return { clips: ['Heart rate:', String(bpm), 'beats per minute.'], text };
 }
@@ -574,7 +578,7 @@ export function enumerateWorkoutClips(workout: WorkoutDefinition, settings: AppS
 
   if (settings.hrMode === 'announce') {
     for (let bpm = 40; bpm <= 220; bpm++) {
-      add(heartRateCue(bpm));
+      add(heartRateCue(bpm, settings.hrAnnouncementFormat));
     }
   }
 

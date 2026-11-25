@@ -1467,9 +1467,9 @@ function MidRunSettingsSheet({
               </View>
             </CollapsibleSection>
 
-            {/* ── Interval Progress ── */}
+            {/* ── Interval Progress Announcements ── */}
             <CollapsibleSection
-              title="Interval Progress"
+              title="Interval Progress Announcements"
               icon="bar-chart-outline"
               summary={(() => {
                 const basis = settings.progressCueBasis;

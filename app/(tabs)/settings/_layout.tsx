@@ -15,12 +15,14 @@ export default function SettingsLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Settings' }} />
       <Stack.Screen name="audio" options={{ title: 'Audio & Cues' }} />
-      <Stack.Screen name="pace" options={{ title: 'Pace Tracking' }} />
-      <Stack.Screen name="heart-rate" options={{ title: 'Heart Rate Monitor' }} />
-      <Stack.Screen name="general" options={{ title: 'General' }} />
+      <Stack.Screen name="pace" options={{ title: 'Pace & Distance' }} />
+      <Stack.Screen name="heart-rate" options={{ title: 'Heart Rate' }} />
+      <Stack.Screen name="workout-preferences" options={{ title: 'Workout Preferences' }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+      <Stack.Screen name="data-backup" options={{ title: 'Data & Backup' }} />
       <Stack.Screen name="profile" options={{ title: 'Running Profile' }} />
       <Stack.Screen name="account" options={{ title: 'Account' }} />
-      <Stack.Screen name="about" options={{ title: 'Share & Feedback' }} />
+      <Stack.Screen name="about" options={{ title: 'Help & Feedback' }} />
     </Stack>
   );
 }

@@ -1,7 +1,6 @@
 /**
- * Pace tracking settings — simplified with collapsible sections.
- * GPS toggle is always visible; cue frequency, target filtering,
- * and pace window collapse with summaries.
+ * Pace & Distance settings — GPS mode and pace smoothing.
+ * Announcement controls have moved to Audio & Cues.
  */
 
 import React, { useCallback, useState } from 'react';
@@ -9,7 +8,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Switch,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
@@ -19,13 +17,7 @@ import {
   AppSettings,
   DEFAULT_SETTINGS,
 } from '../../../src/workout/workoutTypes';
-import type {
-  PaceCueFrequency,
-  PaceWindowSize,
-  DataMode,
-  CueDistancePreset,
-} from '../../../src/pace/paceTypes';
-import { cueDistanceLabel } from '../../../src/audio/cueSchedule';
+import type { PaceWindowSize, DataMode, PaceCueFrequency } from '../../../src/pace/paceTypes';
 import { loadSettings, saveSettings } from '../../../src/workout/workoutStorage';
 import {
   Colors,
@@ -34,14 +26,6 @@ import {
   BorderRadius,
 } from '../../../src/constants/theme';
 import { hapticTap } from '../../../src/audio/haptics';
-import { paceCuesEnabled } from '../../../src/audio/cueSchedule';
-import {
-  CueBasisToggle,
-  CueDistanceChips,
-  PROGRESS_CUE_BASES,
-  AUTO_TIME_STEP_LABEL,
-  AUTO_DISTANCE_STEP_LABEL,
-} from '../../../src/components/CueScheduleControls';
 import CollapsibleSection from '../../../src/components/CollapsibleSection';
 
 const DATA_MODE_OPTIONS: { value: DataMode; label: string; desc: string }[] = [
@@ -50,15 +34,11 @@ const DATA_MODE_OPTIONS: { value: DataMode; label: string; desc: string }[] = [
   { value: 'announce', label: 'Record + Announce', desc: 'Track pace and hear updates during your run' },
 ];
 
-const DISTANCE_CALLOUT_STEPS: CueDistancePreset[] = ['quarter', 'half', 'full'];
-
-const CUE_FREQUENCY_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
+const PACE_FREQ_OPTIONS: { value: PaceCueFrequency; label: string }[] = [
   { value: 0, label: 'Off' },
   { value: 15, label: '15s' },
   { value: 30, label: '30s' },
-  { value: 45, label: '45s' },
   { value: 60, label: '1 min' },
-  { value: 90, label: '1:30' },
   { value: 120, label: '2 min' },
 ];
 
@@ -67,22 +47,6 @@ const WINDOW_OPTIONS: { value: PaceWindowSize; label: string; desc: string }[] =
   { value: 30, label: '30s', desc: 'Balanced — good for most runs' },
   { value: 60, label: '60s', desc: 'Smooth — best for tempo & long runs' },
 ];
-
-function cueFrequencySummary(settings: AppSettings): string {
-  const basis =
-    settings.paceCueBasis === 'auto'
-      ? 'Match interval'
-      : settings.paceCueBasis === 'time'
-        ? 'By time'
-        : 'By distance';
-
-  if (settings.paceCueBasis !== 'distance') {
-    const freq = CUE_FREQUENCY_OPTIONS.find((o) => o.value === settings.paceCueFrequency);
-    if (freq && freq.value > 0) return `${basis} · ${freq.label}`;
-    if (freq?.value === 0) return `${basis} · Off`;
-  }
-  return basis;
-}
 
 function windowSummary(settings: AppSettings): string {
   const opt = WINDOW_OPTIONS.find((o) => o.value === settings.paceWindow);
@@ -113,7 +77,7 @@ export default function PaceSettingsScreen() {
         return (
           <TouchableOpacity
             key={opt.value}
-            style={[styles.windowOption, isActive && styles.windowOptionActive, { marginTop: Spacing.xs }]}
+            style={[styles.radioOption, isActive && styles.radioOptionActive, { marginTop: Spacing.xs }]}
             onPress={() => {
               hapticTap();
               update({ paceMode: opt.value, paceTrackingEnabled: opt.value !== 'off' });
@@ -122,214 +86,98 @@ export default function PaceSettingsScreen() {
             accessibilityRole="radio"
             accessibilityState={{ checked: isActive }}
           >
-            <View style={styles.windowOptionHeader}>
-              <View style={[styles.windowRadio, isActive && styles.windowRadioActive]}>
-                {isActive && <View style={styles.windowRadioDot} />}
+            <View style={styles.radioHeader}>
+              <View style={[styles.radio, isActive && styles.radioActive]}>
+                {isActive && <View style={styles.radioDot} />}
               </View>
-              <Text style={[styles.windowLabel, isActive && styles.windowLabelActive]}>{opt.label}</Text>
+              <Text style={[styles.radioLabel, isActive && styles.radioLabelActive]}>{opt.label}</Text>
             </View>
-            <Text style={styles.windowDesc}>{opt.desc}</Text>
+            <Text style={styles.radioDesc}>{opt.desc}</Text>
           </TouchableOpacity>
         );
       })}
 
+      {/* Pace announcement frequency — inline when announce mode is on */}
       {settings.paceMode === 'announce' && (
-        <>
-          {/* Pace Cue Frequency — collapsible */}
-          <CollapsibleSection
-            title="Pace Cue Frequency"
-            icon="megaphone-outline"
-            summary={cueFrequencySummary(settings)}
-          >
-            <Text style={styles.sectionSub}>
-              {settings.paceCueBasis === 'auto'
-                ? 'Announces pace by time in timed intervals, by distance in distance intervals.'
-                : settings.paceCueBasis === 'distance'
-                  ? 'Announce your pace each time you cover this distance.'
-                  : 'How often to announce your current pace.'}
-            </Text>
-            <CueBasisToggle
-              value={settings.paceCueBasis}
-              options={PROGRESS_CUE_BASES}
-              onChange={(paceCueBasis) => update({ paceCueBasis })}
-            />
-            {settings.paceCueBasis === 'auto' && (
-              <Text style={styles.stepLabel}>{AUTO_TIME_STEP_LABEL}</Text>
-            )}
-            {settings.paceCueBasis !== 'distance' && (
-              <View style={styles.row}>
-                {CUE_FREQUENCY_OPTIONS.map((opt) => (
-                  <TouchableOpacity
-                    key={opt.value}
-                    style={[
-                      styles.chip,
-                      settings.paceCueFrequency === opt.value && styles.chipActive,
-                    ]}
-                    onPress={() => {
-                      hapticTap();
-                      update({ paceCueFrequency: opt.value });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.chipLabel,
-                        settings.paceCueFrequency === opt.value &&
-                          styles.chipLabelActive,
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {settings.paceCueBasis === 'auto' && (
-              <Text style={styles.stepLabel}>{AUTO_DISTANCE_STEP_LABEL}</Text>
-            )}
-            {settings.paceCueBasis !== 'time' && (
-              <CueDistanceChips
-                value={settings.paceCueDistance}
-                unit={settings.paceUnit}
-                onChange={(paceCueDistance) => update({ paceCueDistance })}
-              />
-            )}
-
-            {/* Only With Target Pace — nested inside cue frequency */}
-            {paceCuesEnabled(settings) && (
-              <View style={styles.nestedToggle}>
-                <View style={{ flex: 1, marginRight: Spacing.md }}>
-                  <Text style={styles.nestedToggleLabel}>Only With Target Pace</Text>
-                  <Text style={styles.nestedToggleHint}>
-                    Skip pace cues on intervals without a target
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.paceCueOnlyWithTarget}
-                  onValueChange={(v) => {
-                    hapticTap();
-                    update({ paceCueOnlyWithTarget: v });
-                  }}
-                  trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-                  thumbColor={Colors.white}
-                  accessibilityLabel="Only With Target Pace"
-                />
-              </View>
-            )}
-          </CollapsibleSection>
-
-          {/* Pace Window — collapsible */}
-          <CollapsibleSection
-            title="Pace Window"
-            icon="options-outline"
-            summary={windowSummary(settings)}
-          >
-            <Text style={styles.sectionSub}>
-              Time window used to calculate your rolling pace
-            </Text>
-            {WINDOW_OPTIONS.map((opt) => {
-              const isActive = settings.paceWindow === opt.value;
+        <View style={styles.freqSection}>
+          <Text style={styles.freqLabel}>Announce pace every</Text>
+          <View style={styles.freqRow}>
+            {PACE_FREQ_OPTIONS.map((opt) => {
+              const isActive = settings.paceCueFrequency === opt.value;
               return (
                 <TouchableOpacity
                   key={opt.value}
-                  style={[
-                    styles.windowOption,
-                    isActive && styles.windowOptionActive,
-                  ]}
+                  style={[styles.freqChip, isActive && styles.freqChipActive]}
                   onPress={() => {
                     hapticTap();
-                    update({ paceWindow: opt.value });
+                    update({ paceCueFrequency: opt.value });
                   }}
                   activeOpacity={0.7}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: isActive }}
                 >
-                  <View style={styles.windowOptionHeader}>
-                    <View
-                      style={[
-                        styles.windowRadio,
-                        isActive && styles.windowRadioActive,
-                      ]}
-                    >
-                      {isActive && <View style={styles.windowRadioDot} />}
-                    </View>
-                    <Text
-                      style={[
-                        styles.windowLabel,
-                        isActive && styles.windowLabelActive,
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </View>
-                  <Text style={styles.windowDesc}>{opt.desc}</Text>
+                  <Text style={[styles.freqChipText, isActive && styles.freqChipTextActive]}>
+                    {opt.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
-          </CollapsibleSection>
-
-          {/* Info — always visible */}
-          <View style={styles.infoBox}>
-            <Ionicons
-              name="information-circle-outline"
-              size={18}
-              color={Colors.accent}
-            />
-            <Text style={styles.infoText}>
-              Pace tracking uses GPS and will increase battery usage. Set a
-              target pace per interval in the workout editor for smart
-              comparisons.
-            </Text>
           </View>
-        </>
+          <Text style={styles.previewText}>
+            {settings.paceUnit === 'minPerMile'
+              ? '\u{1F50A} "Current pace 7 minutes 39 seconds per mile"'
+              : '\u{1F50A} "Current pace 4 minutes 45 seconds per kilometer"'}
+          </Text>
+        </View>
       )}
 
-      {/* Distance Callouts — available when GPS is on (record or announce) */}
+      {/* Pace Smoothing — collapsible, visible when GPS is on */}
       {settings.paceMode !== 'off' && (
         <CollapsibleSection
-          title="Distance Callouts"
-          icon="navigate-outline"
-          summary={settings.distanceCalloutEnabled ? cueDistanceLabel(settings.distanceCalloutStep, settings.paceUnit) : 'Off'}
+          title="Pace Smoothing"
+          icon="options-outline"
+          summary={windowSummary(settings)}
         >
           <Text style={styles.sectionSub}>
-            Hear your total distance called out at regular intervals during the run.
+            Controls how quickly your displayed pace responds to changes in running speed
           </Text>
-          <View style={[styles.nestedToggle, { marginTop: 0 }]}>
-            <View style={{ flex: 1, marginRight: Spacing.md }}>
-              <Text style={styles.nestedToggleLabel}>Enable Callouts</Text>
-            </View>
-            <Switch
-              value={settings.distanceCalloutEnabled}
-              onValueChange={(v) => {
-                hapticTap();
-                update({ distanceCalloutEnabled: v });
-              }}
-              trackColor={{ false: Colors.surfaceLight, true: Colors.primaryDim }}
-              thumbColor={Colors.white}
-            />
-          </View>
-          {settings.distanceCalloutEnabled && (
-            <View style={[styles.row, { marginTop: Spacing.sm }]}>
-              {DISTANCE_CALLOUT_STEPS.map((preset) => {
-                const isActive = settings.distanceCalloutStep === preset;
-                return (
-                  <TouchableOpacity
-                    key={preset}
-                    style={[styles.chip, isActive && styles.chipActive]}
-                    onPress={() => {
-                      hapticTap();
-                      update({ distanceCalloutStep: preset });
-                    }}
-                    activeOpacity={0.7}
+          {WINDOW_OPTIONS.map((opt) => {
+            const isActive = settings.paceWindow === opt.value;
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                style={[
+                  styles.radioOption,
+                  isActive && styles.radioOptionActive,
+                ]}
+                onPress={() => {
+                  hapticTap();
+                  update({ paceWindow: opt.value });
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: isActive }}
+              >
+                <View style={styles.radioHeader}>
+                  <View
+                    style={[
+                      styles.radio,
+                      isActive && styles.radioActive,
+                    ]}
                   >
-                    <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>
-                      {cueDistanceLabel(preset, settings.paceUnit)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
+                    {isActive && <View style={styles.radioDot} />}
+                  </View>
+                  <Text
+                    style={[
+                      styles.radioLabel,
+                      isActive && styles.radioLabelActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </View>
+                <Text style={styles.radioDesc}>{opt.desc}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </CollapsibleSection>
       )}
 
@@ -340,6 +188,13 @@ export default function PaceSettingsScreen() {
             GPS is off. Turn on recording or announcing to track pace and distance.
           </Text>
         </View>
+      )}
+
+      {/* Battery info — small, at the bottom */}
+      {settings.paceMode !== 'off' && (
+        <Text style={styles.batteryHint}>
+          Pace tracking uses GPS and will increase battery usage.
+        </Text>
       )}
     </ScrollView>
   );
@@ -354,86 +209,12 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
-  toggleCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceLight,
-  },
-  toggleLabel: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  toggleHint: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
   sectionSub: {
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     marginBottom: Spacing.sm,
   },
-  stepLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-    marginTop: Spacing.md,
-  },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceLight,
-    gap: Spacing.xs,
-  },
-  chipActive: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + '18',
-  },
-  chipLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    fontWeight: '600',
-  },
-  chipLabelActive: { color: Colors.primary },
-  nestedToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginTop: Spacing.md,
-    borderWidth: 1.5,
-    borderColor: Colors.surfaceLight,
-  },
-  nestedToggleLabel: {
-    fontSize: FontSize.md,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-  },
-  nestedToggleHint: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-  windowOption: {
+  radioOption: {
     backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
@@ -441,17 +222,17 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.surfaceLight,
   },
-  windowOptionActive: {
+  radioOptionActive: {
     borderColor: Colors.primary,
     backgroundColor: Colors.primary + '12',
   },
-  windowOptionHeader: {
+  radioHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: 4,
   },
-  windowRadio: {
+  radio: {
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -460,23 +241,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  windowRadioActive: {
+  radioActive: {
     borderColor: Colors.primary,
   },
-  windowRadioDot: {
+  radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: Colors.primary,
   },
-  windowLabel: {
+  radioLabel: {
     flexShrink: 1,
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textSecondary,
   },
-  windowLabelActive: { color: Colors.primary },
-  windowDesc: {
+  radioLabelActive: { color: Colors.primary },
+  freqSection: {
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.sm,
+  },
+  freqLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  freqRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  freqChip: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceLight,
+    backgroundColor: Colors.background,
+  },
+  freqChipActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '18',
+  },
+  freqChipText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  freqChipTextActive: { color: Colors.primary },
+  previewText: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    marginTop: Spacing.sm,
+    lineHeight: 18,
+  },
+  radioDesc: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
     marginLeft: 28,
@@ -497,5 +320,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
     lineHeight: 20,
+  },
+  batteryHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginTop: Spacing.lg,
+    lineHeight: 18,
   },
 });

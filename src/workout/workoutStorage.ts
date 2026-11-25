@@ -342,6 +342,7 @@ const SPLIT_DISTANCE_PRESETS = new Set(['quarter', 'half', 'full']);
 const AUDIO_CUE_MODES = new Set(['voice', 'beeps', 'both', 'silent']);
 const DATA_MODES = new Set(['off', 'record', 'announce']);
 const HR_ANNOUNCEMENT_FREQUENCIES = new Set([60, 120, 180, 300]);
+const HR_ANNOUNCEMENT_FORMATS = new Set(['short', 'long']);
 
 /** Fill defaults and drop unknown cue-schedule values from older saves. */
 export function normalizeSettings(raw: Partial<AppSettings> | null | undefined): AppSettings {
@@ -378,6 +379,9 @@ export function normalizeSettings(raw: Partial<AppSettings> | null | undefined):
   if (!DATA_MODES.has(parsed.hrMode)) parsed.hrMode = DEFAULT_SETTINGS.hrMode;
   if (!HR_ANNOUNCEMENT_FREQUENCIES.has(parsed.hrAnnouncementFrequency)) {
     parsed.hrAnnouncementFrequency = DEFAULT_SETTINGS.hrAnnouncementFrequency;
+  }
+  if (!HR_ANNOUNCEMENT_FORMATS.has(parsed.hrAnnouncementFormat)) {
+    parsed.hrAnnouncementFormat = DEFAULT_SETTINGS.hrAnnouncementFormat;
   }
   if (typeof parsed.distanceCalloutEnabled !== 'boolean') {
     parsed.distanceCalloutEnabled = DEFAULT_SETTINGS.distanceCalloutEnabled;

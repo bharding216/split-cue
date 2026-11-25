@@ -21,7 +21,7 @@ export const Colors = {
 
   textPrimary: '#F1F5F9',
   textSecondary: '#94A3B8',
-  textMuted: '#475569',
+  textMuted: '#64748B',
 
   hard: '#F87171',
   easy: '#4ADE80',

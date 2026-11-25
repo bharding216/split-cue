@@ -831,7 +831,7 @@ export function useWorkoutRunner(
               const hrMark = nextCueMark(workoutSec, hrStep, lastHrAnnounceMark.current);
               if (hrMark != null) {
                 lastHrAnnounceMark.current = hrMark;
-                phrases.push(heartRateCue(hrBpm));
+                phrases.push(heartRateCue(hrBpm, settingsNow.hrAnnouncementFormat));
               }
             }
           }

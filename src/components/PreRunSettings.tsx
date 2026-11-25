@@ -145,7 +145,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             <View style={styles.summaryItem}>
               <Ionicons name="navigate-outline" size={14} color={Colors.primary} />
               <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>
-                Distance Callouts
+                Total Distance Announcements
               </Text>
             </View>
           )}
@@ -241,7 +241,7 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
               <View style={styles.settingInfo}>
                 <Ionicons name="time-outline" size={18} color={Colors.textSecondary} />
                 <View style={styles.settingText}>
-                  <Text style={styles.settingLabel}>Interval Progress</Text>
+                  <Text style={styles.settingLabel}>Interval Progress Announcements</Text>
                   <Text style={styles.settingHint}>{progressScheduleLabel}</Text>
                 </View>
               </View>

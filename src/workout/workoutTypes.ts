@@ -288,6 +288,7 @@ import type {
   SplitDistancePreset,
   DataMode,
   HrAnnouncementFrequency,
+  HrAnnouncementFormat,
 } from '../pace/paceTypes';
 
 export interface AppSettings {
@@ -318,6 +319,8 @@ export interface AppSettings {
   hrMode: DataMode;
   /** How often to announce heart rate when hrMode is 'announce' (seconds). */
   hrAnnouncementFrequency: HrAnnouncementFrequency;
+  /** Voice format for heart rate announcements: 'short' ("Heart rate 142") or 'long' ("Heart rate 142 beats per minute"). */
+  hrAnnouncementFormat: HrAnnouncementFormat;
   /** Announce total distance covered at regular intervals during any run. */
   distanceCalloutEnabled: boolean;
   /** Distance step for total-distance callouts. */
@@ -348,6 +351,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   paceMode: 'announce',
   hrMode: 'record',
   hrAnnouncementFrequency: 60,
+  hrAnnouncementFormat: 'long',
   distanceCalloutEnabled: false,
   distanceCalloutStep: 'full',
 };

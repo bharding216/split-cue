@@ -100,6 +100,9 @@ export type DataMode = 'off' | 'record' | 'announce';
 /** How often to announce heart rate (seconds). */
 export type HrAnnouncementFrequency = 60 | 120 | 180 | 300;
 
+/** Voice format for heart rate announcements. */
+export type HrAnnouncementFormat = 'short' | 'long';
+
 /** Maximum GPS accuracy (meters) to accept a sample. */
 export const MAX_ACCURACY_METERS = 20;
 
