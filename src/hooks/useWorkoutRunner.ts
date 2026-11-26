@@ -448,9 +448,15 @@ export function useWorkoutRunner(
     const ci = currentInterval(s);
     if (!ci) return;
     const now = Date.now();
-    const actualMs = intervalStartedAtRef.current > 0
-      ? now - intervalStartedAtRef.current
-      : ci.durationSeconds * 1000;
+
+    // A timed interval that expired before this tick (e.g. while backgrounded) ended at its scheduled time.
+    const expiredEarlier = s.phase === 'running' && !isUntimedInterval(ci) && s.intervalEndsAt < now;
+    const endElapsedMs = workoutElapsedAt(expiredEarlier ? s.intervalEndsAt : now);
+    const startElapsedMs = Math.min(intervalStartElapsedRef.current, endElapsedMs);
+    intervalStartElapsedRef.current = endElapsedMs;
+
+    // Use pause-aware elapsed time so split durations add up to totalDurationMs.
+    const actualMs = endElapsedMs - startElapsedMs || ci.durationSeconds * 1000;
 
     const ps = paceTrackerRef.current.getPaceState();
     const distNow = ps.totalDistanceMeters;
@@ -461,12 +467,6 @@ export function useWorkoutRunner(
     const mps = hasDist ? intervalDist / actualSec : null;
     const METERS_PER_MILE = 1609.344;
     const METERS_PER_KM = 1000;
-
-    // A timed interval that expired before this tick (e.g. while backgrounded) ended at its scheduled time.
-    const expiredEarlier = s.phase === 'running' && !isUntimedInterval(ci) && s.intervalEndsAt < now;
-    const endElapsedMs = workoutElapsedAt(expiredEarlier ? s.intervalEndsAt : now);
-    const startElapsedMs = Math.min(intervalStartElapsedRef.current, endElapsedMs);
-    intervalStartElapsedRef.current = endElapsedMs;
 
     const hrSlice = sliceHeartRate(heartRateRef.current.getSamples(), startElapsedMs, endElapsedMs);
     const hr = summarizeHeartRate(hrSlice);

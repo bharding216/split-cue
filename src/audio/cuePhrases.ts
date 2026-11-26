@@ -443,14 +443,19 @@ function targetHrPiece(bpm: number): Piece {
   return piece(`Target heart rate: ${bpm} beats per minute.`);
 }
 
+/** BPM number clip with surrounding context so the multilingual TTS model speaks English. */
+function hrBpmClip(bpm: number): Clip {
+  return { text: String(bpm), previousText: 'Heart rate:', nextText: 'beats per minute.' };
+}
+
 /** Standalone heart-rate announcement (periodic during run). */
 export function heartRateCue(bpm: number, format: HrAnnouncementFormat = 'long'): CuePhrase {
   if (format === 'short') {
     const text = `Heart rate: ${bpm}.`;
-    return { clips: ['Heart rate:', String(bpm)], text };
+    return { clips: ['Heart rate:', hrBpmClip(bpm)], text };
   }
   const text = `Heart rate: ${bpm} beats per minute.`;
-  return { clips: ['Heart rate:', String(bpm), 'beats per minute.'], text };
+  return { clips: ['Heart rate:', hrBpmClip(bpm), 'beats per minute.'], text };
 }
 
 /** Pace cue as stitched clips: [Current pace] [7 minutes] [39 seconds] [per mile]. */
@@ -519,7 +524,7 @@ export function globalPackClips(unit: PaceUnit): Clip[] {
 
   clips.push('Heart rate:', 'beats per minute.');
   for (let bpm = 40; bpm <= 220; bpm++) {
-    clips.push(String(bpm));
+    clips.push(hrBpmClip(bpm));
   }
 
   return clips;

@@ -83,6 +83,17 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // Quality gate: reject very short or single-word messages.
+  const MIN_MESSAGE_LENGTH = 10;
+  const MIN_WORD_COUNT = 2;
+  const words = message.split(/\s+/).filter((w: string) => w.length > 0);
+  if (message.length < MIN_MESSAGE_LENGTH || words.length < MIN_WORD_COUNT) {
+    return new Response(
+      JSON.stringify({ error: "Please provide a bit more detail so we can help." }),
+      { status: 400, headers: { ...corsHeaders(origin), "Content-Type": "application/json" } },
+    );
+  }
+
   // Resolve the authenticated user, if any.
   const authHeader = req.headers.get("authorization") ?? "";
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -96,6 +107,39 @@ Deno.serve(async (req: Request) => {
     SUPABASE_URL,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // Rate limit: max 3 submissions per user (or device fingerprint) in 24 hours.
+  const RATE_LIMIT_WINDOW_HOURS = 24;
+  const RATE_LIMIT_MAX = 3;
+  const windowStart = new Date(
+    Date.now() - RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000,
+  ).toISOString();
+
+  // Build a filter — prefer user_id, fall back to device fingerprint.
+  let rateLimitQuery = serviceClient
+    .from("feedback")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", windowStart);
+
+  if (userId) {
+    rateLimitQuery = rateLimitQuery.eq("user_id", userId);
+  } else if (deviceModel && platform && osVersion) {
+    rateLimitQuery = rateLimitQuery
+      .is("user_id", null)
+      .eq("device_model", deviceModel)
+      .eq("platform", platform)
+      .eq("os_version", osVersion);
+  }
+
+  const { count: recentCount } = await rateLimitQuery;
+  if (recentCount !== null && recentCount >= RATE_LIMIT_MAX) {
+    return new Response(
+      JSON.stringify({
+        error: "You've sent several messages recently — please wait a bit before sending more.",
+      }),
+      { status: 429, headers: { ...corsHeaders(origin), "Content-Type": "application/json" } },
+    );
+  }
 
   const { error: insertError } = await serviceClient.from("feedback").insert({
     user_id: userId,

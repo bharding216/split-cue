@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type AudioCueMode } from '../workou
 import { Colors, Spacing, FontSize, BorderRadius } from '../constants/theme';
 import { hapticTap } from '../audio/haptics';
 import { CUE_DISTANCE_PRESETS, cueDistanceLabel, paceCuesEnabled } from '../audio/cueSchedule';
-import type { DataMode, HrAnnouncementFrequency, ProgressCueBasis } from '../pace/paceTypes';
+import type { DataMode, HrAnnouncementFrequency, HrAnnouncementFormat, ProgressCueBasis } from '../pace/paceTypes';
 import {
   CueBasisToggle,
   CueDistanceChips,
@@ -19,6 +19,18 @@ import {
   PROGRESS_TIME_OPTIONS,
   TimeStepChips,
 } from './CueScheduleControls';
+
+const HR_FREQ_OPTIONS: { value: HrAnnouncementFrequency; label: string }[] = [
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+];
+
+const HR_FORMAT_OPTIONS: { value: HrAnnouncementFormat; label: string }[] = [
+  { value: 'long', label: 'Full' },
+  { value: 'short', label: 'Short' },
+];
 
 const PACE_BASIS_OPTIONS: readonly ProgressCueBasis[] = ['time', 'distance'];
 /** The switch turns pace cues off, so the step chips leave out 'Off'. */
@@ -137,7 +149,9 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
             <View style={styles.summaryItem}>
               <Ionicons name="heart" size={14} color={Colors.danger} />
               <Text style={[styles.summaryItemText, styles.summaryItemTextActive]}>
-                HR {settings.hrMode === 'record' ? 'Record' : 'Announce'}
+                HR {settings.hrMode === 'record'
+                  ? 'Record'
+                  : `Announce ${HR_FREQ_OPTIONS.find((o) => o.value === settings.hrAnnouncementFrequency)?.label ?? ''}`}
               </Text>
             </View>
           )}
@@ -209,6 +223,85 @@ export function PreRunSettings({ settings, onUpdate, hasDistanceFeature }: PreRu
               );
             })}
           </View>
+
+          {/* Heart rate mode — 3-way toggle */}
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="heart" size={18} color={Colors.textSecondary} />
+              <Text style={styles.settingLabel}>Heart Rate</Text>
+            </View>
+          </View>
+          <View style={styles.audioModeRow}>
+            {(['off', 'record', 'announce'] as DataMode[]).map((mode) => {
+              const isActive = settings.hrMode === mode;
+              const label = mode === 'off' ? 'Off' : mode === 'record' ? 'Record' : 'Announce';
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.audioChip, isActive && styles.audioChipActive]}
+                  onPress={() => {
+                    hapticTap();
+                    onUpdate({ hrMode: mode });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.audioChipText, isActive && styles.audioChipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {settings.hrMode === 'announce' && (
+            <View style={styles.hrAnnounceControls}>
+              <Text style={styles.hrControlLabel}>Announce every</Text>
+              <View style={styles.audioModeRow}>
+                {HR_FREQ_OPTIONS.map((opt) => {
+                  const isActive = settings.hrAnnouncementFrequency === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.audioChip, isActive && styles.audioChipActive]}
+                      onPress={() => {
+                        hapticTap();
+                        onUpdate({ hrAnnouncementFrequency: opt.value });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.audioChipText, isActive && styles.audioChipTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.hrControlLabel}>Style</Text>
+              <View style={styles.audioModeRow}>
+                {HR_FORMAT_OPTIONS.map((opt) => {
+                  const isActive = settings.hrAnnouncementFormat === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.audioChip, isActive && styles.audioChipActive]}
+                      onPress={() => {
+                        hapticTap();
+                        onUpdate({ hrAnnouncementFormat: opt.value });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.audioChipText, isActive && styles.audioChipTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.hrPreviewText}>
+                {settings.hrAnnouncementFormat === 'short'
+                  ? '🔊 "Heart rate: 142"'
+                  : '🔊 "Heart rate: 142 beats per minute"'}
+              </Text>
+            </View>
+          )}
 
           {/* Audio cues */}
           <View style={styles.audioSettingRow}>
@@ -467,6 +560,21 @@ const styles = StyleSheet.create({
   },
   audioChipTextActive: {
     color: Colors.primary,
+  },
+  hrAnnounceControls: {
+    paddingLeft: 18 + Spacing.sm,
+    gap: Spacing.sm,
+  },
+  hrControlLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  hrPreviewText: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+    lineHeight: 18,
   },
   hintRow: {
     flexDirection: 'row',

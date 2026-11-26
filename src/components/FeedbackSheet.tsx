@@ -6,7 +6,7 @@
  * Submits to the submit-feedback edge function.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   Alert,
   Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +58,9 @@ interface FeedbackSheetProps {
   screen?: string;
 }
 
+const FEEDBACK_COOLDOWN_KEY = 'feedback_last_submitted_at';
+const FEEDBACK_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 export function FeedbackSheet({ visible, onDismiss, screen }: FeedbackSheetProps) {
   const insets = useSafeAreaInsets();
   const [category, setCategory] = useState<FeedbackCategory>('bug');
@@ -65,7 +69,20 @@ export function FeedbackSheet({ visible, onDismiss, screen }: FeedbackSheetProps
   const [openToFollowup, setOpenToFollowup] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [coolingDown, setCoolingDown] = useState(false);
   const messageRef = useRef<TextInput>(null);
+
+  // Check cooldown when the sheet opens.
+  useEffect(() => {
+    if (!visible) return;
+    AsyncStorage.getItem(FEEDBACK_COOLDOWN_KEY).then((ts) => {
+      if (ts && Date.now() - Number(ts) < FEEDBACK_COOLDOWN_MS) {
+        setCoolingDown(true);
+      } else {
+        setCoolingDown(false);
+      }
+    });
+  }, [visible]);
 
   const reset = useCallback(() => {
     setCategory('bug');
@@ -113,7 +130,23 @@ export function FeedbackSheet({ visible, onDismiss, screen }: FeedbackSheetProps
         },
       });
 
-      if (res.error) throw res.error;
+      if (res.error) {
+        // Surface user-friendly server messages (quality gate / rate limit).
+        const serverMsg =
+          typeof res.error === 'object' && res.error?.context?.body
+            ? JSON.parse(res.error.context.body)?.error
+            : typeof res.error === 'string'
+              ? res.error
+              : null;
+        if (serverMsg) {
+          Alert.alert('Feedback', serverMsg, [{ text: 'OK' }]);
+          return;
+        }
+        throw res.error;
+      }
+
+      // Record cooldown timestamp.
+      await AsyncStorage.setItem(FEEDBACK_COOLDOWN_KEY, String(Date.now()));
 
       track('feedback_submitted', { category });
       setSubmitted(true);
@@ -255,18 +288,24 @@ export function FeedbackSheet({ visible, onDismiss, screen }: FeedbackSheetProps
               )}
 
               {/* Submit button */}
-              <TouchableOpacity
-                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-                onPress={handleSubmit}
-                disabled={submitting || !message.trim()}
-                activeOpacity={0.7}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={Colors.background} size="small" />
-                ) : (
-                  <Text style={styles.submitBtnLabel}>Send Feedback</Text>
-                )}
-              </TouchableOpacity>
+              {coolingDown ? (
+                <View style={[styles.submitBtn, styles.submitBtnDisabled]}>
+                  <Text style={styles.submitBtnLabel}>Please wait a few minutes</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+                  onPress={handleSubmit}
+                  disabled={submitting || !message.trim()}
+                  activeOpacity={0.7}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={Colors.background} size="small" />
+                  ) : (
+                    <Text style={styles.submitBtnLabel}>Send Feedback</Text>
+                  )}
+                </TouchableOpacity>
+              )}
             </>
           )}
         </SheetContainer>

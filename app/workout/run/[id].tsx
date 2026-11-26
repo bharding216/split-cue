@@ -62,7 +62,7 @@ import { useWorkoutRunner, type SessionMeta } from '../../../src/hooks/useWorkou
 import { Timer } from '../../../src/components/Timer';
 import { IntervalProgress } from '../../../src/components/IntervalProgress';
 import { formatPaceDisplay, formatDistance } from '../../../src/pace/paceTracker';
-import { paceToUnit } from '../../../src/units/format';
+import { paceToUnit, formatPace } from '../../../src/units/format';
 import { currentInterval as getCurrentInterval } from '../../../src/workout/workoutEngine';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -794,10 +794,34 @@ function ActiveWorkoutInner({
                           { backgroundColor: intervalColor(int.type) },
                         ]}
                       />
-                      <Text style={styles.previewLabel}>{int.label}</Text>
-                      <Text style={styles.previewTime}>
-                        {intervalLengthText(int, settings.paceUnit)}
-                      </Text>
+                      <View style={styles.previewBody}>
+                        <View style={styles.previewMainRow}>
+                          <Text style={styles.previewLabel}>{int.label}</Text>
+                          <Text style={styles.previewTime}>
+                            {intervalLengthText(int, settings.paceUnit)}
+                          </Text>
+                        </View>
+                        {(int.targetPace != null || int.targetHeartRate != null) && (
+                          <View style={styles.previewTargets}>
+                            {int.targetPace != null && (
+                              <View style={styles.previewTargetChip}>
+                                <Ionicons name="speedometer-outline" size={11} color={Colors.accent} />
+                                <Text style={styles.previewTargetText}>
+                                  {formatPace(int.targetPace, settings.paceUnit)}
+                                </Text>
+                              </View>
+                            )}
+                            {int.targetHeartRate != null && (
+                              <View style={styles.previewTargetChip}>
+                                <Ionicons name="heart-outline" size={11} color={Colors.danger} />
+                                <Text style={styles.previewTargetText}>
+                                  {int.targetHeartRate} bpm
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </React.Fragment>
                 ))}
@@ -2372,7 +2396,7 @@ const styles = StyleSheet.create({
   },
   previewRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
@@ -2381,6 +2405,14 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginTop: 6,
+  },
+  previewBody: {
+    flex: 1,
+  },
+  previewMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   previewLabel: {
     flex: 1,
@@ -2389,6 +2421,27 @@ const styles = StyleSheet.create({
   },
   previewTime: {
     fontSize: FontSize.md,
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  previewTargets: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+    marginTop: 4,
+  },
+  previewTargetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.surfaceLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  previewTargetText: {
+    fontSize: FontSize.xs,
+    fontWeight: '600',
     color: Colors.textSecondary,
     fontVariant: ['tabular-nums'],
   },
